@@ -1297,12 +1297,7 @@ export default function App() {
         initAuth();
         const unsubscribe = onAuthStateChanged(auth, (u) => {
             setUser(u);
-            if (u) {
-                setLoading(false);
-                // LOG TEMPORAL - Muestra tu User ID en la consola (F12)
-                console.log('🔑 TU USER ID ES:', u.uid);
-                console.log('📋 Copia este ID para el Shortcut de Siri');
-            }
+            if (u) setLoading(false);
         });
         return () => unsubscribe();
     }, []);
@@ -1457,21 +1452,7 @@ export default function App() {
                 </div>
             </div>
 
-            {/* User ID para Siri Shortcut - Click para copiar */}
-            <div className="md:hidden fixed top-14 w-full bg-amber-50 z-20 px-4 py-1 text-xs text-amber-800 flex items-center justify-center gap-2 border-b border-amber-100">
-                <span>📱 Tu User ID:</span>
-                <button
-                    onClick={() => {
-                        navigator.clipboard.writeText(user?.uid || '');
-                        alert('User ID copiado: ' + user?.uid);
-                    }}
-                    className="font-mono bg-amber-100 px-2 py-0.5 rounded text-amber-900 hover:bg-amber-200"
-                >
-                    {user?.uid?.substring(0, 20)}...
-                </button>
-            </div>
-
-            <main className="flex-1 md:ml-72 p-4 md:p-10 mt-20 md:mt-0 overflow-y-auto h-screen pb-32 md:pb-10 no-scrollbar scroll-smooth">
+            <main className="flex-1 md:ml-72 p-4 md:p-10 mt-16 md:mt-0 overflow-y-auto h-screen pb-32 md:pb-10 no-scrollbar scroll-smooth">
                 <div className="max-w-7xl mx-auto space-y-8">
                     {activeTab === 'dashboard' && <DashboardView saldoActual={saldoActual} totalIngresos={totalIngresos} totalGastos={totalGastos} totalDeudaPendiente={totalDeudaPendiente} transacciones={transacciones} />}
                     {activeTab === 'analisis' && <FinancialAnalysis transacciones={transacciones} />}
