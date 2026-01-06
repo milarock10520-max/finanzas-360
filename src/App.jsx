@@ -1297,7 +1297,12 @@ export default function App() {
         initAuth();
         const unsubscribe = onAuthStateChanged(auth, (u) => {
             setUser(u);
-            if (u) setLoading(false);
+            if (u) {
+                setLoading(false);
+                // LOG TEMPORAL - Muestra tu User ID en la consola (F12)
+                console.log('🔑 TU USER ID ES:', u.uid);
+                console.log('📋 Copia este ID para el Shortcut de Siri');
+            }
         });
         return () => unsubscribe();
     }, []);
