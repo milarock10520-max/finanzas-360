@@ -23,7 +23,12 @@ import {
     SlidersHorizontal,
     Sparkles,
     Coins,
-    Calculator // Nuevo icono para el total
+    Calculator,
+    Zap,
+    X,
+    StickyNote,
+    MessageSquarePlus,
+    TrendingUp as ProfitIcon
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import {
@@ -91,7 +96,7 @@ const CATEGORIAS_INGRESOS = [
 const CATEGORIAS_GASTOS = [
     "Vivienda (Arriendo/Hipoteca)", "Servicios Públicos", "Mercado",
     "Transporte", "Entretenimiento", "Salud", "Educación",
-    "Ropa", "Deudas", "Aporte Inversión", "Mascotas", "Otros"
+    "Ropa", "Deudas", "Aporte Inversión", "Mascotas", "Gastos Hormiga", "Otros"
 ];
 
 const TIPOS_INVERSION = [
@@ -103,6 +108,90 @@ const PLAZOS_METAS = [
     { value: 'mediano', label: 'Mediano Plazo (1-5 años)' },
     { value: 'largo', label: 'Largo Plazo (> 5 años)' },
 ];
+
+// --- COMPONENTE: MODAL GASTOS RÁPIDOS (HORMIGA) ---
+const QuickExpenseModal = ({ isOpen, onClose, genericAdd }) => {
+    const [concepto, setConcepto] = useState('');
+    const [monto, setMonto] = useState('');
+    const [saving, setSaving] = useState(false);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!concepto || !monto) return;
+
+        setSaving(true);
+        await genericAdd('transacciones', {
+            tipo: 'gasto',
+            monto: parseFloat(monto),
+            concepto,
+            categoria: 'Gastos Hormiga',
+            fecha: new Date().toISOString().split('T')[0],
+            createdAt: new Date().toISOString()
+        });
+
+        setConcepto('');
+        setMonto('');
+        setSaving(false);
+        onClose();
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-end justify-center p-4 pb-24" onClick={onClose}>
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+            <div
+                className="relative bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6 animate-in slide-in-from-bottom duration-300"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                        <Zap className="text-amber-500" size={20} />
+                        Gasto Rápido
+                    </h3>
+                    <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                        <X size={20} className="text-slate-400" />
+                    </button>
+                </div>
+
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <input
+                            type="text"
+                            placeholder="¿En qué gastaste? (Ej: Café, Snack)"
+                            value={concepto}
+                            onChange={(e) => setConcepto(e.target.value)}
+                            className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl outline-none focus:border-amber-500 transition-colors text-lg"
+                            autoFocus
+                            required
+                        />
+                    </div>
+                    <div>
+                        <input
+                            type="number"
+                            placeholder="Monto ($)"
+                            value={monto}
+                            onChange={(e) => setMonto(e.target.value)}
+                            className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl outline-none focus:border-amber-500 transition-colors text-lg font-bold"
+                            required
+                        />
+                    </div>
+                    <button
+                        type="submit"
+                        disabled={saving}
+                        className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-amber-200 hover:shadow-xl transition-all active:scale-[0.98] disabled:opacity-50"
+                    >
+                        {saving ? 'Guardando...' : '⚡ Registrar Gasto Hormiga'}
+                    </button>
+                </form>
+
+                <p className="text-center text-xs text-slate-400 mt-4">
+                    Se registrará en la categoría "Gastos Hormiga"
+                </p>
+            </div>
+        </div>
+    );
+};
 
 // --- COMPONENTES AUXILIARES ---
 
@@ -150,8 +239,72 @@ const DeudaItem = ({ deuda, onAbonar }) => {
     );
 };
 
-const MetaItem = ({ meta, onAhorrar, onToggleCompletada, onDelete }) => {
+const MetaItem = ({ meta, onAhorrar, onToggleCompletada, onDelete, onAddNote, onDeleteNote }) => {
     const [aporte, setAporte] = useState('');
+    const [showNotes, setShowNotes] = useState(false);
+    const [newNote, setNewNote] = useState('');
+
+    const notas = meta.notas || [];
+
+    const handleAddNote = () => {
+        if (!newNote.trim()) return;
+        onAddNote(meta, newNote);
+        setNewNote('');
+    };
+
+    // Panel de notas compartido
+    const NotesPanel = () => (
+        <div className={`mt-4 pt-4 border-t ${meta.tipo === 'personal' ? 'border-emerald-200' : 'border-slate-100'}`}>
+            <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-bold text-slate-600 flex items-center gap-2">
+                    <StickyNote size={14} /> Notas y Avances
+                </h4>
+                <button onClick={() => setShowNotes(false)} className="text-slate-400 hover:text-slate-600">
+                    <X size={16} />
+                </button>
+            </div>
+
+            {/* Input para nueva nota */}
+            <div className="flex gap-2 mb-3">
+                <input
+                    type="text"
+                    placeholder="Escribe una nota..."
+                    value={newNote}
+                    onChange={(e) => setNewNote(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleAddNote()}
+                    className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-indigo-500"
+                />
+                <button
+                    onClick={handleAddNote}
+                    className="bg-indigo-600 text-white px-3 py-2 rounded-lg hover:bg-indigo-700"
+                >
+                    <MessageSquarePlus size={16} />
+                </button>
+            </div>
+
+            {/* Lista de notas */}
+            <div className="space-y-2 max-h-40 overflow-y-auto">
+                {notas.length === 0 ? (
+                    <p className="text-xs text-slate-400 text-center py-2">Sin notas aún</p>
+                ) : (
+                    notas.slice().reverse().map((nota, idx) => (
+                        <div key={idx} className="bg-slate-50 p-2 rounded-lg flex justify-between items-start gap-2 group">
+                            <div className="flex-1">
+                                <p className="text-sm text-slate-700">{nota.texto}</p>
+                                <p className="text-[10px] text-slate-400 mt-1">{new Date(nota.fecha).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                            </div>
+                            <button
+                                onClick={() => onDeleteNote(meta, notas.length - 1 - idx)}
+                                className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                                <Trash2 size={12} />
+                            </button>
+                        </div>
+                    ))
+                )}
+            </div>
+        </div>
+    );
 
     // Renderizado para Metas Personales
     if (meta.tipo === 'personal') {
@@ -164,7 +317,19 @@ const MetaItem = ({ meta, onAhorrar, onToggleCompletada, onDelete }) => {
                                 meta.plazo === 'mediano' ? 'bg-purple-100 text-purple-700' : 'bg-pink-100 text-pink-700'}`}>
                             {meta.plazo}
                         </span>
-                        <button onClick={() => onDelete(meta.id)} className="text-slate-300 hover:text-rose-500"><Trash2 size={16} /></button>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setShowNotes(!showNotes)}
+                                className={`p-1.5 rounded-full transition-all ${showNotes ? 'bg-indigo-100 text-indigo-600' : 'text-slate-300 hover:text-indigo-500 hover:bg-slate-50'}`}
+                                title="Ver notas"
+                            >
+                                <StickyNote size={14} />
+                                {notas.length > 0 && (
+                                    <span className="absolute -mt-6 ml-2 bg-indigo-500 text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center">{notas.length}</span>
+                                )}
+                            </button>
+                            <button onClick={() => onDelete(meta.id)} className="text-slate-300 hover:text-rose-500"><Trash2 size={16} /></button>
+                        </div>
                     </div>
                     <h3 className={`text-xl font-bold mb-2 ${meta.completada ? 'text-emerald-700 line-through' : 'text-slate-800'}`}>
                         {meta.nombre}
@@ -172,19 +337,23 @@ const MetaItem = ({ meta, onAhorrar, onToggleCompletada, onDelete }) => {
                     <p className="text-sm text-slate-500">{meta.completada ? '¡Meta alcanzada! 🌟' : 'Propósito personal'}</p>
                 </div>
 
-                <button
-                    onClick={() => onToggleCompletada(meta)}
-                    className={`mt-6 w-full py-2.5 rounded-lg font-bold flex items-center justify-center gap-2 transition-all
+                {showNotes ? (
+                    <NotesPanel />
+                ) : (
+                    <button
+                        onClick={() => onToggleCompletada(meta)}
+                        className={`mt-6 w-full py-2.5 rounded-lg font-bold flex items-center justify-center gap-2 transition-all
             ${meta.completada
-                            ? 'bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50'
-                            : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-md shadow-indigo-200'}`}
-                >
-                    {meta.completada ? (
-                        <>Completada <CheckCircle2 size={18} /></>
-                    ) : (
-                        <>Marcar como Lograda</>
-                    )}
-                </button>
+                                ? 'bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50'
+                                : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-md shadow-indigo-200'}`}
+                    >
+                        {meta.completada ? (
+                            <>Completada <CheckCircle2 size={18} /></>
+                        ) : (
+                            <>Marcar como Lograda</>
+                        )}
+                    </button>
+                )}
             </div>
         );
     }
@@ -203,7 +372,19 @@ const MetaItem = ({ meta, onAhorrar, onToggleCompletada, onDelete }) => {
                             meta.plazo === 'mediano' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
                         {meta.plazo}
                     </span>
-                    <button onClick={() => onDelete(meta.id)} className="text-slate-300 hover:text-rose-500"><Trash2 size={16} /></button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setShowNotes(!showNotes)}
+                            className={`p-1.5 rounded-full transition-all relative ${showNotes ? 'bg-blue-100 text-blue-600' : 'text-slate-300 hover:text-blue-500 hover:bg-slate-50'}`}
+                            title="Ver notas"
+                        >
+                            <StickyNote size={14} />
+                            {notas.length > 0 && (
+                                <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center">{notas.length}</span>
+                            )}
+                        </button>
+                        <button onClick={() => onDelete(meta.id)} className="text-slate-300 hover:text-rose-500"><Trash2 size={16} /></button>
+                    </div>
                 </div>
                 <h3 className="text-xl font-bold text-slate-800 mb-1">{meta.nombre}</h3>
                 <div className="flex justify-between text-sm mb-4">
@@ -214,22 +395,28 @@ const MetaItem = ({ meta, onAhorrar, onToggleCompletada, onDelete }) => {
                     <div className={`h-3 rounded-full transition-all duration-1000 ${porcentaje >= 100 ? 'bg-emerald-500' : 'bg-blue-600'}`} style={{ width: `${porcentaje}%` }}></div>
                 </div>
             </div>
-            <div className="flex gap-2 mt-4 pt-4 border-t border-slate-50">
-                <input
-                    type="number" placeholder="+ Ahorro"
-                    value={aporte} onChange={e => setAporte(e.target.value)}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-1 text-sm outline-none focus:border-blue-500"
-                />
-                <button
-                    onClick={() => { onAhorrar(meta, aporte); setAporte(''); }}
-                    className="bg-slate-800 text-white p-2 rounded-lg hover:bg-slate-700"
-                >
-                    <Save size={18} />
-                </button>
-            </div>
+
+            {showNotes ? (
+                <NotesPanel />
+            ) : (
+                <div className="flex gap-2 mt-4 pt-4 border-t border-slate-50">
+                    <input
+                        type="number" placeholder="+ Ahorro"
+                        value={aporte} onChange={e => setAporte(e.target.value)}
+                        className="w-full border border-slate-200 rounded-lg px-3 py-1 text-sm outline-none focus:border-blue-500"
+                    />
+                    <button
+                        onClick={() => { onAhorrar(meta, aporte); setAporte(''); }}
+                        className="bg-slate-800 text-white p-2 rounded-lg hover:bg-slate-700"
+                    >
+                        <Save size={18} />
+                    </button>
+                </div>
+            )}
         </div>
     );
 };
+
 
 const CardResumen = ({ titulo, monto, icono: Icon, color }) => (
     <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex items-center justify-between transition-all hover:shadow-md">
@@ -728,6 +915,8 @@ const InvestmentPortfolio = ({ transacciones, totalInvertido, genericAdd, generi
     const [concepto, setConcepto] = useState('');
     const [monto, setMonto] = useState('');
     const [tipoInv, setTipoInv] = useState(TIPOS_INVERSION[0]);
+    const [editingUtilidad, setEditingUtilidad] = useState(null);
+    const [utilidadInput, setUtilidadInput] = useState('');
 
     useEffect(() => {
         if (prefillData && activeTab === 'inversiones') {
@@ -739,25 +928,68 @@ const InvestmentPortfolio = ({ transacciones, totalInvertido, genericAdd, generi
 
     const registrarInversion = async (e) => {
         e.preventDefault();
-        await genericAdd('transacciones', { tipo: 'gasto', esInversion: true, monto: parseFloat(monto), concepto, categoria: 'Aporte Inversión', subTipo: tipoInv, fecha: new Date().toISOString().split('T')[0], createdAt: new Date().toISOString() });
+        await genericAdd('transacciones', {
+            tipo: 'gasto',
+            esInversion: true,
+            monto: parseFloat(monto),
+            concepto,
+            categoria: 'Aporte Inversión',
+            subTipo: tipoInv,
+            fecha: new Date().toISOString().split('T')[0],
+            createdAt: new Date().toISOString(),
+            utilidad: 0 // Campo para registrar utilidad
+        });
         if (pendingBudgetId) {
             const currentMonth = new Date().toISOString().slice(0, 7);
             await genericUpdate('presupuesto', pendingBudgetId, { lastPaid: currentMonth });
             setPendingBudgetId(null);
-            setActiveTab('presupuesto'); // Volver a presupuesto
+            setActiveTab('presupuesto');
         }
         setConcepto(''); setMonto('');
     };
 
+    const registrarUtilidad = async (inv) => {
+        if (!utilidadInput) return;
+        const nuevaUtilidad = (Number(inv.utilidad) || 0) + parseFloat(utilidadInput);
+        await genericUpdate('transacciones', inv.id, { utilidad: nuevaUtilidad });
+        setEditingUtilidad(null);
+        setUtilidadInput('');
+    };
 
     const inversionesList = transacciones.filter(t => t.categoria === 'Aporte Inversión' || t.esInversion === true);
 
+    // Calcular utilidad total
+    const totalUtilidad = inversionesList.reduce((acc, inv) => acc + (Number(inv.utilidad) || 0), 0);
+    const patrimonioTotal = totalInvertido + totalUtilidad;
+
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
-            <div className="bg-purple-700 text-white p-8 rounded-3xl shadow-lg flex flex-col md:flex-row justify-between items-center gap-6">
-                <div><h2 className="text-3xl font-bold mb-2">Portafolio de Inversiones</h2><p className="text-purple-200">Construyendo tu patrimonio.</p></div>
-                <div className="text-right"><p className="text-sm text-purple-200 uppercase tracking-wider">Total Invertido</p><h3 className="text-4xl font-bold">{formatCurrency(totalInvertido)}</h3></div>
+            {/* Header con métricas */}
+            <div className="bg-gradient-to-r from-purple-700 to-indigo-800 text-white p-8 rounded-3xl shadow-lg">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                    <div>
+                        <h2 className="text-3xl font-bold mb-2">Portafolio de Inversiones</h2>
+                        <p className="text-purple-200">Construyendo tu patrimonio.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-6">
+                        <div className="text-center md:text-right">
+                            <p className="text-sm text-purple-200 uppercase tracking-wider">Invertido</p>
+                            <h3 className="text-2xl font-bold">{formatCurrency(totalInvertido)}</h3>
+                        </div>
+                        <div className="text-center md:text-right">
+                            <p className="text-sm text-purple-200 uppercase tracking-wider">Utilidad</p>
+                            <h3 className={`text-2xl font-bold ${totalUtilidad >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                                {totalUtilidad >= 0 ? '+' : ''}{formatCurrency(totalUtilidad)}
+                            </h3>
+                        </div>
+                        <div className="text-center md:text-right bg-white/10 px-4 py-2 rounded-xl">
+                            <p className="text-sm text-purple-200 uppercase tracking-wider">Patrimonio</p>
+                            <h3 className="text-3xl font-bold">{formatCurrency(patrimonioTotal)}</h3>
+                        </div>
+                    </div>
+                </div>
             </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                     <h3 className="font-bold text-xl text-purple-700 mb-4 flex items-center gap-2"><PieChart className="w-6 h-6" /> Nueva Inversión</h3>
@@ -770,19 +1002,94 @@ const InvestmentPortfolio = ({ transacciones, totalInvertido, genericAdd, generi
                     </form>
                 </div>
                 <div className="lg:col-span-2 space-y-4">
-                    <h3 className="font-bold text-lg text-slate-800">Historial de Aportes</h3>
-                    {inversionesList.length === 0 ? <p className="text-slate-400">Sin inversiones registradas.</p> : inversionesList.map(inv => (
-                        <div key={inv.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex justify-between items-center">
-                            <div><h4 className="font-bold text-slate-700">{inv.concepto}</h4><p className="text-sm text-slate-500">{inv.subTipo || 'Inversión'} • {inv.fecha}</p></div>
-                            <div className="flex items-center gap-4"><span className="font-bold text-purple-600">{formatCurrency(inv.monto)}</span><button onClick={() => genericDelete('transacciones', inv.id)} className="text-slate-300 hover:text-rose-500"><Trash2 size={18} /></button></div>
-                        </div>
-                    ))
-                    }
+                    <h3 className="font-bold text-lg text-slate-800">Historial de Inversiones</h3>
+                    {inversionesList.length === 0 ? <p className="text-slate-400">Sin inversiones registradas.</p> : inversionesList.map(inv => {
+                        const utilidad = Number(inv.utilidad) || 0;
+                        const valorActual = (Number(inv.monto) || 0) + utilidad;
+                        const rentabilidad = inv.monto > 0 ? ((utilidad / inv.monto) * 100) : 0;
+
+                        return (
+                            <div key={inv.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+                                <div className="flex justify-between items-start gap-4">
+                                    <div className="flex-1">
+                                        <h4 className="font-bold text-slate-700">{inv.concepto}</h4>
+                                        <p className="text-sm text-slate-500">{inv.subTipo || 'Inversión'} • {inv.fecha}</p>
+
+                                        {/* Métricas de la inversión */}
+                                        <div className="flex flex-wrap gap-4 mt-2">
+                                            <span className="text-sm">
+                                                <span className="text-slate-400">Invertido:</span>
+                                                <span className="font-bold text-purple-600 ml-1">{formatCurrency(inv.monto)}</span>
+                                            </span>
+                                            <span className="text-sm">
+                                                <span className="text-slate-400">Utilidad:</span>
+                                                <span className={`font-bold ml-1 ${utilidad >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                    {utilidad >= 0 ? '+' : ''}{formatCurrency(utilidad)}
+                                                </span>
+                                            </span>
+                                            {utilidad !== 0 && (
+                                                <span className={`text-xs px-2 py-0.5 rounded-full ${rentabilidad >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                                                    {rentabilidad >= 0 ? '+' : ''}{rentabilidad.toFixed(1)}%
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="flex flex-col items-end gap-2">
+                                        <div className="text-right">
+                                            <p className="text-xs text-slate-400">Valor Actual</p>
+                                            <p className="font-bold text-lg text-slate-800">{formatCurrency(valorActual)}</p>
+                                        </div>
+
+                                        {/* Botones de acción */}
+                                        <div className="flex items-center gap-2">
+                                            {editingUtilidad === inv.id ? (
+                                                <div className="flex items-center gap-1">
+                                                    <input
+                                                        type="number"
+                                                        placeholder="+/- Utilidad"
+                                                        value={utilidadInput}
+                                                        onChange={(e) => setUtilidadInput(e.target.value)}
+                                                        className="w-28 px-2 py-1 border rounded text-sm outline-none focus:border-emerald-500"
+                                                        autoFocus
+                                                    />
+                                                    <button
+                                                        onClick={() => registrarUtilidad(inv)}
+                                                        className="bg-emerald-500 text-white p-1.5 rounded hover:bg-emerald-600"
+                                                    >
+                                                        <CheckCircle2 size={14} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => { setEditingUtilidad(null); setUtilidadInput(''); }}
+                                                        className="bg-slate-200 text-slate-600 p-1.5 rounded hover:bg-slate-300"
+                                                    >
+                                                        <X size={14} />
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <button
+                                                    onClick={() => setEditingUtilidad(inv.id)}
+                                                    className="flex items-center gap-1 text-emerald-600 text-sm px-2 py-1 rounded border border-emerald-200 hover:bg-emerald-50 transition-all"
+                                                    title="Registrar ganancia o pérdida"
+                                                >
+                                                    <DollarSign size={14} /> Utilidad
+                                                </button>
+                                            )}
+                                            <button onClick={() => genericDelete('transacciones', inv.id)} className="text-slate-300 hover:text-rose-500 p-1">
+                                                <Trash2 size={18} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
                 </div>
             </div>
         </div>
     );
 };
+
 
 const DebtManager = ({ deudas, genericAdd, genericUpdate }) => {
     const [nombre, setNombre] = useState('');
@@ -859,6 +1166,22 @@ const GoalTracker = ({ metas, genericAdd, genericUpdate, genericDelete }) => {
         await genericUpdate('metas', meta.id, { completada: !meta.completada });
     };
 
+    // Funciones para manejar notas
+    const addNote = async (meta, texto) => {
+        const nuevaNota = {
+            texto,
+            fecha: new Date().toISOString()
+        };
+        const notasActuales = meta.notas || [];
+        await genericUpdate('metas', meta.id, { notas: [...notasActuales, nuevaNota] });
+    };
+
+    const deleteNote = async (meta, index) => {
+        const notasActuales = meta.notas || [];
+        const nuevasNotas = notasActuales.filter((_, i) => i !== index);
+        await genericUpdate('metas', meta.id, { notas: nuevasNotas });
+    };
+
     // Filtrar metas según la pestaña activa
     // Nota: Las metas antiguas (sin tipo) se asumen como financieras
     const metasFiltradas = metas.filter(m => {
@@ -933,6 +1256,8 @@ const GoalTracker = ({ metas, genericAdd, genericUpdate, genericDelete }) => {
                             onAhorrar={actualizarAhorro}
                             onToggleCompletada={toggleCompletada}
                             onDelete={(id) => genericDelete('metas', id)}
+                            onAddNote={addNote}
+                            onDeleteNote={deleteNote}
                         />
                     ))
                 )}
@@ -947,6 +1272,7 @@ export default function App() {
     const [loading, setLoading] = useState(true);
     const [prefillData, setPrefillData] = useState(null);
     const [pendingBudgetId, setPendingBudgetId] = useState(null);
+    const [showQuickExpense, setShowQuickExpense] = useState(false);
 
     // Datos
     const [transacciones, setTransacciones] = useState([]);
@@ -1169,6 +1495,22 @@ export default function App() {
                     </button>
                 </div>
             </div>
+
+            {/* BOTÓN FLOTANTE GASTOS RÁPIDOS - SOLO MÓVIL */}
+            <button
+                onClick={() => setShowQuickExpense(true)}
+                className="md:hidden fixed right-4 bottom-24 z-40 w-14 h-14 bg-gradient-to-r from-amber-500 to-orange-500 rounded-full text-white shadow-lg shadow-amber-300 flex items-center justify-center transition-all active:scale-95 hover:shadow-xl"
+                title="Gasto Rápido"
+            >
+                <Zap size={24} />
+            </button>
+
+            {/* MODAL GASTOS RÁPIDOS */}
+            <QuickExpenseModal
+                isOpen={showQuickExpense}
+                onClose={() => setShowQuickExpense(false)}
+                genericAdd={genericAdd}
+            />
         </div>
     );
 }
