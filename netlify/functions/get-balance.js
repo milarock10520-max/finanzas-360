@@ -7,11 +7,24 @@ const { getFirestore } = require('firebase-admin/firestore');
 let db;
 function initFirebase() {
     if (getApps().length === 0) {
+        // Manejar diferentes formatos de private key
+        let privateKey = process.env.FIREBASE_PRIVATE_KEY || '';
+
+        // Si viene con \\n literal, reemplazar por saltos de línea reales
+        if (privateKey.includes('\\n')) {
+            privateKey = privateKey.replace(/\\n/g, '\n');
+        }
+
+        // Si viene con comillas adicionales, removerlas
+        if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
+            privateKey = privateKey.slice(1, -1);
+        }
+
         initializeApp({
             credential: cert({
                 projectId: process.env.FIREBASE_PROJECT_ID,
                 clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-                privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n')
+                privateKey: privateKey
             })
         });
     }
