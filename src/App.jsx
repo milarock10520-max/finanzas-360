@@ -2139,9 +2139,9 @@ REGLAS:
     };
 
     return (
-        <div className="fixed bottom-40 right-4 md:bottom-6 md:right-6 z-50 flex flex-col items-end">
+        <div className="fixed bottom-40 right-4 md:bottom-6 md:right-6 z-50 flex flex-col items-end pointer-events-none">
             {/* Chat Panel */}
-            <div className={`transition-all duration-300 transform origin-bottom-right ${isOpen ? 'scale-100 opacity-100 mb-4' : 'scale-0 opacity-0 h-0 w-0 mb-0'} bg-white rounded-3xl shadow-2xl border border-indigo-100 overflow-hidden flex flex-col w-[90vw] md:w-[400px] h-[600px] max-h-[75vh]`}>
+            <div className={`pointer-events-auto transition-all duration-300 transform origin-bottom-right ${isOpen ? 'scale-100 opacity-100 mb-4 visible' : 'scale-0 opacity-0 invisible'} bg-white rounded-3xl shadow-2xl border border-indigo-100 overflow-hidden flex flex-col w-[90vw] md:w-[400px] h-[600px] max-h-[75vh]`}>
                 
                 {/* Header */}
                 <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-4 text-white flex justify-between items-center shadow-md z-10">
@@ -2228,7 +2228,7 @@ REGLAS:
             {/* Floating FAB Button */}
             <button 
                 onClick={() => setIsOpen(!isOpen)}
-                className={`w-14 h-14 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 hover:scale-110 active:scale-95 ${isOpen ? 'bg-slate-800 text-white rotate-90 scale-90' : 'bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white hover:shadow-indigo-500/50'}`}
+                className={`pointer-events-auto w-14 h-14 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 hover:scale-110 active:scale-95 ${isOpen ? 'bg-slate-800 text-white rotate-90 scale-90' : 'bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white hover:shadow-indigo-500/50'}`}
             >
                 {isOpen ? <X size={24} /> : <Sparkles size={24} />}
             </button>
