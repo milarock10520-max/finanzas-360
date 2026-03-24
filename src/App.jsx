@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     LayoutDashboard,
     TrendingUp,
@@ -2033,6 +2033,210 @@ const PasswordVault = ({ passwords, vaultConfig, genericAdd, genericUpdate, gene
     );
 };
 // =============================================
+// === COMPONENTE: AI COACH (GEMINI API) ===
+// =============================================
+const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, tasks }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [apiKey, setApiKey] = useState(localStorage.getItem('gemini_api_key') || '');
+    const [showSettings, setShowSettings] = useState(!localStorage.getItem('gemini_api_key'));
+    const [messages, setMessages] = useState([]);
+    const [input, setInput] = useState('');
+    const [isTyping, setIsTyping] = useState(false);
+    const messagesEndRef = useRef(null);
+
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages, isTyping]);
+
+    const saveApiKey = (key) => {
+        setApiKey(key);
+        localStorage.setItem('gemini_api_key', key);
+        setShowSettings(false);
+    };
+
+    const buildFinancialContext = () => {
+        // Build context from props
+        const saldo = transacciones.reduce((acc, t) => acc + (t.tipo === 'ingreso' ? t.monto : (t.esInversion && t.inversionPatrimonio ? 0 : -t.monto)), 0);
+        const ingresosMes = transacciones.filter(t => t.tipo === 'ingreso' && new Date(t.fecha).getMonth() === new Date().getMonth()).reduce((acc, t) => acc + t.monto, 0);
+        const gastosMes = transacciones.filter(t => t.tipo === 'gasto' && !t.esInversion && new Date(t.fecha).getMonth() === new Date().getMonth()).reduce((acc, t) => acc + t.monto, 0);
+        const deudasPendientes = deudas.filter(d => !d.pagada).reduce((acc, d) => acc + (d.monto - d.pagado), 0);
+        const inversionesTotales = transacciones.filter(t => t.esInversion).reduce((acc, t) => acc + t.monto, 0);
+        const metasProgreso = metas.map(m => `- ${m.nombre}: $${m.ahorrado} de $${m.montoObjetivo} (${Math.round((m.ahorrado/m.montoObjetivo)*100)}%)`).join('\n');
+        const tareasPendientes = tasks.filter(t => !t.completada).map(t => `- ${t.texto} (Prioridad ${t.prioridad})`).join('\n');
+
+        return `
+ERES FINANZAS 360 AI COACH, un asistente experto en finanzas personales, productividad e inversiones. 
+Estás ayudando a un usuario con los siguientes datos financieros EN TIEMPO REAL:
+- Saldo Disponible Actual: $${saldo}
+- Ingresos de este mes: $${ingresosMes}
+- Gastos de este mes: $${gastosMes}
+- Total invertido en portafolio: $${inversionesTotales}
+- Total de Deudas Pendientes: $${deudasPendientes}
+
+METAS ACTUALES DEL USUARIO:
+${metasProgreso || 'No hay metas definidas.'}
+
+TAREAS PENDIENTES DE LA AGENDA:
+${tareasPendientes || 'No hay tareas pendientes importantes.'}
+
+REGLAS:
+1. Sé cálido, profesional, empático y MUY directo. No des rodeos verbales ni saludes excesivamente en cada mensaje.
+2. Analiza los datos del usuario antes de dar un consejo. Si te preguntan en qué invertir o en qué gastar, MIRA su saldo, gastos del mes, y tareas pendientes.
+3. No uses formatos extremadamente largos, responde con viñetas cortas si es posible, ideal para leer en un widget de movil estructurado en texto simple (solo puedes usar negrita).
+4. NUNCA inventes datos financieros, céntrate en los números provistos.
+`;
+    };
+
+    const handleSend = async (e) => {
+        e.preventDefault();
+        if (!input.trim() || !apiKey) return;
+
+        const userMsg = input.trim();
+        setInput('');
+        const newMessages = [...messages, { role: 'user', content: userMsg }];
+        setMessages(newMessages);
+        setIsTyping(true);
+
+        try {
+            const context = buildFinancialContext();
+            
+            // Format history for Gemini API
+            const contents = newMessages.map(m => ({
+                role: m.role === 'user' ? 'user' : 'model',
+                parts: [{ text: m.content }]
+            }));
+
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    system_instruction: { parts: { text: context } },
+                    contents: contents
+                })
+            });
+
+            if (!res.ok) {
+                const errorData = await res.json();
+                throw new Error(errorData.error?.message || 'Error en API Gemini');
+            }
+
+            const data = await res.json();
+            const botResponse = data.candidates[0].content.parts[0].text;
+            
+            setMessages([...newMessages, { role: 'assistant', content: botResponse }]);
+
+        } catch (error) {
+            console.error('Gemini API Error:', error);
+            setMessages([...newMessages, { role: 'assistant', content: '❌ Lo siento, hubo un error de conexión con Gemini. Verifica que tu API Key sea correcta en la configuración.' }]);
+            setShowSettings(true);
+        } finally {
+            setIsTyping(false);
+        }
+    };
+
+    return (
+        <div className="fixed bottom-40 right-4 md:bottom-6 md:right-6 z-50 flex flex-col items-end">
+            {/* Chat Panel */}
+            <div className={`transition-all duration-300 transform origin-bottom-right ${isOpen ? 'scale-100 opacity-100 mb-4' : 'scale-0 opacity-0 h-0 w-0 mb-0'} bg-white rounded-3xl shadow-2xl border border-indigo-100 overflow-hidden flex flex-col w-[90vw] md:w-[400px] h-[600px] max-h-[75vh]`}>
+                
+                {/* Header */}
+                <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-4 text-white flex justify-between items-center shadow-md z-10">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
+                            <Sparkles size={20} className="text-white" />
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-base leading-tight">Coach IA</h3>
+                            <p className="text-[11px] text-indigo-100 font-medium">Finanzas 360 Gemini</p>
+                        </div>
+                    </div>
+                    <div className="flex gap-2">
+                        <button onClick={() => setShowSettings(!showSettings)} className="w-8 h-8 rounded-full hover:bg-white/20 flex items-center justify-center transition-colors">
+                            <SlidersHorizontal size={16} />
+                        </button>
+                        <button onClick={() => setIsOpen(false)} className="w-8 h-8 rounded-full hover:bg-white/20 flex items-center justify-center transition-colors">
+                            <X size={20} />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Body */}
+                <div className="flex-1 bg-slate-50 overflow-y-auto p-4 custom-scrollbar flex flex-col gap-4">
+                    {showSettings ? (
+                        <div className="bg-white p-5 rounded-2xl shadow-sm border border-indigo-100">
+                            <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-2"><KeyRound size={16} className="text-indigo-500"/> Configuración API</h4>
+                            <p className="text-xs text-slate-500 mb-4">Ingresa tu clave de <b>Google Gemini API</b> (Gratuita) para activar tu asistente inteligente.</p>
+                            <input type="password" placeholder="AIzaSy..." defaultValue={apiKey} onBlur={(e) => saveApiKey(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:border-indigo-500 outline-none text-sm font-mono mb-2" />
+                            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-xs text-indigo-600 font-bold hover:underline">Obtener API Key aquí &rarr;</a>
+                            <button onClick={() => setShowSettings(false)} className="w-full mt-4 bg-slate-100 text-slate-700 font-bold py-2 rounded-xl text-sm hover:bg-slate-200 transition-colors">Cerrar</button>
+                        </div>
+                    ) : messages.length === 0 ? (
+                        <div className="flex-1 flex flex-col items-center justify-center text-center p-6 opacity-60">
+                            <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mb-4">
+                                <Sparkles size={30} className="text-indigo-600" />
+                            </div>
+                            <h4 className="font-bold text-slate-700 text-lg">Pregúntame lo que sea</h4>
+                            <p className="text-xs text-slate-500">¿Debería invertir este mes? ¿Cómo estructurar mis deudas? Analizo tus finanzas en tiempo real.</p>
+                        </div>
+                    ) : (
+                        messages.map((m, i) => (
+                            <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                <div className={`max-w-[85%] rounded-2xl p-3 text-[13px] leading-relaxed shadow-sm ${m.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-sm' : 'bg-white text-slate-700 border border-slate-100 rounded-tl-sm'}`}>
+                                    {m.role === 'assistant' ? (
+                                        <div className="prose prose-sm max-w-none prose-p:my-1 prose-headings:my-2 prose-headings:text-indigo-700 marker:text-indigo-400" dangerouslySetInnerHTML={{__html: m.content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br/>')}} />
+                                    ) : (
+                                        m.content
+                                    )}
+                                </div>
+                            </div>
+                        ))
+                    )}
+                    {isTyping && (
+                        <div className="flex justify-start">
+                            <div className="bg-white border border-slate-100 p-4 rounded-2xl rounded-tl-sm flex gap-1 items-center shadow-sm">
+                                <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-pulse" style={{animationDelay: '0ms'}}></span>
+                                <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-pulse" style={{animationDelay: '150ms'}}></span>
+                                <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-pulse" style={{animationDelay: '300ms'}}></span>
+                            </div>
+                        </div>
+                    )}
+                    <div ref={messagesEndRef} />
+                </div>
+
+                {/* Input Area */}
+                {!showSettings && (
+                    <div className="p-3 bg-white border-t border-slate-100">
+                        <form onSubmit={handleSend} className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-full px-2 py-1 focus-within:border-indigo-400 focus-within:bg-white transition-all shadow-inner">
+                            <input 
+                                value={input} onChange={e => setInput(e.target.value)} placeholder="Pide un consejo financiero..." 
+                                className="flex-1 bg-transparent px-3 py-2 outline-none text-sm text-slate-700"
+                                disabled={isTyping}
+                            />
+                            <button type="submit" disabled={!input.trim() || isTyping} className="w-9 h-9 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-full flex items-center justify-center transition-colors shrink-0 shadow-md">
+                                <ArrowRightCircle size={18} />
+                            </button>
+                        </form>
+                    </div>
+                )}
+            </div>
+
+            {/* Floating FAB Button */}
+            <button 
+                onClick={() => setIsOpen(!isOpen)}
+                className={`w-14 h-14 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 hover:scale-110 active:scale-95 ${isOpen ? 'bg-slate-800 text-white rotate-90 scale-90' : 'bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white hover:shadow-indigo-500/50'}`}
+            >
+                {isOpen ? <X size={24} /> : <Sparkles size={24} />}
+            </button>
+        </div>
+    );
+};
+
+// =============================================
 // === COMPONENTE: PRODUCTIVITY HUB ===
 // =============================================
 const ProductivityHub = ({ tasks, genericAdd, genericUpdate, genericDelete, googleToken, setGoogleToken }) => {
@@ -2626,6 +2830,9 @@ export default function App() {
                 onClose={() => setShowQuickExpense(false)}
                 genericAdd={genericAdd}
             />
+
+            {/* AI Coach Floating Widget - Injected Globally */}
+            <AICoach transacciones={transacciones} deudas={deudas} metas={metas} presupuestoItems={presupuestoItems} limites={limites} tasks={tasks} />
         </div>
     );
 }
