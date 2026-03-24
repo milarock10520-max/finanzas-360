@@ -28,7 +28,21 @@ import {
     X,
     StickyNote,
     MessageSquarePlus,
-    TrendingUp as ProfitIcon
+    TrendingUp as ProfitIcon,
+    Building2,
+    Shield,
+    LineChart,
+    Briefcase,
+    ToggleLeft,
+    ToggleRight,
+    Eye,
+    EyeOff,
+    Lock,
+    Copy,
+    RefreshCw,
+    Globe,
+    KeyRound,
+    Search
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import {
@@ -768,7 +782,7 @@ const BudgetPlanner = ({ presupuestoItems, limites, transacciones, genericAdd, g
                                             ) : (
                                                 <div className="flex items-center gap-2 group">
                                                     <span className="font-semibold text-slate-600">{formatCurrency(item.monto)}</span>
-                                                    {!isPaid && <button onClick={() => iniciarEdicion(item)} className="text-slate-300 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity"><Edit2 size={14} /></button>}
+                                                    {!isPaid && <button onClick={() => iniciarEdicion(item)} className="text-slate-400 hover:text-blue-500 transition-colors" title="Editar monto"><Edit2 size={14} /></button>}
                                                 </div>
                                             )}
 
@@ -911,12 +925,230 @@ const TransactionManager = ({ tipo, transacciones, genericAdd, genericUpdate, ge
     );
 };
 
+// --- Iconos y colores por tipo de inversión ---
+const INVERSION_CONFIG = {
+    'CDT / Renta Fija': { icon: Shield, color: 'blue', gradient: 'from-blue-500 to-blue-700', label: 'Renta Fija' },
+    'Acciones / Bolsa': { icon: LineChart, color: 'indigo', gradient: 'from-indigo-500 to-violet-700', label: 'Bolsa' },
+    'Criptomonedas': { icon: Zap, color: 'amber', gradient: 'from-amber-500 to-orange-600', label: 'Crypto' },
+    'Finca Raíz': { icon: Building2, color: 'emerald', gradient: 'from-emerald-600 to-teal-700', label: 'Inmueble' },
+    'Negocio Propio': { icon: Briefcase, color: 'rose', gradient: 'from-rose-500 to-pink-700', label: 'Negocio' },
+    'Fondo de Emergencia': { icon: Shield, color: 'cyan', gradient: 'from-cyan-500 to-sky-600', label: 'Emergencia' },
+};
+
+// --- Tarjeta individual de inversión ---
+const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, genericUpdate, totalGastosMensuales }) => {
+    const [editingUtilidad, setEditingUtilidad] = useState(false);
+    const [utilidadInput, setUtilidadInput] = useState('');
+    const [editingMonto, setEditingMonto] = useState(false);
+    const [montoEditInput, setMontoEditInput] = useState('');
+
+    const utilidad = Number(inv.utilidad) || 0;
+    const montoInv = Number(inv.monto) || 0;
+    const valorActual = montoInv + utilidad;
+    const rentabilidad = montoInv > 0 ? ((utilidad / montoInv) * 100) : 0;
+    const config = INVERSION_CONFIG[inv.subTipo] || INVERSION_CONFIG['CDT / Renta Fija'];
+    const IconComp = config.icon;
+    const afectaBalance = inv.afectaBalance !== false; // default true for backwards compatibility
+
+    const handleUtilidad = () => {
+        if (!utilidadInput) return;
+        onRegistrarUtilidad(inv, utilidadInput);
+        setEditingUtilidad(false);
+        setUtilidadInput('');
+    };
+
+    const handleEditMonto = async () => {
+        if (!montoEditInput) return;
+        await genericUpdate('transacciones', inv.id, { monto: parseFloat(montoEditInput) });
+        setEditingMonto(false);
+        setMontoEditInput('');
+    };
+
+    // Métricas especializadas por tipo
+    const renderTypeMetrics = () => {
+        switch (inv.subTipo) {
+            case 'Fondo de Emergencia': {
+                // Meta: 3-6 meses de gastos
+                const metaEmergencia = totalGastosMensuales * 6;
+                const progresoEmergencia = metaEmergencia > 0 ? Math.min((valorActual / metaEmergencia) * 100, 100) : 0;
+                const mesesCubiertos = totalGastosMensuales > 0 ? (valorActual / totalGastosMensuales) : 0;
+                return (
+                    <div className="mt-3 space-y-2">
+                        <div className="flex justify-between text-xs text-slate-500">
+                            <span>Progreso hacia meta (6 meses gastos)</span>
+                            <span className="font-bold">{progresoEmergencia.toFixed(0)}%</span>
+                        </div>
+                        <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+                            <div
+                                className={`h-full rounded-full transition-all duration-700 ${progresoEmergencia >= 100 ? 'bg-emerald-500' : progresoEmergencia >= 50 ? 'bg-cyan-500' : 'bg-amber-500'}`}
+                                style={{ width: `${progresoEmergencia}%` }}
+                            />
+                        </div>
+                        <div className="flex justify-between text-xs">
+                            <span className="text-slate-400">Cubre <span className="font-bold text-cyan-600">{mesesCubiertos.toFixed(1)} meses</span> de gastos</span>
+                            <span className="text-slate-400">Meta: {formatCurrency(metaEmergencia)}</span>
+                        </div>
+                    </div>
+                );
+            }
+            case 'Acciones / Bolsa':
+            case 'Criptomonedas': {
+                return (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                        <div className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 ${rentabilidad >= 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
+                            {rentabilidad >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                            {rentabilidad >= 0 ? '+' : ''}{rentabilidad.toFixed(2)}% Rentabilidad
+                        </div>
+                        <div className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 ${utilidad >= 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
+                            <DollarSign size={12} />
+                            P&L: {utilidad >= 0 ? '+' : ''}{formatCurrency(utilidad)}
+                        </div>
+                    </div>
+                );
+            }
+            case 'Finca Raíz': {
+                const valorizacion = montoInv > 0 ? ((utilidad / montoInv) * 100) : 0;
+                return (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                        <div className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 ${valorizacion >= 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
+                            <Building2 size={12} />
+                            Valorización: {valorizacion >= 0 ? '+' : ''}{valorizacion.toFixed(1)}%
+                        </div>
+                        <div className="px-3 py-1.5 rounded-lg text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1">
+                            <DollarSign size={12} /> Valor Propiedad: {formatCurrency(valorActual)}
+                        </div>
+                    </div>
+                );
+            }
+            case 'Negocio Propio': {
+                const roi = montoInv > 0 ? ((utilidad / montoInv) * 100) : 0;
+                return (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                        <div className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 ${roi >= 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
+                            <Briefcase size={12} />
+                            ROI: {roi >= 0 ? '+' : ''}{roi.toFixed(1)}%
+                        </div>
+                        <div className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 ${utilidad >= 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
+                            <DollarSign size={12} />
+                            Retorno: {utilidad >= 0 ? '+' : ''}{formatCurrency(utilidad)}
+                        </div>
+                    </div>
+                );
+            }
+            default: {
+                return utilidad !== 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                        <span className={`px-3 py-1.5 rounded-lg text-xs font-bold ${rentabilidad >= 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
+                            {rentabilidad >= 0 ? '+' : ''}{rentabilidad.toFixed(1)}% Rentabilidad
+                        </span>
+                    </div>
+                ) : null;
+            }
+        }
+    };
+
+    return (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden hover:shadow-md transition-shadow duration-300">
+            {/* Header de la tarjeta con gradiente */}
+            <div className={`bg-gradient-to-r ${config.gradient} p-4 flex justify-between items-center`}>
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
+                        <IconComp size={20} className="text-white" />
+                    </div>
+                    <div>
+                        <h4 className="font-bold text-white text-lg">{inv.concepto}</h4>
+                        <p className="text-white/70 text-xs">{inv.subTipo || 'Inversión'} • {inv.fecha}</p>
+                    </div>
+                </div>
+                <div className="text-right">
+                    <p className="text-white/60 text-xs uppercase tracking-wider">Valor Actual</p>
+                    <p className="font-bold text-xl text-white">{formatCurrency(valorActual)}</p>
+                </div>
+            </div>
+
+            {/* Cuerpo de la tarjeta */}
+            <div className="p-5">
+                {/* Métricas principales */}
+                <div className="grid grid-cols-3 gap-4 mb-3">
+                    <div className="text-center p-3 bg-slate-50 rounded-xl">
+                        <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Invertido</p>
+                        {editingMonto ? (
+                            <div className="flex items-center gap-1 mt-1 justify-center">
+                                <input type="number" value={montoEditInput} onChange={e => setMontoEditInput(e.target.value)}
+                                    className="w-20 px-1 py-0.5 border rounded text-sm text-center outline-none focus:border-purple-500" autoFocus />
+                                <button onClick={handleEditMonto} className="bg-purple-500 text-white p-0.5 rounded"><CheckCircle2 size={12} /></button>
+                            </div>
+                        ) : (
+                            <p className="font-bold text-purple-700 text-sm mt-1 cursor-pointer hover:text-purple-500 flex items-center justify-center gap-1"
+                                onClick={() => { setEditingMonto(true); setMontoEditInput(montoInv); }}>
+                                {formatCurrency(montoInv)} <Edit2 size={10} className="text-slate-300" />
+                            </p>
+                        )}
+                    </div>
+                    <div className="text-center p-3 bg-slate-50 rounded-xl">
+                        <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Utilidad</p>
+                        <p className={`font-bold text-sm mt-1 ${utilidad >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            {utilidad >= 0 ? '+' : ''}{formatCurrency(utilidad)}
+                        </p>
+                    </div>
+                    <div className="text-center p-3 bg-slate-50 rounded-xl">
+                        <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Rentabilidad</p>
+                        <p className={`font-bold text-sm mt-1 ${rentabilidad >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            {rentabilidad >= 0 ? '+' : ''}{rentabilidad.toFixed(1)}%
+                        </p>
+                    </div>
+                </div>
+
+                {/* Métricas especializadas por tipo */}
+                {renderTypeMetrics()}
+
+                {/* Badge: afecta balance */}
+                <div className="mt-3 flex justify-between items-center">
+                    <button
+                        onClick={() => onToggleBalance(inv)}
+                        className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition-all border ${afectaBalance
+                            ? 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100'
+                            : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                            }`}
+                        title={afectaBalance ? 'Esta inversión se descuenta de tu saldo' : 'Esta inversión NO se descuenta de tu saldo'}
+                    >
+                        {afectaBalance ? <Eye size={12} /> : <EyeOff size={12} />}
+                        {afectaBalance ? 'Afecta balance' : 'No afecta balance'}
+                    </button>
+
+                    {/* Acciones */}
+                    <div className="flex items-center gap-2">
+                        {editingUtilidad ? (
+                            <div className="flex items-center gap-1">
+                                <input
+                                    type="number" placeholder="+/- $"
+                                    value={utilidadInput} onChange={(e) => setUtilidadInput(e.target.value)}
+                                    className="w-24 px-2 py-1 border rounded text-sm outline-none focus:border-emerald-500" autoFocus
+                                />
+                                <button onClick={handleUtilidad} className="bg-emerald-500 text-white p-1.5 rounded hover:bg-emerald-600"><CheckCircle2 size={14} /></button>
+                                <button onClick={() => { setEditingUtilidad(false); setUtilidadInput(''); }} className="bg-slate-200 text-slate-600 p-1.5 rounded hover:bg-slate-300"><X size={14} /></button>
+                            </div>
+                        ) : (
+                            <button onClick={() => setEditingUtilidad(true)}
+                                className="flex items-center gap-1 text-emerald-600 text-xs px-2.5 py-1.5 rounded-lg border border-emerald-200 hover:bg-emerald-50 transition-all font-medium">
+                                <DollarSign size={13} /> Utilidad
+                            </button>
+                        )}
+                        <button onClick={() => onDelete(inv.id)} className="text-slate-300 hover:text-rose-500 p-1.5 rounded-lg hover:bg-rose-50 transition-all">
+                            <Trash2 size={16} />
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const InvestmentPortfolio = ({ transacciones, totalInvertido, genericAdd, genericUpdate, genericDelete, prefillData, setPrefillData, activeTab, pendingBudgetId, setPendingBudgetId, setActiveTab }) => {
     const [concepto, setConcepto] = useState('');
     const [monto, setMonto] = useState('');
     const [tipoInv, setTipoInv] = useState(TIPOS_INVERSION[0]);
-    const [editingUtilidad, setEditingUtilidad] = useState(null);
-    const [utilidadInput, setUtilidadInput] = useState('');
+    const [afectaBalance, setAfectaBalance] = useState(true);
 
     useEffect(() => {
         if (prefillData && activeTab === 'inversiones') {
@@ -929,15 +1161,16 @@ const InvestmentPortfolio = ({ transacciones, totalInvertido, genericAdd, generi
     const registrarInversion = async (e) => {
         e.preventDefault();
         await genericAdd('transacciones', {
-            tipo: 'gasto',
+            tipo: afectaBalance ? 'gasto' : 'inversion_patrimonio',
             esInversion: true,
+            afectaBalance: afectaBalance,
             monto: parseFloat(monto),
             concepto,
             categoria: 'Aporte Inversión',
             subTipo: tipoInv,
             fecha: new Date().toISOString().split('T')[0],
             createdAt: new Date().toISOString(),
-            utilidad: 0 // Campo para registrar utilidad
+            utilidad: 0
         });
         if (pendingBudgetId) {
             const currentMonth = new Date().toISOString().slice(0, 7);
@@ -945,22 +1178,42 @@ const InvestmentPortfolio = ({ transacciones, totalInvertido, genericAdd, generi
             setPendingBudgetId(null);
             setActiveTab('presupuesto');
         }
-        setConcepto(''); setMonto('');
+        setConcepto(''); setMonto(''); setAfectaBalance(true);
     };
 
-    const registrarUtilidad = async (inv) => {
+    const registrarUtilidad = async (inv, utilidadInput) => {
         if (!utilidadInput) return;
         const nuevaUtilidad = (Number(inv.utilidad) || 0) + parseFloat(utilidadInput);
         await genericUpdate('transacciones', inv.id, { utilidad: nuevaUtilidad });
-        setEditingUtilidad(null);
-        setUtilidadInput('');
+    };
+
+    const toggleBalance = async (inv) => {
+        const nuevoAfecta = inv.afectaBalance === false ? true : false;
+        const nuevoTipo = nuevoAfecta ? 'gasto' : 'inversion_patrimonio';
+        await genericUpdate('transacciones', inv.id, { afectaBalance: nuevoAfecta, tipo: nuevoTipo });
     };
 
     const inversionesList = transacciones.filter(t => t.categoria === 'Aporte Inversión' || t.esInversion === true);
 
-    // Calcular utilidad total
+    // Calcular totales
     const totalUtilidad = inversionesList.reduce((acc, inv) => acc + (Number(inv.utilidad) || 0), 0);
-    const patrimonioTotal = totalInvertido + totalUtilidad;
+    const totalEnBalance = inversionesList.filter(i => i.afectaBalance !== false).reduce((a, c) => a + (Number(c.monto) || 0), 0);
+    const totalPatrimonio = inversionesList.reduce((a, c) => a + (Number(c.monto) || 0) + (Number(c.utilidad) || 0), 0);
+
+    // Calcular gastos mensuales promedio (para fondo de emergencia)
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const gastosDelMes = transacciones
+        .filter(t => t.tipo === 'gasto' && !t.esInversion && t.fecha && t.fecha.startsWith(currentMonth))
+        .reduce((a, c) => a + (Number(c.monto) || 0), 0);
+    const totalGastosMensuales = gastosDelMes || 0;
+
+    // Agrupar por tipo
+    const grouped = {};
+    inversionesList.forEach(inv => {
+        const tipo = inv.subTipo || 'Otro';
+        if (!grouped[tipo]) grouped[tipo] = [];
+        grouped[tipo].push(inv);
+    });
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
@@ -971,121 +1224,133 @@ const InvestmentPortfolio = ({ transacciones, totalInvertido, genericAdd, generi
                         <h2 className="text-3xl font-bold mb-2">Portafolio de Inversiones</h2>
                         <p className="text-purple-200">Construyendo tu patrimonio.</p>
                     </div>
-                    <div className="flex flex-wrap gap-6">
+                    <div className="flex flex-wrap gap-4">
                         <div className="text-center md:text-right">
-                            <p className="text-sm text-purple-200 uppercase tracking-wider">Invertido</p>
-                            <h3 className="text-2xl font-bold">{formatCurrency(totalInvertido)}</h3>
+                            <p className="text-[10px] text-purple-300 uppercase tracking-wider font-bold">Invertido Total</p>
+                            <h3 className="text-xl font-bold">{formatCurrency(totalInvertido)}</h3>
                         </div>
                         <div className="text-center md:text-right">
-                            <p className="text-sm text-purple-200 uppercase tracking-wider">Utilidad</p>
-                            <h3 className={`text-2xl font-bold ${totalUtilidad >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                            <p className="text-[10px] text-purple-300 uppercase tracking-wider font-bold">En Balance</p>
+                            <h3 className="text-xl font-bold text-blue-300">{formatCurrency(totalEnBalance)}</h3>
+                        </div>
+                        <div className="text-center md:text-right">
+                            <p className="text-[10px] text-purple-300 uppercase tracking-wider font-bold">Utilidad</p>
+                            <h3 className={`text-xl font-bold ${totalUtilidad >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
                                 {totalUtilidad >= 0 ? '+' : ''}{formatCurrency(totalUtilidad)}
                             </h3>
                         </div>
-                        <div className="text-center md:text-right bg-white/10 px-4 py-2 rounded-xl">
-                            <p className="text-sm text-purple-200 uppercase tracking-wider">Patrimonio</p>
-                            <h3 className="text-3xl font-bold">{formatCurrency(patrimonioTotal)}</h3>
+                        <div className="text-center md:text-right bg-white/10 px-5 py-2 rounded-xl">
+                            <p className="text-[10px] text-purple-300 uppercase tracking-wider font-bold">Patrimonio</p>
+                            <h3 className="text-2xl font-extrabold">{formatCurrency(totalPatrimonio)}</h3>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-                    <h3 className="font-bold text-xl text-purple-700 mb-4 flex items-center gap-2"><PieChart className="w-6 h-6" /> Nueva Inversión</h3>
-                    {pendingBudgetId && <div className="bg-purple-50 text-purple-700 p-2 rounded mb-2 text-sm">✓ Desde Presupuesto</div>}
-                    <form onSubmit={registrarInversion} className="space-y-4">
-                        <input placeholder="Nombre (Ej: Bitcoin, Apple)" value={concepto} onChange={e => setConcepto(e.target.value)} className="w-full px-4 py-2 border rounded-lg focus:border-purple-500 outline-none" required />
-                        <input type="number" placeholder="Monto Invertido" value={monto} onChange={e => setMonto(e.target.value)} className="w-full px-4 py-2 border rounded-lg focus:border-purple-500 outline-none" required />
-                        <select value={tipoInv} onChange={e => setTipoInv(e.target.value)} className="w-full px-4 py-2 border rounded-lg focus:border-purple-500 outline-none bg-white">{TIPOS_INVERSION.map(t => <option key={t} value={t}>{t}</option>)}</select>
-                        <button type="submit" className="w-full bg-purple-600 text-white py-3 rounded-lg font-bold hover:bg-purple-700">Registrar Inversión</button>
-                    </form>
+            {/* Formulario */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                <h3 className="font-bold text-xl text-purple-700 mb-4 flex items-center gap-2"><PieChart className="w-6 h-6" /> Nueva Inversión</h3>
+                {pendingBudgetId && <div className="bg-purple-50 text-purple-700 p-2 rounded-lg mb-3 text-sm font-medium">✓ Desde Presupuesto</div>}
+                <form onSubmit={registrarInversion} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Nombre</label>
+                        <input placeholder="Ej: Bitcoin, Apartamento" value={concepto} onChange={e => setConcepto(e.target.value)}
+                            className="w-full px-4 py-2.5 border rounded-xl focus:border-purple-500 outline-none transition-colors" required />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Monto</label>
+                        <input type="number" placeholder="$ 0" value={monto} onChange={e => setMonto(e.target.value)}
+                            className="w-full px-4 py-2.5 border rounded-xl focus:border-purple-500 outline-none transition-colors" required />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Tipo</label>
+                        <select value={tipoInv} onChange={e => setTipoInv(e.target.value)}
+                            className="w-full px-4 py-2.5 border rounded-xl focus:border-purple-500 outline-none bg-white transition-colors">
+                            {TIPOS_INVERSION.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">¿Afecta tu saldo?</label>
+                        <button type="button" onClick={() => setAfectaBalance(!afectaBalance)}
+                            className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border font-medium transition-all ${afectaBalance
+                                ? 'bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100'
+                                : 'bg-slate-50 border-slate-300 text-slate-500 hover:bg-slate-100'
+                                }`}>
+                            {afectaBalance ? <ToggleRight size={20} className="text-blue-600" /> : <ToggleLeft size={20} />}
+                            {afectaBalance ? 'Sí, descuenta' : 'No, es patrimonio'}
+                        </button>
+                    </div>
+                    <button type="submit" className="bg-purple-600 text-white py-2.5 rounded-xl font-bold hover:bg-purple-700 transition-colors shadow-sm hover:shadow-md">
+                        Registrar
+                    </button>
+                </form>
+                {!afectaBalance && (
+                    <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-700 flex items-start gap-2">
+                        <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
+                        <span>Esta inversión <strong>no se restará</strong> de tu saldo disponible. Ideal para propiedades, inversiones a largo plazo o activos que ya no representan efectivo.</span>
+                    </div>
+                )}
+            </div>
+
+            {/* Inversiones agrupadas por tipo */}
+            {inversionesList.length === 0 ? (
+                <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-300">
+                    <PieChart size={48} className="mx-auto text-slate-300 mb-4" />
+                    <p className="text-slate-500 font-medium">Aún no tienes inversiones registradas.</p>
+                    <p className="text-slate-400 text-sm mt-1">Usa el formulario de arriba para agregar tu primera inversión.</p>
                 </div>
-                <div className="lg:col-span-2 space-y-4">
-                    <h3 className="font-bold text-lg text-slate-800">Historial de Inversiones</h3>
-                    {inversionesList.length === 0 ? <p className="text-slate-400">Sin inversiones registradas.</p> : inversionesList.map(inv => {
-                        const utilidad = Number(inv.utilidad) || 0;
-                        const valorActual = (Number(inv.monto) || 0) + utilidad;
-                        const rentabilidad = inv.monto > 0 ? ((utilidad / inv.monto) * 100) : 0;
+            ) : (
+                Object.entries(grouped).map(([tipo, inversiones]) => {
+                    const tipoConfig = INVERSION_CONFIG[tipo] || INVERSION_CONFIG['CDT / Renta Fija'];
+                    const TipoIcon = tipoConfig.icon;
+                    const totalTipo = inversiones.reduce((a, c) => a + (Number(c.monto) || 0), 0);
+                    const utilTipo = inversiones.reduce((a, c) => a + (Number(c.utilidad) || 0), 0);
 
-                        return (
-                            <div key={inv.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-                                <div className="flex justify-between items-start gap-4">
-                                    <div className="flex-1">
-                                        <h4 className="font-bold text-slate-700">{inv.concepto}</h4>
-                                        <p className="text-sm text-slate-500">{inv.subTipo || 'Inversión'} • {inv.fecha}</p>
-
-                                        {/* Métricas de la inversión */}
-                                        <div className="flex flex-wrap gap-4 mt-2">
-                                            <span className="text-sm">
-                                                <span className="text-slate-400">Invertido:</span>
-                                                <span className="font-bold text-purple-600 ml-1">{formatCurrency(inv.monto)}</span>
-                                            </span>
-                                            <span className="text-sm">
-                                                <span className="text-slate-400">Utilidad:</span>
-                                                <span className={`font-bold ml-1 ${utilidad >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                                    {utilidad >= 0 ? '+' : ''}{formatCurrency(utilidad)}
-                                                </span>
-                                            </span>
-                                            {utilidad !== 0 && (
-                                                <span className={`text-xs px-2 py-0.5 rounded-full ${rentabilidad >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                                                    {rentabilidad >= 0 ? '+' : ''}{rentabilidad.toFixed(1)}%
-                                                </span>
-                                            )}
-                                        </div>
+                    return (
+                        <div key={tipo} className="space-y-4">
+                            {/* Header de categoría */}
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className={`p-2 rounded-xl bg-gradient-to-r ${tipoConfig.gradient} text-white`}>
+                                        <TipoIcon size={18} />
                                     </div>
-
-                                    <div className="flex flex-col items-end gap-2">
-                                        <div className="text-right">
-                                            <p className="text-xs text-slate-400">Valor Actual</p>
-                                            <p className="font-bold text-lg text-slate-800">{formatCurrency(valorActual)}</p>
-                                        </div>
-
-                                        {/* Botones de acción */}
-                                        <div className="flex items-center gap-2">
-                                            {editingUtilidad === inv.id ? (
-                                                <div className="flex items-center gap-1">
-                                                    <input
-                                                        type="number"
-                                                        placeholder="+/- Utilidad"
-                                                        value={utilidadInput}
-                                                        onChange={(e) => setUtilidadInput(e.target.value)}
-                                                        className="w-28 px-2 py-1 border rounded text-sm outline-none focus:border-emerald-500"
-                                                        autoFocus
-                                                    />
-                                                    <button
-                                                        onClick={() => registrarUtilidad(inv)}
-                                                        className="bg-emerald-500 text-white p-1.5 rounded hover:bg-emerald-600"
-                                                    >
-                                                        <CheckCircle2 size={14} />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => { setEditingUtilidad(null); setUtilidadInput(''); }}
-                                                        className="bg-slate-200 text-slate-600 p-1.5 rounded hover:bg-slate-300"
-                                                    >
-                                                        <X size={14} />
-                                                    </button>
-                                                </div>
-                                            ) : (
-                                                <button
-                                                    onClick={() => setEditingUtilidad(inv.id)}
-                                                    className="flex items-center gap-1 text-emerald-600 text-sm px-2 py-1 rounded border border-emerald-200 hover:bg-emerald-50 transition-all"
-                                                    title="Registrar ganancia o pérdida"
-                                                >
-                                                    <DollarSign size={14} /> Utilidad
-                                                </button>
-                                            )}
-                                            <button onClick={() => genericDelete('transacciones', inv.id)} className="text-slate-300 hover:text-rose-500 p-1">
-                                                <Trash2 size={18} />
-                                            </button>
-                                        </div>
+                                    <div>
+                                        <h3 className="font-bold text-slate-800">{tipo}</h3>
+                                        <p className="text-xs text-slate-400">{inversiones.length} inversión{inversiones.length > 1 ? 'es' : ''}</p>
+                                    </div>
+                                </div>
+                                <div className="flex gap-4 text-right">
+                                    <div>
+                                        <p className="text-[10px] text-slate-400 uppercase">Capital</p>
+                                        <p className="font-bold text-sm text-slate-700">{formatCurrency(totalTipo)}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] text-slate-400 uppercase">Utilidad</p>
+                                        <p className={`font-bold text-sm ${utilTipo >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                            {utilTipo >= 0 ? '+' : ''}{formatCurrency(utilTipo)}
+                                        </p>
                                     </div>
                                 </div>
                             </div>
-                        );
-                    })}
-                </div>
-            </div>
+
+                            {/* Cards de inversiones */}
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                {inversiones.map(inv => (
+                                    <InvestmentCard
+                                        key={inv.id}
+                                        inv={inv}
+                                        onRegistrarUtilidad={registrarUtilidad}
+                                        onDelete={(id) => genericDelete('transacciones', id)}
+                                        onToggleBalance={toggleBalance}
+                                        genericUpdate={genericUpdate}
+                                        totalGastosMensuales={totalGastosMensuales}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })
+            )}
         </div>
     );
 };
@@ -1266,6 +1531,503 @@ const GoalTracker = ({ metas, genericAdd, genericUpdate, genericDelete }) => {
     );
 };
 
+// =============================================
+// === CRYPTO HELPERS (AES-256-GCM + PBKDF2) ===
+// =============================================
+
+const PBKDF2_ITERATIONS = 100000;
+
+const getKeyMaterial = async (password) => {
+    const enc = new TextEncoder();
+    return crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+};
+
+const deriveEncryptionKey = async (password, salt) => {
+    const keyMaterial = await getKeyMaterial(password);
+    return crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+        keyMaterial,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+    );
+};
+
+const encryptText = async (plaintext, masterPassword, salt) => {
+    const key = await deriveEncryptionKey(masterPassword, salt);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const enc = new TextEncoder();
+    const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(plaintext));
+    return {
+        iv: btoa(String.fromCharCode(...iv)),
+        ciphertext: btoa(String.fromCharCode(...new Uint8Array(ciphertext)))
+    };
+};
+
+const decryptText = async (encryptedData, masterPassword, salt) => {
+    try {
+        const key = await deriveEncryptionKey(masterPassword, salt);
+        const iv = new Uint8Array(atob(encryptedData.iv).split('').map(c => c.charCodeAt(0)));
+        const ciphertext = new Uint8Array(atob(encryptedData.ciphertext).split('').map(c => c.charCodeAt(0)));
+        const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+        return new TextDecoder().decode(decrypted);
+    } catch {
+        return null;
+    }
+};
+
+const hashText = async (text) => {
+    const enc = new TextEncoder();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', enc.encode(text));
+    return btoa(String.fromCharCode(...new Uint8Array(hashBuffer)));
+};
+
+const generateStrongPassword = (length = 20) => {
+    const upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const lower = 'abcdefghijklmnopqrstuvwxyz';
+    const digits = '0123456789';
+    const symbols = '!@#$%^&*()-_=+[]{}|;:,.<>?';
+    const all = upper + lower + digits + symbols;
+    let pw = [
+        upper[Math.floor(Math.random() * upper.length)],
+        lower[Math.floor(Math.random() * lower.length)],
+        digits[Math.floor(Math.random() * digits.length)],
+        symbols[Math.floor(Math.random() * symbols.length)],
+    ];
+    for (let i = pw.length; i < length; i++) pw.push(all[Math.floor(Math.random() * all.length)]);
+    return pw.sort(() => Math.random() - 0.5).join('');
+};
+
+const CATEGORIAS_PASSWORDS = ['Correo', 'Red Social', 'Banco / Finanzas', 'Trabajo', 'Entretenimiento', 'Compras', 'Otro'];
+
+const CAT_COLORS = {
+    'Correo': { bg: 'bg-red-50', text: 'text-red-600', border: 'border-red-200', icon: '📧' },
+    'Red Social': { bg: 'bg-blue-50', text: 'text-blue-600', border: 'border-blue-200', icon: '👥' },
+    'Banco / Finanzas': { bg: 'bg-emerald-50', text: 'text-emerald-600', border: 'border-emerald-200', icon: '🏦' },
+    'Trabajo': { bg: 'bg-amber-50', text: 'text-amber-600', border: 'border-amber-200', icon: '💼' },
+    'Entretenimiento': { bg: 'bg-purple-50', text: 'text-purple-600', border: 'border-purple-200', icon: '🎮' },
+    'Compras': { bg: 'bg-pink-50', text: 'text-pink-600', border: 'border-pink-200', icon: '🛒' },
+    'Otro': { bg: 'bg-slate-50', text: 'text-slate-600', border: 'border-slate-200', icon: '🔑' },
+};
+
+// =============================================
+// === COMPONENTE: PASSWORD VAULT ===
+// =============================================
+
+const PasswordVault = ({ passwords, vaultConfig, genericAdd, genericUpdate, genericDelete, user, db, activeTab }) => {
+    const [isUnlocked, setIsUnlocked] = useState(false);
+    const [masterPassword, setMasterPassword] = useState('');
+    const [masterInput, setMasterInput] = useState('');
+    const [confirmInput, setConfirmInput] = useState('');
+    const [isCreatingMaster, setIsCreatingMaster] = useState(false);
+    const [error, setError] = useState('');
+    const [salt, setSalt] = useState(null);
+
+    // Form states
+    const [servicio, setServicio] = useState('');
+    const [usuario, setUsuario] = useState('');
+    const [passwordInput, setPasswordInput] = useState('');
+    const [categoria, setCategoria] = useState(CATEGORIAS_PASSWORDS[0]);
+    const [url, setUrl] = useState('');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [showPasswords, setShowPasswords] = useState({});
+    const [decryptedCache, setDecryptedCache] = useState({});
+    const [copiedId, setCopiedId] = useState(null);
+    const [editingId, setEditingId] = useState(null);
+    const [editForm, setEditForm] = useState({});
+
+    // Auto-lock on tab change
+    useEffect(() => {
+        if (activeTab !== 'passwords') {
+            setIsUnlocked(false);
+            setMasterPassword('');
+            setDecryptedCache({});
+            setShowPasswords({});
+        }
+    }, [activeTab]);
+
+    // Check if vault already has a master password
+    useEffect(() => {
+        if (vaultConfig && vaultConfig.length > 0) {
+            setIsCreatingMaster(false);
+            const config = vaultConfig[0];
+            if (config.salt) {
+                setSalt(new Uint8Array(atob(config.salt).split('').map(c => c.charCodeAt(0))));
+            }
+        } else {
+            setIsCreatingMaster(true);
+        }
+    }, [vaultConfig]);
+
+    const handleCreateMaster = async (e) => {
+        e.preventDefault();
+        if (masterInput.length < 6) { setError('La clave debe tener al menos 6 caracteres'); return; }
+        if (masterInput !== confirmInput) { setError('Las claves no coinciden'); return; }
+
+        const newSalt = crypto.getRandomValues(new Uint8Array(16));
+        const saltB64 = btoa(String.fromCharCode(...newSalt));
+        const masterHash = await hashText(masterInput + saltB64);
+
+        await genericAdd('vault_config', { masterHash, salt: saltB64 });
+        setSalt(newSalt);
+        setMasterPassword(masterInput);
+        setIsUnlocked(true);
+        setMasterInput('');
+        setConfirmInput('');
+        setError('');
+    };
+
+    const handleUnlock = async (e) => {
+        e.preventDefault();
+        if (!vaultConfig || vaultConfig.length === 0) return;
+        const config = vaultConfig[0];
+        const inputHash = await hashText(masterInput + config.salt);
+        if (inputHash === config.masterHash) {
+            setMasterPassword(masterInput);
+            setSalt(new Uint8Array(atob(config.salt).split('').map(c => c.charCodeAt(0))));
+            setIsUnlocked(true);
+            setMasterInput('');
+            setError('');
+        } else {
+            setError('Clave maestra incorrecta');
+        }
+    };
+
+    const handleAddPassword = async (e) => {
+        e.preventDefault();
+        if (!salt) return;
+        const encrypted = await encryptText(passwordInput, masterPassword, salt);
+        await genericAdd('passwords', {
+            servicio,
+            usuario,
+            passwordEncrypted: encrypted.ciphertext,
+            iv: encrypted.iv,
+            categoria,
+            url,
+            createdAt: new Date().toISOString()
+        });
+        setServicio(''); setUsuario(''); setPasswordInput(''); setUrl('');
+    };
+
+    const handleShowPassword = async (item) => {
+        if (showPasswords[item.id]) {
+            setShowPasswords(prev => ({ ...prev, [item.id]: false }));
+            return;
+        }
+        if (decryptedCache[item.id]) {
+            setShowPasswords(prev => ({ ...prev, [item.id]: true }));
+            return;
+        }
+        const decrypted = await decryptText({ ciphertext: item.passwordEncrypted, iv: item.iv }, masterPassword, salt);
+        if (decrypted) {
+            setDecryptedCache(prev => ({ ...prev, [item.id]: decrypted }));
+            setShowPasswords(prev => ({ ...prev, [item.id]: true }));
+        } else {
+            setError('Error al descifrar. Verifica tu clave maestra.');
+        }
+    };
+
+    const handleCopy = async (item) => {
+        let text = decryptedCache[item.id];
+        if (!text) {
+            text = await decryptText({ ciphertext: item.passwordEncrypted, iv: item.iv }, masterPassword, salt);
+        }
+        if (text) {
+            navigator.clipboard.writeText(text);
+            setCopiedId(item.id);
+            setTimeout(() => setCopiedId(null), 2000);
+        }
+    };
+
+    const handleUpdatePassword = async (item) => {
+        if (!salt) return;
+        const updates = { ...editForm };
+        if (editForm.newPassword) {
+            const encrypted = await encryptText(editForm.newPassword, masterPassword, salt);
+            updates.passwordEncrypted = encrypted.ciphertext;
+            updates.iv = encrypted.iv;
+            delete updates.newPassword;
+        }
+        delete updates.newPassword;
+        await genericUpdate('passwords', item.id, updates);
+        setEditingId(null);
+        setEditForm({});
+        setDecryptedCache(prev => { const n = { ...prev }; delete n[item.id]; return n; });
+        setShowPasswords(prev => ({ ...prev, [item.id]: false }));
+    };
+
+    const filteredPasswords = passwords.filter(p =>
+        p.servicio?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.usuario?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.categoria?.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    // --- LOCK SCREEN ---
+    if (!isUnlocked) {
+        return (
+            <div className="flex items-center justify-center min-h-[60vh] animate-in fade-in duration-500">
+                <div className="bg-white rounded-3xl shadow-xl border border-slate-100 p-10 w-full max-w-md text-center">
+                    <div className="w-20 h-20 bg-gradient-to-br from-slate-700 to-slate-900 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg">
+                        <Lock size={36} className="text-white" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-slate-800 mb-2">
+                        {isCreatingMaster ? 'Crear Clave Maestra' : 'Bóveda de Contraseñas'}
+                    </h2>
+                    <p className="text-slate-400 text-sm mb-6">
+                        {isCreatingMaster
+                            ? 'Crea una clave maestra para proteger tus contraseñas. No la olvides — no se puede recuperar.'
+                            : 'Ingresa tu clave maestra para acceder'
+                        }
+                    </p>
+
+                    {error && (
+                        <div className="bg-rose-50 border border-rose-200 text-rose-600 text-sm p-3 rounded-xl mb-4 flex items-center gap-2">
+                            <AlertTriangle size={14} /> {error}
+                        </div>
+                    )}
+
+                    <form onSubmit={isCreatingMaster ? handleCreateMaster : handleUnlock} className="space-y-4">
+                        <input
+                            type="password" placeholder="Clave Maestra" value={masterInput}
+                            onChange={e => { setMasterInput(e.target.value); setError(''); }}
+                            className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl outline-none focus:border-slate-700 text-center text-lg tracking-widest transition-colors"
+                            required autoFocus
+                        />
+                        {isCreatingMaster && (
+                            <input
+                                type="password" placeholder="Confirmar Clave" value={confirmInput}
+                                onChange={e => { setConfirmInput(e.target.value); setError(''); }}
+                                className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl outline-none focus:border-slate-700 text-center text-lg tracking-widest transition-colors"
+                                required
+                            />
+                        )}
+                        <button type="submit" className="w-full bg-slate-800 text-white py-3 rounded-xl font-bold hover:bg-slate-900 transition-colors shadow-lg">
+                            {isCreatingMaster ? '🔐 Crear Bóveda' : '🔓 Desbloquear'}
+                        </button>
+                    </form>
+
+                    {isCreatingMaster && (
+                        <div className="mt-6 bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700">
+                            <strong>⚠️ Importante:</strong> Si olvidas tu clave maestra, no podrás recuperar tus contraseñas.
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    // --- VAULT UNLOCKED ---
+    return (
+        <div className="space-y-6 animate-in fade-in duration-500">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-slate-800 to-slate-900 text-white p-8 rounded-3xl shadow-lg">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div className="flex items-center gap-4">
+                        <div className="w-14 h-14 bg-white/10 rounded-2xl flex items-center justify-center backdrop-blur-sm">
+                            <KeyRound size={28} className="text-white" />
+                        </div>
+                        <div>
+                            <h2 className="text-3xl font-bold">Bóveda de Contraseñas</h2>
+                            <p className="text-slate-400 text-sm">{passwords.length} credencial{passwords.length !== 1 ? 'es' : ''} guardada{passwords.length !== 1 ? 's' : ''} • Cifrado AES-256</p>
+                        </div>
+                    </div>
+                    <button onClick={() => { setIsUnlocked(false); setMasterPassword(''); setDecryptedCache({}); setShowPasswords({}); }}
+                        className="flex items-center gap-2 bg-white/10 hover:bg-white/20 px-4 py-2 rounded-xl text-sm font-medium transition-colors border border-white/10">
+                        <Lock size={16} /> Bloquear Bóveda
+                    </button>
+                </div>
+            </div>
+
+            {/* Formulario + Búsqueda */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
+                    <Plus size={20} className="text-slate-600" /> Nueva Credencial
+                </h3>
+                <form onSubmit={handleAddPassword} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3 items-end">
+                    <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Servicio</label>
+                        <input placeholder="Ej: Gmail" value={servicio} onChange={e => setServicio(e.target.value)}
+                            className="w-full px-3 py-2.5 border rounded-xl outline-none focus:border-slate-700 transition-colors text-sm" required />
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Usuario / Email</label>
+                        <input placeholder="correo@email.com" value={usuario} onChange={e => setUsuario(e.target.value)}
+                            className="w-full px-3 py-2.5 border rounded-xl outline-none focus:border-slate-700 transition-colors text-sm" required />
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Contraseña</label>
+                        <div className="flex gap-1">
+                            <input type="text" placeholder="••••••" value={passwordInput} onChange={e => setPasswordInput(e.target.value)}
+                                className="w-full px-3 py-2.5 border rounded-l-xl outline-none focus:border-slate-700 transition-colors text-sm font-mono" required />
+                            <button type="button" onClick={() => setPasswordInput(generateStrongPassword())}
+                                className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-2.5 rounded-r-xl border transition-colors" title="Generar contraseña segura">
+                                <RefreshCw size={14} />
+                            </button>
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Categoría</label>
+                        <select value={categoria} onChange={e => setCategoria(e.target.value)}
+                            className="w-full px-3 py-2.5 border rounded-xl outline-none bg-white text-sm transition-colors">
+                            {CATEGORIAS_PASSWORDS.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">URL (opcional)</label>
+                        <input placeholder="https://..." value={url} onChange={e => setUrl(e.target.value)}
+                            className="w-full px-3 py-2.5 border rounded-xl outline-none focus:border-slate-700 transition-colors text-sm" />
+                    </div>
+                    <button type="submit" className="bg-slate-800 text-white py-2.5 rounded-xl font-bold hover:bg-slate-900 transition-colors text-sm">
+                        Guardar
+                    </button>
+                </form>
+            </div>
+
+            {/* Search */}
+            <div className="relative">
+                <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                    placeholder="Buscar por servicio, usuario o categoría..."
+                    value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+                    className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:border-slate-400 text-sm transition-colors shadow-sm"
+                />
+            </div>
+
+            {/* Lista de credenciales */}
+            {filteredPasswords.length === 0 ? (
+                <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-300">
+                    <Lock size={48} className="mx-auto text-slate-300 mb-4" />
+                    <p className="text-slate-500 font-medium">{passwords.length === 0 ? 'Tu bóveda está vacía' : 'Sin resultados'}</p>
+                    <p className="text-slate-400 text-sm mt-1">{passwords.length === 0 ? 'Agrega tu primera credencial arriba.' : 'Intenta con otra búsqueda.'}</p>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {filteredPasswords.map(item => {
+                        const catStyle = CAT_COLORS[item.categoria] || CAT_COLORS['Otro'];
+                        const isEditing = editingId === item.id;
+
+                        return (
+                            <div key={item.id} className={`bg-white rounded-2xl border shadow-sm overflow-hidden hover:shadow-md transition-shadow ${catStyle.border}`}>
+                                {/* Card header */}
+                                <div className={`${catStyle.bg} px-5 py-3 flex justify-between items-center border-b ${catStyle.border}`}>
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-xl">{catStyle.icon}</span>
+                                        <div>
+                                            {isEditing ? (
+                                                <input value={editForm.servicio ?? item.servicio}
+                                                    onChange={e => setEditForm(prev => ({ ...prev, servicio: e.target.value }))}
+                                                    className="font-bold text-slate-800 bg-white px-2 py-0.5 rounded border outline-none text-sm" />
+                                            ) : (
+                                                <h4 className="font-bold text-slate-800">{item.servicio}</h4>
+                                            )}
+                                            <p className={`text-xs font-medium ${catStyle.text}`}>{item.categoria}</p>
+                                        </div>
+                                    </div>
+                                    {item.url && !isEditing && (
+                                        <a href={item.url} target="_blank" rel="noopener noreferrer"
+                                            className="text-slate-400 hover:text-slate-600 transition-colors" title="Abrir sitio">
+                                            <Globe size={16} />
+                                        </a>
+                                    )}
+                                </div>
+
+                                {/* Card body */}
+                                <div className="p-5 space-y-3">
+                                    {/* Usuario */}
+                                    <div>
+                                        <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold mb-1">Usuario</p>
+                                        {isEditing ? (
+                                            <input value={editForm.usuario ?? item.usuario}
+                                                onChange={e => setEditForm(prev => ({ ...prev, usuario: e.target.value }))}
+                                                className="w-full px-2 py-1 border rounded text-sm outline-none" />
+                                        ) : (
+                                            <p className="text-sm font-medium text-slate-700 font-mono">{item.usuario}</p>
+                                        )}
+                                    </div>
+
+                                    {/* Contraseña */}
+                                    <div>
+                                        <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold mb-1">Contraseña</p>
+                                        {isEditing ? (
+                                            <div className="flex gap-1">
+                                                <input type="text" placeholder="Dejar vacío para mantener"
+                                                    value={editForm.newPassword || ''}
+                                                    onChange={e => setEditForm(prev => ({ ...prev, newPassword: e.target.value }))}
+                                                    className="w-full px-2 py-1 border rounded-l text-sm outline-none font-mono" />
+                                                <button type="button" onClick={() => setEditForm(prev => ({ ...prev, newPassword: generateStrongPassword() }))}
+                                                    className="bg-slate-100 hover:bg-slate-200 px-2 rounded-r border text-slate-600"><RefreshCw size={12} /></button>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center gap-2">
+                                                <p className="text-sm font-mono text-slate-700 flex-1 truncate">
+                                                    {showPasswords[item.id] && decryptedCache[item.id]
+                                                        ? decryptedCache[item.id]
+                                                        : '••••••••••••••'
+                                                    }
+                                                </p>
+                                                <div className="flex items-center gap-1">
+                                                    <button onClick={() => handleShowPassword(item)}
+                                                        className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-all"
+                                                        title={showPasswords[item.id] ? 'Ocultar' : 'Mostrar'}>
+                                                        {showPasswords[item.id] ? <EyeOff size={14} /> : <Eye size={14} />}
+                                                    </button>
+                                                    <button onClick={() => handleCopy(item)}
+                                                        className={`p-1.5 rounded-lg transition-all ${copiedId === item.id ? 'bg-emerald-100 text-emerald-600' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
+                                                        title="Copiar contraseña">
+                                                        {copiedId === item.id ? <CheckCircle2 size={14} /> : <Copy size={14} />}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* URL en edición */}
+                                    {isEditing && (
+                                        <div>
+                                            <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold mb-1">URL</p>
+                                            <input value={editForm.url ?? item.url ?? ''}
+                                                onChange={e => setEditForm(prev => ({ ...prev, url: e.target.value }))}
+                                                className="w-full px-2 py-1 border rounded text-sm outline-none" />
+                                        </div>
+                                    )}
+
+                                    {/* Acciones */}
+                                    <div className="flex justify-between items-center pt-2 border-t border-slate-100">
+                                        <span className="text-[10px] text-slate-300">
+                                            {item.createdAt ? new Date(item.createdAt).toLocaleDateString('es-CO') : ''}
+                                        </span>
+                                        <div className="flex items-center gap-1">
+                                            {isEditing ? (
+                                                <>
+                                                    <button onClick={() => handleUpdatePassword(item)}
+                                                        className="bg-emerald-500 text-white px-3 py-1 rounded-lg text-xs font-medium hover:bg-emerald-600">Guardar</button>
+                                                    <button onClick={() => { setEditingId(null); setEditForm({}); }}
+                                                        className="bg-slate-200 text-slate-600 px-3 py-1 rounded-lg text-xs font-medium hover:bg-slate-300">Cancelar</button>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <button onClick={() => { setEditingId(item.id); setEditForm({ servicio: item.servicio, usuario: item.usuario, url: item.url || '' }); }}
+                                                        className="text-slate-400 hover:text-blue-500 p-1.5 rounded-lg hover:bg-blue-50 transition-all" title="Editar">
+                                                        <Edit2 size={14} />
+                                                    </button>
+                                                    <button onClick={() => { genericDelete('passwords', item.id); setDecryptedCache(prev => { const n = { ...prev }; delete n[item.id]; return n; }); }}
+                                                        className="text-slate-400 hover:text-rose-500 p-1.5 rounded-lg hover:bg-rose-50 transition-all" title="Eliminar">
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+};
+
 export default function App() {
     const [user, setUser] = useState(null);
     const [activeTab, setActiveTab] = useState('dashboard');
@@ -1280,6 +2042,8 @@ export default function App() {
     const [metas, setMetas] = useState([]);
     const [presupuestoItems, setPresupuestoItems] = useState([]);
     const [limites, setLimites] = useState([]);
+    const [passwords, setPasswords] = useState([]);
+    const [vaultConfig, setVaultConfig] = useState([]);
 
     // 1. AUTENTICACIÓN
     useEffect(() => {
@@ -1324,7 +2088,13 @@ export default function App() {
         const unsubLimites = onSnapshot(collection(db, `${basePath}/limites`), (snap) =>
             setLimites(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
-        return () => { unsubTrans(); unsubDeudas(); unsubMetas(); unsubPresupuesto(); unsubLimites(); };
+        const unsubPasswords = onSnapshot(collection(db, `${basePath}/passwords`), (snap) =>
+            setPasswords(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+
+        const unsubVaultConfig = onSnapshot(collection(db, `${basePath}/vault_config`), (snap) =>
+            setVaultConfig(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+
+        return () => { unsubTrans(); unsubDeudas(); unsubMetas(); unsubPresupuesto(); unsubLimites(); unsubPasswords(); unsubVaultConfig(); };
     }, [user]);
 
     // --- ACTIONS FIREBASE ---
@@ -1398,6 +2168,7 @@ export default function App() {
     // --- CÁLCULOS GLOBALES ---
     const totalIngresos = transacciones.filter(t => t.tipo === 'ingreso').reduce((a, c) => a + (Number(c.monto) || 0), 0);
     const totalGastos = transacciones.filter(t => t.tipo === 'gasto').reduce((a, c) => a + (Number(c.monto) || 0), 0);
+    // Inversiones con tipo 'inversion_patrimonio' NO se descuentan del saldo
     const saldoActual = totalIngresos - totalGastos;
     const totalDeudaPendiente = deudas.reduce((acc, curr) => acc + (Number(curr.montoTotal || 0) - Number(curr.montoPagado || 0)), 0);
     const totalInvertido = transacciones
@@ -1427,6 +2198,9 @@ export default function App() {
                     <NavItem id="ingresos" icon={TrendingUp} label="Ingresos" />
                     <NavItem id="deudas" icon={CreditCard} label="Deudas" />
                     <NavItem id="metas" icon={Target} label="Metas" />
+
+                    <div className="text-xs font-bold text-slate-400 uppercase tracking-widest px-4 mb-2 mt-8">Herramientas</div>
+                    <NavItem id="passwords" icon={Lock} label="Contraseñas" />
                 </nav>
             </aside>
 
@@ -1449,6 +2223,12 @@ export default function App() {
                     >
                         <PieChart size={20} />
                     </button>
+                    <button
+                        onClick={() => setActiveTab('passwords')}
+                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${activeTab === 'passwords' ? 'bg-slate-800 text-white shadow-lg shadow-slate-300' : 'bg-slate-100 text-slate-600'}`}
+                    >
+                        <Lock size={20} />
+                    </button>
                 </div>
             </div>
 
@@ -1462,6 +2242,7 @@ export default function App() {
                     {activeTab === 'gastos' && <TransactionManager tipo="gasto" transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} prefillData={prefillData} setPrefillData={setPrefillData} activeTab={activeTab} pendingBudgetId={pendingBudgetId} setPendingBudgetId={setPendingBudgetId} setActiveTab={setActiveTab} />}
                     {activeTab === 'deudas' && <DebtManager deudas={deudas} genericAdd={genericAdd} genericUpdate={genericUpdate} />}
                     {activeTab === 'metas' && <GoalTracker metas={metas} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} />}
+                    {activeTab === 'passwords' && <PasswordVault passwords={passwords} vaultConfig={vaultConfig} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} user={user} db={db} activeTab={activeTab} />}
                 </div>
             </main>
 
