@@ -2037,8 +2037,8 @@ const PasswordVault = ({ passwords, vaultConfig, genericAdd, genericUpdate, gene
 // =============================================
 const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, tasks }) => {
     const [isOpen, setIsOpen] = useState(false);
-    const [apiKey, setApiKey] = useState(localStorage.getItem('gemini_api_key') || '');
-    const [showSettings, setShowSettings] = useState(!localStorage.getItem('gemini_api_key'));
+    const [apiKey, setApiKey] = useState('AIzaSyCdazL44Far92JVUrecaynWWzAxGWO5K4U');
+    const [showSettings, setShowSettings] = useState(false);
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
@@ -2110,7 +2110,7 @@ REGLAS:
                 parts: [{ text: m.content }]
             }));
 
-            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
