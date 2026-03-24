@@ -42,7 +42,12 @@ import {
     RefreshCw,
     Globe,
     KeyRound,
-    Search
+    Search,
+    CalendarDays,
+    ListTodo,
+    Circle,
+    Clock,
+    GripVertical
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import {
@@ -2027,6 +2032,320 @@ const PasswordVault = ({ passwords, vaultConfig, genericAdd, genericUpdate, gene
         </div>
     );
 };
+// =============================================
+// === COMPONENTE: PRODUCTIVITY HUB ===
+// =============================================
+const ProductivityHub = ({ tasks, genericAdd, genericUpdate, genericDelete, googleToken, setGoogleToken }) => {
+    const [activeView, setActiveView] = useState('tasks'); // 'tasks' | 'calendar'
+    
+    // Tareas
+    const [newTaskText, setNewTaskText] = useState('');
+    const [newTaskPriority, setNewTaskPriority] = useState('Media');
+
+    const handleAddTask = async (e) => {
+        e.preventDefault();
+        if (!newTaskText.trim()) return;
+        await genericAdd('tasks', {
+            texto: newTaskText,
+            prioridad: newTaskPriority,
+            completada: false,
+            createdAt: new Date().toISOString()
+        });
+        setNewTaskText('');
+    };
+
+    const toggleTask = (task) => genericUpdate('tasks', task.id, { completada: !task.completada });
+    
+    // Calendar
+    const [events, setEvents] = useState([]);
+    const [loadingEvents, setLoadingEvents] = useState(false);
+    
+    // Formulario Evento
+    const [eventTitle, setEventTitle] = useState('');
+    const [eventDate, setEventDate] = useState('');
+    const [eventTime, setEventTime] = useState('');
+    const [eventDuration, setEventDuration] = useState('60');
+
+    // Inicializar Google Client
+    const handleGoogleLogin = () => {
+        if (!window.google) {
+            alert('Google Identity Services no está cargado aún. Intenta de nuevo en unos segundos.');
+            return;
+        }
+        const client = window.google.accounts.oauth2.initTokenClient({
+            client_id: '871176559846-qctr4g2s05te327su654gpg91oq85gfd.apps.googleusercontent.com', // Configuracion manual posterior
+            scope: 'https://www.googleapis.com/auth/calendar.events',
+            callback: (response) => {
+                if (response.error) {
+                    console.error('Error Google Auth:', response);
+                    return;
+                }
+                setGoogleToken(response.access_token);
+                fetchEvents(response.access_token);
+            },
+        });
+        client.requestAccessToken();
+    };
+
+    const fetchEvents = async (token) => {
+        if (!token) return;
+        setLoadingEvents(true);
+        try {
+            const timeMin = new Date().toISOString();
+            const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${timeMin}&maxResults=10&orderBy=startTime&singleEvents=true`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const data = await res.json();
+            setEvents(data.items || []);
+        } catch (error) {
+            console.error('Error fetching events:', error);
+        } finally {
+            setLoadingEvents(false);
+        }
+    };
+
+    useEffect(() => {
+        if (googleToken && activeView === 'calendar') fetchEvents(googleToken);
+    }, [googleToken, activeView]);
+
+    const handleAddEvent = async (e) => {
+        e.preventDefault();
+        if (!googleToken) return alert('Por favor conecta tu cuenta de Google primero.');
+        
+        const startDateTime = new Date(`${eventDate}T${eventTime}`);
+        const endDateTime = new Date(startDateTime.getTime() + parseInt(eventDuration) * 60000);
+
+        const eventParams = {
+            summary: eventTitle,
+            start: { dateTime: startDateTime.toISOString(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+            end: { dateTime: endDateTime.toISOString(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+        };
+
+        try {
+            const res = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${googleToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(eventParams)
+            });
+            if (res.ok) {
+                setEventTitle(''); setEventDate(''); setEventTime('');
+                fetchEvents(googleToken);
+                alert('¡Evento creado en Google Calendar!');
+            } else {
+                const err = await res.json();
+                console.error('Error creando evento', err);
+                alert('No se pudo crear el evento.');
+            }
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
+    return (
+        <div className="space-y-6 animate-in fade-in duration-500">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-8 rounded-3xl shadow-lg">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div className="flex items-center gap-4">
+                        <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm">
+                            <ListTodo size={28} className="text-white" />
+                        </div>
+                        <div>
+                            <h2 className="text-3xl font-bold">Agenda & Tareas</h2>
+                            <p className="text-blue-100 text-sm">Gestiona tu tiempo y obligaciones personales</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* View Toggle */}
+            <div className="flex p-1 bg-slate-100 rounded-xl w-full md:max-w-md">
+                <button onClick={() => setActiveView('tasks')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all ${activeView === 'tasks' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                    <CheckCircle2 size={16} /> Tareas Pendientes
+                </button>
+                <button onClick={() => setActiveView('calendar')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all ${activeView === 'calendar' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                    <CalendarDays size={16} /> Google Calendar
+                </button>
+            </div>
+
+            {/* TASKS VIEW */}
+            {activeView === 'tasks' && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="lg:col-span-1">
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 sticky top-24">
+                            <h3 className="font-bold text-lg text-slate-800 mb-4">Nueva Tarea</h3>
+                            <form onSubmit={handleAddTask} className="space-y-4">
+                                <div>
+                                    <input placeholder="¿Qué necesitas hacer?" value={newTaskText} onChange={e => setNewTaskText(e.target.value)}
+                                        className="w-full px-4 py-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors bg-slate-50" required />
+                                </div>
+                                <div className="flex gap-2">
+                                    {['Alta', 'Media', 'Baja'].map(p => (
+                                        <button key={p} type="button" onClick={() => setNewTaskPriority(p)}
+                                            className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${newTaskPriority === p ? (p === 'Alta' ? 'bg-rose-100 text-rose-700 border-rose-200' : p === 'Media' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-emerald-100 text-emerald-700 border-emerald-200') : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'}`}>
+                                            {p}
+                                        </button>
+                                    ))}
+                                </div>
+                                <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-md shadow-blue-200">
+                                    Agregar Tarea
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div className="lg:col-span-2 space-y-3">
+                        <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-2">
+                            <ListTodo size={18} className="text-slate-400" /> Pendientes ({tasks.filter(t => !t.completada).length})
+                        </h3>
+                        {tasks.length === 0 ? (
+                            <div className="text-center py-12 bg-white rounded-2xl border border-dashed border-slate-300">
+                                <ListTodo size={40} className="mx-auto text-slate-300 mb-3" />
+                                <p className="text-slate-500 font-medium">No tienes tareas registradas</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                {tasks.sort((a,b) => a.completada - b.completada || new Date(b.createdAt) - new Date(a.createdAt)).map(task => (
+                                    <div key={task.id} className={`bg-white p-4 rounded-xl border flex items-center justify-between gap-4 transition-all hover:shadow-sm ${task.completada ? 'opacity-60 bg-slate-50 border-slate-200' : 'border-slate-200'} group`}>
+                                        <div className="flex items-center gap-3 flex-1 overflow-hidden">
+                                            <button onClick={() => toggleTask(task)} className={`shrink-0 transition-colors ${task.completada ? 'text-emerald-500' : 'text-slate-300 hover:text-emerald-500'}`}>
+                                                {task.completada ? <CheckCircle2 size={22} className="fill-emerald-100" /> : <div className="w-[22px] h-[22px] rounded-full border-2 border-current" />}
+                                            </button>
+                                            <span className={`text-slate-700 truncate ${task.completada ? 'line-through text-slate-400' : 'font-medium'}`}>
+                                                {task.texto}
+                                            </span>
+                                            {!task.completada && (
+                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${task.prioridad === 'Alta' ? 'bg-rose-100 text-rose-700' : task.prioridad === 'Media' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                                    {task.prioridad}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <button onClick={() => genericDelete('tasks', task.id)} className="text-slate-300 hover:text-rose-500 p-2 opacity-0 group-hover:opacity-100 transition-all rounded-lg hover:bg-rose-50">
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* CALENDAR VIEW */}
+            {activeView === 'calendar' && (
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                    <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center border border-slate-200">
+                                <svg className="w-5 h-5" viewBox="0 0 24 24"><path fill="#4285F4" d="M21.35,11.1H12.18V13.83H18.69C18.36,17.64 15.19,19.27 12.19,19.27C8.36,19.27 5,16.25 5,12C5,7.9 8.2,4.73 12.2,4.73C15.29,4.73 17.1,6.7 17.1,6.7L19,4.72C19,4.72 16.56,2 12.1,2C6.42,2 2.03,6.8 2.03,12C2.03,17.05 6.16,22 12.25,22C17.08,22 21.67,18.52 21.67,12.29C21.67,11.9 21.5,11.1 21.5,11.1"></path></svg>
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-slate-800">Google Calendar</h3>
+                                <p className="text-xs text-slate-500">{googleToken ? 'Conectado. Sincronización activa.' : 'Conecta tu cuenta para agendar y ver citas'}</p>
+                            </div>
+                        </div>
+                        {!googleToken ? (
+                            <button onClick={handleGoogleLogin} className="bg-white border text-slate-700 px-4 py-2 rounded-xl text-sm font-bold shadow-sm hover:bg-slate-50 transition-colors flex items-center gap-2">
+                                <Globe size={16} /> Conectar Google
+                            </button>
+                        ) : (
+                            <button onClick={() => {setGoogleToken(null); setEvents([]);}} className="text-slate-400 hover:text-slate-600 text-sm font-medium">Desconectar</button>
+                        )}
+                    </div>
+
+                    {googleToken && (
+                        <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
+                            {/* Formulario Evento */}
+                            <div className="p-6 lg:col-span-1 bg-slate-50/50">
+                                <h4 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><Plus size={16}/> Agendar Evento</h4>
+                                <form onSubmit={handleAddEvent} className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 mb-1">Título / Motivo</label>
+                                        <input placeholder="Ej: Cita Odontólogo" value={eventTitle} onChange={e => setEventTitle(e.target.value)} required
+                                            className="w-full px-3 py-2 border rounded-lg outline-none focus:border-indigo-500 text-sm" />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 mb-1">Fecha</label>
+                                            <input type="date" value={eventDate} onChange={e => setEventDate(e.target.value)} required min={new Date().toISOString().split('T')[0]}
+                                                className="w-full px-3 py-2 border rounded-lg outline-none focus:border-indigo-500 text-sm" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 mb-1">Hora Inicio</label>
+                                            <input type="time" value={eventTime} onChange={e => setEventTime(e.target.value)} required
+                                                className="w-full px-3 py-2 border rounded-lg outline-none focus:border-indigo-500 text-sm" />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 mb-1">Duración (minutos)</label>
+                                        <select value={eventDuration} onChange={e => setEventDuration(e.target.value)}
+                                            className="w-full px-3 py-2 border rounded-lg outline-none focus:border-indigo-500 text-sm">
+                                            <option value="15">15 min (Cita Rápida)</option>
+                                            <option value="30">30 min (Reunión Corta)</option>
+                                            <option value="60">1 Hora (Estándar)</option>
+                                            <option value="120">2 Horas (Extensa)</option>
+                                        </select>
+                                    </div>
+                                    <button type="submit" className="w-full bg-indigo-600 text-white py-2 rounded-lg font-bold hover:bg-indigo-700 transition-colors shadow-sm mt-2 text-sm">
+                                        Agendar y Sincronizar
+                                    </button>
+                                </form>
+                            </div>
+
+                            {/* Lista Eventos */}
+                            <div className="p-6 lg:col-span-2">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h4 className="font-bold text-slate-700 flex items-center gap-2"><CalendarDays size={18} className="text-indigo-500"/> Próximos Eventos</h4>
+                                    <button onClick={() => fetchEvents(googleToken)} className="text-slate-400 hover:text-indigo-600"><RefreshCw size={14}/></button>
+                                </div>
+                                
+                                {loadingEvents ? (
+                                    <div className="flex flex-col justify-center items-center py-10 opacity-50">
+                                        <Loader2 size={24} className="animate-spin text-indigo-500 mb-2" />
+                                        <span className="text-sm font-medium">Sincronizando...</span>
+                                    </div>
+                                ) : events.length === 0 ? (
+                                    <div className="text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                                        <p className="text-slate-500 text-sm">No tienes eventos próximos en tu calendario principal.</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                                        {events.map((ev, i) => {
+                                            const start = ev.start.dateTime ? new Date(ev.start.dateTime) : new Date(ev.start.date);
+                                            const isToday = new Date().toDateString() === start.toDateString();
+                                            return (
+                                                <div key={ev.id || i} className="flex gap-4 p-3 rounded-xl border border-slate-100 hover:border-indigo-100 hover:bg-indigo-50/30 transition-colors">
+                                                    <div className="flex flex-col items-center justify-center min-w-[50px] bg-slate-50 rounded-lg p-2 text-center border border-slate-100">
+                                                        <span className="text-xs font-bold text-slate-400 uppercase">{start.toLocaleString('es', {weekday: 'short'})}</span>
+                                                        <span className={`text-lg font-bold -mt-1 ${isToday ? 'text-indigo-600' : 'text-slate-700'}`}>{start.getDate()}</span>
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <h5 className="font-bold text-slate-800 text-sm mb-0.5">{ev.summary || '(Sin título)'}</h5>
+                                                        <p className="text-xs text-slate-500 flex items-center gap-1">
+                                                            <Clock size={12} /> 
+                                                            {ev.start.dateTime 
+                                                                ? `${start.toLocaleTimeString('es', {hour:'2-digit', minute:'2-digit'})} - ${new Date(ev.end.dateTime).toLocaleTimeString('es', {hour:'2-digit', minute:'2-digit'})}` 
+                                                                : 'Todo el día'}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
 
 export default function App() {
     const [user, setUser] = useState(null);
@@ -2044,6 +2363,10 @@ export default function App() {
     const [limites, setLimites] = useState([]);
     const [passwords, setPasswords] = useState([]);
     const [vaultConfig, setVaultConfig] = useState([]);
+    
+    // Tareas & Settings
+    const [tasks, setTasks] = useState([]);
+    const [googleToken, setGoogleToken] = useState(null);
 
     // 1. AUTENTICACIÓN
     useEffect(() => {
@@ -2094,7 +2417,10 @@ export default function App() {
         const unsubVaultConfig = onSnapshot(collection(db, `${basePath}/vault_config`), (snap) =>
             setVaultConfig(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
-        return () => { unsubTrans(); unsubDeudas(); unsubMetas(); unsubPresupuesto(); unsubLimites(); unsubPasswords(); unsubVaultConfig(); };
+        const unsubTasks = onSnapshot(collection(db, `${basePath}/tasks`), (snap) =>
+            setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+
+        return () => { unsubTrans(); unsubDeudas(); unsubMetas(); unsubPresupuesto(); unsubLimites(); unsubPasswords(); unsubVaultConfig(); unsubTasks(); };
     }, [user]);
 
     // --- ACTIONS FIREBASE ---
@@ -2200,6 +2526,7 @@ export default function App() {
                     <NavItem id="metas" icon={Target} label="Metas" />
 
                     <div className="text-xs font-bold text-slate-400 uppercase tracking-widest px-4 mb-2 mt-8">Herramientas</div>
+                    <NavItem id="agenda" icon={ListTodo} label="Agenda & Tareas" />
                     <NavItem id="passwords" icon={Lock} label="Contraseñas" />
                 </nav>
             </aside>
@@ -2224,6 +2551,12 @@ export default function App() {
                         <PieChart size={20} />
                     </button>
                     <button
+                        onClick={() => setActiveTab('agenda')}
+                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${activeTab === 'agenda' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-300' : 'bg-slate-100 text-slate-600'}`}
+                    >
+                        <ListTodo size={20} />
+                    </button>
+                    <button
                         onClick={() => setActiveTab('passwords')}
                         className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${activeTab === 'passwords' ? 'bg-slate-800 text-white shadow-lg shadow-slate-300' : 'bg-slate-100 text-slate-600'}`}
                     >
@@ -2243,6 +2576,7 @@ export default function App() {
                     {activeTab === 'deudas' && <DebtManager deudas={deudas} genericAdd={genericAdd} genericUpdate={genericUpdate} />}
                     {activeTab === 'metas' && <GoalTracker metas={metas} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} />}
                     {activeTab === 'passwords' && <PasswordVault passwords={passwords} vaultConfig={vaultConfig} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} user={user} db={db} activeTab={activeTab} />}
+                    {activeTab === 'agenda' && <ProductivityHub tasks={tasks} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} googleToken={googleToken} setGoogleToken={setGoogleToken} />}
                 </div>
             </main>
 
