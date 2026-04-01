@@ -2705,6 +2705,46 @@ export default function App() {
         .filter(t => t.categoria === 'Aporte Inversión' || t.esInversion === true)
         .reduce((a, c) => a + (Number(c.monto) || 0), 0);
 
+    const runMigration = async () => {
+        const oldUid = prompt("Escribe tu ID VIEJO (El que tiene datos):");
+        if (!oldUid) return;
+        
+        // El ID nuevo es el actual autenticado
+        const newUid = user.uid;
+        
+        if (oldUid === newUid) {
+            alert("El ID viejo no puede ser igual al nuevo.");
+            return;
+        }
+
+        const confirm = window.confirm(`¿Seguro que quieres importar todos los datos del usuario ${oldUid} a este dispositivo?`);
+        if (!confirm) return;
+
+        try {
+            setLoading(true);
+            const collections = ['transacciones', 'deudas', 'metas', 'presupuesto', 'limites', 'passwords', 'vault_config', 'tasks'];
+            const { getDocs, setDoc, doc } = await import('firebase/firestore');
+
+            let totalMigrated = 0;
+            for (const coll of collections) {
+                const oldRef = collection(db, `artifacts/${appId}/users/${oldUid}/${coll}`);
+                const snapshot = await getDocs(oldRef);
+                
+                for (const document of snapshot.docs) {
+                    const newRef = doc(db, `artifacts/${appId}/users/${newUid}/${coll}`, document.id);
+                    await setDoc(newRef, document.data());
+                    totalMigrated++;
+                }
+            }
+            alert(`¡Éxito total! 🎉 Se restauraron ${totalMigrated} registros a tu nueva cuenta. Refrescando página...`);
+            window.location.reload();
+        } catch (error) {
+            console.error('Migration error:', error);
+            alert('Hubo un error en la migración. Mira la consola para más detalles.');
+            setLoading(false);
+        }
+    };
+
     if (loading) return <div className="h-screen flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-blue-600 w-10 h-10" /></div>;
 
     return (
@@ -2712,7 +2752,7 @@ export default function App() {
 
             {/* SIDEBAR DESKTOP */}
             <aside className="hidden md:flex flex-col w-72 bg-white border-r border-slate-100 h-full p-6 fixed z-10 transition-all shadow-sm">
-                <div className="flex items-center gap-3 px-2 mb-10 pt-2">
+                <div className="flex items-center gap-3 px-2 mb-10 pt-2 cursor-pointer" onClick={runMigration} title="Click para Migrar Datos">
                     <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-blue-200">F</div>
                     <span className="text-2xl font-bold text-slate-800 tracking-tight">Finanzas 360</span>
                 </div>
@@ -2737,7 +2777,7 @@ export default function App() {
 
             {/* MOBILE HEADER (Minimalista) */}
             <div className="md:hidden fixed top-0 w-full bg-white/80 backdrop-blur-md z-30 border-b border-slate-100 px-4 py-3 flex justify-between items-center pt-safe shadow-sm transition-all">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 cursor-pointer" onClick={runMigration}>
                     <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold shadow-md shadow-blue-200">F</div>
                     <span className="font-bold text-lg text-slate-800 tracking-tight">Finanzas 360</span>
                 </div>
