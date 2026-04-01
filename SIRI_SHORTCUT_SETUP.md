@@ -1,8 +1,8 @@
 # 📱 Configuración de Siri Shortcut para Finanzas 360
 
-## Paso 1: Configurar Variables de Entorno en Netlify
+## Paso 1: Configurar Variables de Entorno en Cloudflare Pages
 
-Ve a tu dashboard de Netlify → tu sitio → Site Settings → Environment Variables
+Ve a tu dashboard de [Cloudflare Pages](https://dash.cloudflare.com/) → tu proyecto → Settings → Environment Variables
 
 Agrega estas 4 variables:
 
@@ -54,7 +54,7 @@ Agrega estas 4 variables:
 - Guardar resultado en variable: `monto`
 
 #### Acción 3: Obtener contenido de URL
-- URL: `https://TU-SITIO.netlify.app/.netlify/functions/quick-expense`
+- URL: `https://finanzas-360.pages.dev/api/quick-expense`
 - Método: **POST**
 - Cuerpo de la solicitud: **JSON**
 - Contenido:
@@ -84,7 +84,7 @@ Agrega estas 4 variables:
 
 1. Crear nuevo atajo
 2. Agregar acción: **Obtener contenido de URL**
-   - URL: `https://TU-SITIO.netlify.app/.netlify/functions/get-balance?userId=TU_USER_ID&token=TU_TOKEN`
+   - URL: `https://finanzas-360.pages.dev/api/get-balance?userId=TU_USER_ID&token=TU_TOKEN`
    - Método: **GET**
 
 3. Agregar acción: **Obtener valor del diccionario**
@@ -119,6 +119,6 @@ Ahora puedes decir: **"Oye Siri, registrar gasto"** 🎉
 
 | Error | Solución |
 |-------|----------|
-| "Token inválido" | Verifica que `SHORTCUT_SECRET_TOKEN` en Netlify coincida con el del Shortcut |
+| "Token inválido" | Verifica que `SHORTCUT_SECRET_TOKEN` en Cloudflare coincida con el del Shortcut |
 | "Falta userId" | Asegúrate de poner tu User ID correcto en el Shortcut |
-| "Error interno" | Revisa las credenciales de Firebase en Netlify |
+| "Error interno" | Revisa las credenciales de Firebase en Cloudflare Pages Settings |
