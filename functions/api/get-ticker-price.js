@@ -46,6 +46,14 @@ export async function onRequest(context) {
             }
         }
 
+        // Extract last 60 valid prices for sparkline graph
+        const history = [];
+        for (let i = Math.max(0, closePrices.length - 120); i < closePrices.length; i++) {
+             if (closePrices[i] !== null && closePrices[i] !== undefined) {
+                 history.push(closePrices[i]);
+             }
+        }
+
         const percentChange = (currentPrice / originalPrice) - 1;
 
         return new Response(JSON.stringify({
@@ -53,7 +61,8 @@ export async function onRequest(context) {
             ticker,
             currentPrice,
             originalPrice,
-            percentChange
+            percentChange,
+            history: history.slice(-60)
         }), {
             headers: { 
                 'Content-Type': 'application/json',

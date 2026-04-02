@@ -940,12 +940,37 @@ const INVERSION_CONFIG = {
     'Fondo de Emergencia': { icon: Shield, color: 'cyan', gradient: 'from-cyan-500 to-sky-600', label: 'Emergencia' },
 };
 
+// --- Sparkline Graph Component ---
+const SparklineGraph = ({ data, color = "#10b981" }) => {
+    if (!data || data.length < 2) return null;
+    const min = Math.min(...data);
+    const max = Math.max(...data);
+    const range = max - min || 1;
+    const width = 200;
+    const height = 40;
+    
+    const points = data.map((val, i) => {
+        const x = (i / (data.length - 1)) * width;
+        const y = height - ((val - min) / range) * height;
+        return `${x},${y}`;
+    }).join(' ');
+
+    return (
+        <div className="w-full h-10 mt-4 flex justify-end items-end opacity-80 border-t border-slate-100 pt-2">
+             <svg viewBox={`0 -5 ${width} ${height + 10}`} preserveAspectRatio="none" className="w-[80%] h-full">
+                  <polyline fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" points={points} />
+             </svg>
+        </div>
+    );
+};
+
 // --- Tarjeta individual de inversión ---
 const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, genericUpdate, totalGastosMensuales }) => {
     const [editingUtilidad, setEditingUtilidad] = useState(false);
     const [utilidadInput, setUtilidadInput] = useState('');
     const [editingMonto, setEditingMonto] = useState(false);
     const [montoEditInput, setMontoEditInput] = useState('');
+    const [historyData, setHistoryData] = useState([]);
 
     const prevUtilidadRef = useRef(Number(inv.utilidad) || 0);
     useEffect(() => { prevUtilidadRef.current = Number(inv.utilidad) || 0; }, [inv.utilidad]);
@@ -962,39 +987,44 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
             }
         };
 
-        if (inv.subTipo === 'Fondo de Emergencia' && inv.fecha) {
+        if ((inv.subTipo === 'Fondo de Emergencia' || inv.subTipo === 'CDT / Renta Fija') && inv.fecha) {
             const startDate = new Date(`${inv.fecha}T00:00:00`);
             const today = new Date();
             const diffTime = today - startDate;
             const diffDays = Math.max(0, diffTime / (1000 * 60 * 60 * 24));
             
             const montoInv = Number(inv.monto) || 0;
-            // 9% EA compuesto diario
-            const nuevaUtilidad = montoInv * (Math.pow(1.09, diffDays / 365) - 1);
+            const tasa = Number(inv.tasaInteres) || 9; // 9% fallback
+            const nuevaUtilidad = montoInv * (Math.pow(1 + (tasa / 100), diffDays / 365) - 1);
             
             updateUtilidadIfChanged(nuevaUtilidad);
             
-        } else if (inv.subTipo === 'Acciones / Bolsa' && (inv.concepto?.toUpperCase().includes('S&P') || inv.concepto?.toUpperCase().includes('SPY') || inv.concepto?.toUpperCase().includes('VOO'))) {
-            const fetchTickerData = async () => {
-                try {
-                    const montoInv = Number(inv.monto) || 0;
-                    const res = await fetch(`/api/get-ticker-price?ticker=SPY&purchaseDate=${inv.fecha || ''}`);
-                    if (!res.ok) return;
-                    const data = await res.json();
-                    
-                    if (data.success && data.percentChange !== undefined) {
-                        const nuevaUtilidad = montoInv * data.percentChange;
-                        updateUtilidadIfChanged(nuevaUtilidad);
+        } else if (inv.subTipo === 'Acciones / Bolsa' || inv.subTipo === 'Criptomonedas') {
+            const tickerToUse = inv.ticker || (inv.concepto?.toUpperCase().includes('S&P') || inv.concepto?.toUpperCase().includes('SPY') || inv.concepto?.toUpperCase().includes('VOO') ? 'SPY' : null);
+            if (tickerToUse) {
+                const fetchTickerData = async () => {
+                    try {
+                        const montoInv = Number(inv.monto) || 0;
+                        const res = await fetch(`/api/get-ticker-price?ticker=${tickerToUse}&purchaseDate=${inv.fecha || ''}`);
+                        if (!res.ok) return;
+                        const data = await res.json();
+                        
+                        if (isMounted && data.history) setHistoryData(data.history);
+
+                        if (data.success && data.percentChange !== undefined) {
+                            const nuevaUtilidad = montoInv * data.percentChange;
+                            updateUtilidadIfChanged(nuevaUtilidad);
+                        }
+                    } catch (error) {
+                        console.error('Error fetching market data', error);
                     }
-                } catch (error) {
-                    console.error('Error fetching market data', error);
-                }
-            };
-            fetchTickerData();
+                };
+                fetchTickerData();
+            }
         }
         
         return () => { isMounted = false; };
-    }, [inv.subTipo, inv.fecha, inv.monto, inv.concepto, inv.id, genericUpdate]);
+    }, [inv.subTipo, inv.fecha, inv.monto, inv.concepto, inv.ticker, inv.tasaInteres, inv.id, genericUpdate]);
 
     const utilidad = Number(inv.utilidad) || 0;
     const montoInv = Number(inv.monto) || 0;
@@ -1156,6 +1186,8 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
                 {/* Métricas especializadas por tipo */}
                 {renderTypeMetrics()}
 
+                {historyData.length > 0 && <SparklineGraph data={historyData} color={rentabilidad >= 0 ? '#10b981' : '#f43f5e'} />}
+
                 {/* Badge: afecta balance */}
                 <div className="mt-3 flex justify-between items-center">
                     <button
@@ -1203,6 +1235,8 @@ const InvestmentPortfolio = ({ transacciones, totalInvertido, genericAdd, generi
     const [monto, setMonto] = useState('');
     const [tipoInv, setTipoInv] = useState(TIPOS_INVERSION[0]);
     const [afectaBalance, setAfectaBalance] = useState(true);
+    const [tasaInteres, setTasaInteres] = useState('');
+    const [ticker, setTicker] = useState('');
 
     useEffect(() => {
         if (prefillData && activeTab === 'inversiones') {
@@ -1214,7 +1248,8 @@ const InvestmentPortfolio = ({ transacciones, totalInvertido, genericAdd, generi
 
     const registrarInversion = async (e) => {
         e.preventDefault();
-        await genericAdd('transacciones', {
+        
+        const dataInversion = {
             tipo: afectaBalance ? 'gasto' : 'inversion_patrimonio',
             esInversion: true,
             afectaBalance: afectaBalance,
@@ -1225,14 +1260,23 @@ const InvestmentPortfolio = ({ transacciones, totalInvertido, genericAdd, generi
             fecha: new Date().toISOString().split('T')[0],
             createdAt: new Date().toISOString(),
             utilidad: 0
-        });
+        };
+
+        if (tipoInv === 'Fondo de Emergencia' || tipoInv === 'CDT / Renta Fija') {
+            dataInversion.tasaInteres = parseFloat(tasaInteres) || 9;
+        } else if (tipoInv === 'Acciones / Bolsa' || tipoInv === 'Criptomonedas') {
+            dataInversion.ticker = ticker.toUpperCase().trim();
+        }
+
+        await genericAdd('transacciones', dataInversion);
+
         if (pendingBudgetId) {
             const currentMonth = new Date().toISOString().slice(0, 7);
             await genericUpdate('presupuesto', pendingBudgetId, { lastPaid: currentMonth });
             setPendingBudgetId(null);
             setActiveTab('presupuesto');
         }
-        setConcepto(''); setMonto(''); setAfectaBalance(true);
+        setConcepto(''); setMonto(''); setAfectaBalance(true); setTasaInteres(''); setTicker('');
     };
 
     const registrarUtilidad = async (inv, utilidadInput) => {
@@ -1305,7 +1349,7 @@ const InvestmentPortfolio = ({ transacciones, totalInvertido, genericAdd, generi
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                 <h3 className="font-bold text-xl text-purple-700 mb-4 flex items-center gap-2"><PieChart className="w-6 h-6" /> Nueva Inversión</h3>
                 {pendingBudgetId && <div className="bg-purple-50 text-purple-700 p-2 rounded-lg mb-3 text-sm font-medium">✓ Desde Presupuesto</div>}
-                <form onSubmit={registrarInversion} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+                <form onSubmit={registrarInversion} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 items-end">
                     <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Nombre</label>
                         <input placeholder="Ej: Bitcoin, Apartamento" value={concepto} onChange={e => setConcepto(e.target.value)}
@@ -1323,8 +1367,22 @@ const InvestmentPortfolio = ({ transacciones, totalInvertido, genericAdd, generi
                             {TIPOS_INVERSION.map(t => <option key={t} value={t}>{t}</option>)}
                         </select>
                     </div>
+                    {(tipoInv === 'Fondo de Emergencia' || tipoInv === 'CDT / Renta Fija') && (
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">EA (%)</label>
+                            <input type="number" placeholder="Ej: 9" value={tasaInteres} onChange={e => setTasaInteres(e.target.value)}
+                                className="w-full px-4 py-2.5 border rounded-xl focus:border-purple-500 outline-none transition-colors" required />
+                        </div>
+                    )}
+                    {(tipoInv === 'Acciones / Bolsa' || tipoInv === 'Criptomonedas') && (
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Ticker</label>
+                            <input placeholder="Ej: SPY, TSLA" value={ticker} onChange={e => setTicker(e.target.value)}
+                                className="w-full px-4 py-2.5 border rounded-xl focus:border-purple-500 outline-none transition-colors" required />
+                        </div>
+                    )}
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">¿Afecta tu saldo?</label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">¿Afecta saldo?</label>
                         <button type="button" onClick={() => setAfectaBalance(!afectaBalance)}
                             className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border font-medium transition-all ${afectaBalance
                                 ? 'bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100'
