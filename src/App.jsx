@@ -947,6 +947,55 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
     const [editingMonto, setEditingMonto] = useState(false);
     const [montoEditInput, setMontoEditInput] = useState('');
 
+    const prevUtilidadRef = useRef(Number(inv.utilidad) || 0);
+    useEffect(() => { prevUtilidadRef.current = Number(inv.utilidad) || 0; }, [inv.utilidad]);
+
+    useEffect(() => {
+        let isMounted = true;
+        
+        const updateUtilidadIfChanged = (nuevaUtilidad) => {
+            const currentUtilidad = prevUtilidadRef.current;
+            if (isMounted && Math.abs(nuevaUtilidad - currentUtilidad) > 0.01) {
+                setTimeout(() => {
+                    genericUpdate('transacciones', inv.id, { utilidad: nuevaUtilidad });
+                }, 500);
+            }
+        };
+
+        if (inv.subTipo === 'Fondo de Emergencia' && inv.fecha) {
+            const startDate = new Date(`${inv.fecha}T00:00:00`);
+            const today = new Date();
+            const diffTime = today - startDate;
+            const diffDays = Math.max(0, diffTime / (1000 * 60 * 60 * 24));
+            
+            const montoInv = Number(inv.monto) || 0;
+            // 9% EA compuesto diario
+            const nuevaUtilidad = montoInv * (Math.pow(1.09, diffDays / 365) - 1);
+            
+            updateUtilidadIfChanged(nuevaUtilidad);
+            
+        } else if (inv.subTipo === 'Acciones / Bolsa' && (inv.concepto?.toUpperCase().includes('S&P') || inv.concepto?.toUpperCase().includes('SPY') || inv.concepto?.toUpperCase().includes('VOO'))) {
+            const fetchTickerData = async () => {
+                try {
+                    const montoInv = Number(inv.monto) || 0;
+                    const res = await fetch(`/api/get-ticker-price?ticker=SPY&purchaseDate=${inv.fecha || ''}`);
+                    if (!res.ok) return;
+                    const data = await res.json();
+                    
+                    if (data.success && data.percentChange !== undefined) {
+                        const nuevaUtilidad = montoInv * data.percentChange;
+                        updateUtilidadIfChanged(nuevaUtilidad);
+                    }
+                } catch (error) {
+                    console.error('Error fetching market data', error);
+                }
+            };
+            fetchTickerData();
+        }
+        
+        return () => { isMounted = false; };
+    }, [inv.subTipo, inv.fecha, inv.monto, inv.concepto, inv.id, genericUpdate]);
+
     const utilidad = Number(inv.utilidad) || 0;
     const montoInv = Number(inv.monto) || 0;
     const valorActual = montoInv + utilidad;
