@@ -971,6 +971,7 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
     const [editingMonto, setEditingMonto] = useState(false);
     const [montoEditInput, setMontoEditInput] = useState('');
     const [historyData, setHistoryData] = useState([]);
+    const [currentTickerPrice, setCurrentTickerPrice] = useState(null);
 
     const prevUtilidadRef = useRef(Number(inv.utilidad) || 0);
     useEffect(() => { prevUtilidadRef.current = Number(inv.utilidad) || 0; }, [inv.utilidad]);
@@ -1046,7 +1047,10 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
                             }
                         }
                         
-                        if (isMounted) setHistoryData(historyBuffer.slice(-60));
+                        if (isMounted) {
+                            setHistoryData(historyBuffer.slice(-60));
+                            setCurrentTickerPrice(currentPrice);
+                        }
 
                         const percentChange = (currentPrice / originalPrice) - 1;
                         if (percentChange !== undefined) {
@@ -1116,14 +1120,22 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
             case 'Acciones / Bolsa':
             case 'Criptomonedas': {
                 return (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                        <div className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 ${rentabilidad >= 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
-                            {rentabilidad >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-                            {rentabilidad >= 0 ? '+' : ''}{rentabilidad.toFixed(2)}% Rentabilidad
-                        </div>
-                        <div className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 ${utilidad >= 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
-                            <DollarSign size={12} />
-                            P&L: {utilidad >= 0 ? '+' : ''}{formatCurrency(utilidad)}
+                    <div className="mt-3 flex flex-col gap-2">
+                        {currentTickerPrice && (
+                            <div className="flex justify-between items-center text-xs font-semibold text-slate-500 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm">
+                                <span>Mercado ({inv.ticker || 'ETF'})</span>
+                                <span className="text-slate-800 text-sm">${currentTickerPrice.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                            </div>
+                        )}
+                        <div className="flex flex-wrap gap-2">
+                            <div className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 ${rentabilidad >= 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
+                                {rentabilidad >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                                {rentabilidad >= 0 ? '+' : ''}{rentabilidad.toFixed(2)}% Rentabilidad
+                            </div>
+                            <div className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 ${utilidad >= 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
+                                <DollarSign size={12} />
+                                P&L: {utilidad >= 0 ? '+' : ''}{formatCurrency(utilidad)}
+                            </div>
                         </div>
                     </div>
                 );
