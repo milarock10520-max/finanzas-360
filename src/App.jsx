@@ -1005,14 +1005,52 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
                 const fetchTickerData = async () => {
                     try {
                         const montoInv = Number(inv.monto) || 0;
-                        const res = await fetch(`/api/get-ticker-price?ticker=${tickerToUse}&purchaseDate=${inv.fecha || ''}`);
-                        if (!res.ok) return;
+                        const targetUrl = encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${tickerToUse}?range=5y&interval=1d`);
+                        const res = await fetch(`https://api.allorigins.win/raw?url=${targetUrl}`);
+                        
+                        if (!res.ok) throw new Error('Fetch failed');
                         const data = await res.json();
                         
-                        if (isMounted && data.history) setHistoryData(data.history);
+                        const result = data.chart?.result?.[0];
+                        if (!result) return;
+                        
+                        const timestamps = result.timestamp;
+                        const closePrices = result.indicators.quote[0].close;
 
-                        if (data.success && data.percentChange !== undefined) {
-                            const nuevaUtilidad = montoInv * data.percentChange;
+                        if (!timestamps || !closePrices || timestamps.length === 0) return;
+
+                        let currentPrice = closePrices[closePrices.length - 1];
+                        if (currentPrice === null && closePrices.length > 2) {
+                            currentPrice = closePrices[closePrices.length - 2];
+                        }
+
+                        let originalPrice = currentPrice;
+                        if (inv.fecha) {
+                            const purchaseTimestamp = new Date(`${inv.fecha}T00:00:00Z`).getTime() / 1000;
+                            let purchaseIdx = -1;
+                            for (let i = 0; i < timestamps.length; i++) {
+                                if (timestamps[i] >= purchaseTimestamp - 172800) {
+                                    if (closePrices[i] !== null && closePrices[i] !== undefined) {
+                                        purchaseIdx = i; break;
+                                    }
+                                }
+                            }
+                            if (purchaseIdx !== -1) originalPrice = closePrices[purchaseIdx];
+                            else originalPrice = closePrices[0];
+                        }
+
+                        const historyBuffer = [];
+                        for (let i = Math.max(0, closePrices.length - 120); i < closePrices.length; i++) {
+                            if (closePrices[i] !== null && closePrices[i] !== undefined) {
+                                historyBuffer.push(closePrices[i]);
+                            }
+                        }
+                        
+                        if (isMounted) setHistoryData(historyBuffer.slice(-60));
+
+                        const percentChange = (currentPrice / originalPrice) - 1;
+                        if (percentChange !== undefined) {
+                            const nuevaUtilidad = montoInv * percentChange;
                             updateUtilidadIfChanged(nuevaUtilidad);
                         }
                     } catch (error) {
