@@ -274,8 +274,9 @@ const MetaItem = ({ meta, onAhorrar, onToggleCompletada, onDelete, onAddNote, on
         setNewNote('');
     };
 
-    // Panel de notas compartido
-    const NotesPanel = () => (
+    // Panel de notas compartido (elemento JSX, NO un componente anidado:
+    // si fuera componente se re-montaría en cada tecla y el input perdería el foco).
+    const notesPanel = (
         <div className={`mt-4 pt-4 border-t ${meta.tipo === 'personal' ? 'border-emerald-200' : 'border-slate-100'}`}>
             <div className="flex items-center justify-between mb-3">
                 <h4 className="text-sm font-bold text-slate-600 flex items-center gap-2">
@@ -360,7 +361,7 @@ const MetaItem = ({ meta, onAhorrar, onToggleCompletada, onDelete, onAddNote, on
                 </div>
 
                 {showNotes ? (
-                    <NotesPanel />
+                    notesPanel
                 ) : (
                     <button
                         onClick={() => onToggleCompletada(meta)}
@@ -419,7 +420,7 @@ const MetaItem = ({ meta, onAhorrar, onToggleCompletada, onDelete, onAddNote, on
             </div>
 
             {showNotes ? (
-                <NotesPanel />
+                notesPanel
             ) : (
                 <div className="flex gap-2 mt-4 pt-4 border-t border-slate-50">
                     <input
@@ -2222,23 +2223,101 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, task
     }, [messages, isTyping]);
 
     const buildFinancialContext = () => {
-        // Build context from props
+        const fmt = (n) => '$' + (Number(n) || 0).toLocaleString('es-CO');
+        const ahoraMes = new Date().getMonth();
+        const ahoraAnio = new Date().getFullYear();
+        const esEsteMes = (fecha) => {
+            const d = new Date(fecha);
+            return d.getMonth() === ahoraMes && d.getFullYear() === ahoraAnio;
+        };
+
+        // --- Resumen general ---
         const saldo = transacciones.reduce((acc, t) => acc + (t.tipo === 'ingreso' ? t.monto : (t.esInversion && t.inversionPatrimonio ? 0 : -t.monto)), 0);
-        const ingresosMes = transacciones.filter(t => t.tipo === 'ingreso' && new Date(t.fecha).getMonth() === new Date().getMonth()).reduce((acc, t) => acc + t.monto, 0);
-        const gastosMes = transacciones.filter(t => t.tipo === 'gasto' && !t.esInversion && new Date(t.fecha).getMonth() === new Date().getMonth()).reduce((acc, t) => acc + t.monto, 0);
+        const ingresosMes = transacciones.filter(t => t.tipo === 'ingreso' && esEsteMes(t.fecha)).reduce((acc, t) => acc + t.monto, 0);
+        const gastosMes = transacciones.filter(t => t.tipo === 'gasto' && !t.esInversion && esEsteMes(t.fecha)).reduce((acc, t) => acc + t.monto, 0);
         const deudasPendientes = deudas.reduce((acc, d) => acc + (Number(d.montoTotal || 0) - Number(d.montoPagado || 0)), 0);
-        const inversionesTotales = transacciones.filter(t => t.esInversion).reduce((acc, t) => acc + t.monto, 0);
-        const metasProgreso = metas.map(m => `- ${m.nombre}: $${m.ahorrado} de $${m.montoObjetivo} (${Math.round((m.ahorrado/m.montoObjetivo)*100)}%)`).join('\n');
+        const inversiones = transacciones.filter(t => t.esInversion || t.categoria === 'Aporte Inversión');
+        const inversionesTotales = inversiones.reduce((acc, t) => acc + (Number(t.monto) || 0), 0);
+
+        // --- Gastos del mes por categoría ---
+        const gastosPorCat = {};
+        transacciones
+            .filter(t => t.tipo === 'gasto' && !t.esInversion && esEsteMes(t.fecha))
+            .forEach(t => { gastosPorCat[t.categoria] = (gastosPorCat[t.categoria] || 0) + (Number(t.monto) || 0); });
+        const gastosCatTxt = Object.entries(gastosPorCat)
+            .sort((a, b) => b[1] - a[1])
+            .map(([cat, val]) => `- ${cat}: ${fmt(val)}`)
+            .join('\n');
+
+        // --- Límites de gasto y su estado actual ---
+        const limitesTxt = limites.map(l => {
+            const gastado = gastosPorCat[l.categoria] || 0;
+            const pct = l.limite > 0 ? Math.round((gastado / l.limite) * 100) : 0;
+            const estado = gastado > l.limite ? '⚠️ EXCEDIDO' : 'ok';
+            return `- ${l.categoria}: ${fmt(gastado)} de ${fmt(l.limite)} (${pct}%) ${estado}`;
+        }).join('\n');
+
+        // --- Presupuesto / gastos fijos ---
+        const totalPresupuesto = presupuestoItems.reduce((acc, i) => acc + (Number(i.monto) || 0), 0);
+        const presupuestoTxt = presupuestoItems
+            .map(i => `- ${i.concepto} (${i.categoria}): ${fmt(i.monto)}${i.lastPaid ? ' [pagado este ciclo]' : ' [pendiente]'}`)
+            .join('\n');
+
+        // --- Metas (personales y financieras) ---
+        const metasTxt = metas.map(m => {
+            if (m.tipo === 'personal') {
+                return `- ${m.nombre} (personal, plazo: ${m.plazo || 'sin definir'}): ${m.completada ? '✅ completada' : 'en progreso'}`;
+            }
+            const actual = Number(m.ahorroActual) || 0;
+            const objetivo = Number(m.montoObjetivo) || 0;
+            const pct = objetivo > 0 ? Math.round((actual / objetivo) * 100) : 0;
+            return `- ${m.nombre} (financiera, plazo: ${m.plazo || 'sin definir'}): ${fmt(actual)} de ${fmt(objetivo)} (${pct}%)`;
+        }).join('\n');
+
+        // --- Deudas detalladas ---
+        const deudasTxt = deudas.map(d => {
+            const total = Number(d.montoTotal) || 0;
+            const pagado = Number(d.montoPagado) || 0;
+            const restante = total - pagado;
+            const pct = total > 0 ? Math.round((pagado / total) * 100) : 0;
+            return `- ${d.nombre}: restan ${fmt(restante)} de ${fmt(total)} (pagado ${pct}%${d.cuotas ? `, ${d.cuotas} cuotas` : ''})`;
+        }).join('\n');
+
+        // --- Inversiones detalladas ---
+        const inversionesTxt = inversiones.map(t => {
+            const tasa = t.tasaInteres ? `, tasa ${t.tasaInteres}%` : '';
+            const tipo = t.subTipo ? ` [${t.subTipo}]` : '';
+            return `- ${t.concepto || t.categoria}${tipo}: ${fmt(t.monto)}${tasa}`;
+        }).join('\n');
+
+        // --- Tareas pendientes de la agenda ---
         const tareasPendientes = tasks.filter(t => !t.completada).map(t => `- ${t.texto} (Prioridad ${t.prioridad})`).join('\n');
 
-        return `- Saldo Disponible Actual: $${saldo}
-- Ingresos de este mes: $${ingresosMes}
-- Gastos de este mes: $${gastosMes}
-- Total invertido en portafolio: $${inversionesTotales}
-- Total de Deudas Pendientes: $${deudasPendientes}
+        return `RESUMEN FINANCIERO GENERAL:
+- Saldo disponible actual: ${fmt(saldo)}
+- Ingresos de este mes: ${fmt(ingresosMes)}
+- Gastos de este mes: ${fmt(gastosMes)}
+- Total de gastos fijos presupuestados: ${fmt(totalPresupuesto)}
+- Total invertido en portafolio: ${fmt(inversionesTotales)}
+- Total de deudas pendientes: ${fmt(deudasPendientes)}
 
-METAS ACTUALES DEL USUARIO:
-${metasProgreso || 'No hay metas definidas.'}
+GASTOS DE ESTE MES POR CATEGORÍA:
+${gastosCatTxt || 'Sin gastos registrados este mes.'}
+
+LÍMITES DE GASTO (TOPES) Y SU ESTADO:
+${limitesTxt || 'No hay límites definidos.'}
+
+PRESUPUESTO / GASTOS FIJOS:
+${presupuestoTxt || 'No hay gastos fijos definidos.'}
+
+METAS DEL USUARIO:
+${metasTxt || 'No hay metas definidas.'}
+
+DEUDAS:
+${deudasTxt || 'No hay deudas registradas.'}
+
+INVERSIONES / PORTAFOLIO:
+${inversionesTxt || 'No hay inversiones registradas.'}
 
 TAREAS PENDIENTES DE LA AGENDA:
 ${tareasPendientes || 'No hay tareas pendientes importantes.'}`;
