@@ -22,6 +22,7 @@ import {
     AlertTriangle,
     SlidersHorizontal,
     Sparkles,
+    Bell,
     Coins,
     Calculator,
     Zap,
@@ -591,7 +592,7 @@ const FinancialAnalysis = ({ transacciones }) => {
     );
 };
 
-const CategoryLimits = ({ limites, transacciones, genericAdd, genericDelete }) => {
+const CategoryLimits = ({ limites, transacciones, genericAdd, genericDelete, notifPermiso, onActivarNotif }) => {
     const [categoria, setCategoria] = useState(CATEGORIAS_GASTOS[0]);
     const [limite, setLimite] = useState('');
 
@@ -643,7 +644,18 @@ const CategoryLimits = ({ limites, transacciones, genericAdd, genericDelete }) =
             </div>
 
             <div className="lg:col-span-2 space-y-4">
-                <h3 className="font-bold text-lg text-slate-800">Estado de Topes (Mes Actual)</h3>
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <h3 className="font-bold text-lg text-slate-800">Estado de Topes (Mes Actual)</h3>
+                    {notifPermiso === 'granted' ? (
+                        <span className="text-xs font-bold text-emerald-600 flex items-center gap-1.5 bg-emerald-50 px-3 py-1.5 rounded-full">
+                            <Bell size={14} /> Avisos activados
+                        </span>
+                    ) : (
+                        <button onClick={onActivarNotif} className="text-xs font-bold text-rose-600 flex items-center gap-1.5 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-full transition-colors">
+                            <Bell size={14} /> Activar avisos de límite
+                        </button>
+                    )}
+                </div>
                 {limites.length === 0 ? (
                     <div className="text-center py-12 bg-slate-50 rounded-xl border border-dashed border-slate-300">
                         <p className="text-slate-500">No has configurado límites de gastos.</p>
@@ -691,7 +703,7 @@ const CategoryLimits = ({ limites, transacciones, genericAdd, genericDelete }) =
     );
 };
 
-const BudgetPlanner = ({ presupuestoItems, limites, transacciones, genericAdd, genericUpdate, genericDelete, onEjecutarPago }) => {
+const BudgetPlanner = ({ presupuestoItems, limites, transacciones, genericAdd, genericUpdate, genericDelete, onEjecutarPago, notifPermiso, onActivarNotif }) => {
     const [viewMode, setViewMode] = useState('lista');
     const [concepto, setConcepto] = useState('');
     const [monto, setMonto] = useState('');
@@ -745,7 +757,7 @@ const BudgetPlanner = ({ presupuestoItems, limites, transacciones, genericAdd, g
             </div>
 
             {viewMode === 'topes' ? (
-                <CategoryLimits limites={limites} transacciones={transacciones} genericAdd={genericAdd} genericDelete={genericDelete} />
+                <CategoryLimits limites={limites} transacciones={transacciones} genericAdd={genericAdd} genericDelete={genericDelete} notifPermiso={notifPermiso} onActivarNotif={onActivarNotif} />
             ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in slide-in-from-right duration-500">
                     <div className="lg:col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-slate-100 h-fit">
@@ -2713,6 +2725,73 @@ export default function App() {
         return null;
     });
 
+    // Notificaciones (avisos de límite de gastos)
+    const [notifPermiso, setNotifPermiso] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'denied');
+
+    const activarNotificaciones = async () => {
+        if (typeof Notification === 'undefined') {
+            alert('Tu navegador no soporta notificaciones. En iPhone, agrega la app a la pantalla de inicio y ábrela desde ahí.');
+            return;
+        }
+        try {
+            const permiso = await Notification.requestPermission();
+            setNotifPermiso(permiso);
+            if (permiso === 'granted') {
+                const reg = await navigator.serviceWorker.ready;
+                reg.showNotification('Avisos activados', {
+                    body: 'Te avisaré cuando te pases de un límite de gastos.',
+                    icon: '/icon-192.png',
+                    badge: '/icon-192.png'
+                });
+            } else if (permiso === 'denied') {
+                alert('Bloqueaste las notificaciones. Actívalas desde los ajustes del navegador para recibir avisos.');
+            }
+        } catch (e) {
+            console.error('Error pidiendo permiso de notificaciones:', e);
+        }
+    };
+
+    // Dispara aviso de "límite excedido" una sola vez por categoría cada mes.
+    useEffect(() => {
+        if (notifPermiso !== 'granted' || !limites.length) return;
+
+        const ahora = new Date();
+        const mesActual = ahora.getMonth();
+        const anioActual = ahora.getFullYear();
+        const mesKey = `${anioActual}-${mesActual}`;
+
+        const gastosPorCat = transacciones
+            .filter(t => t.tipo === 'gasto' && !t.esInversion && t.fecha
+                && new Date(t.fecha).getMonth() === mesActual
+                && new Date(t.fecha).getFullYear() === anioActual)
+            .reduce((acc, t) => {
+                acc[t.categoria] = (acc[t.categoria] || 0) + (Number(t.monto) || 0);
+                return acc;
+            }, {});
+
+        let notificados;
+        try { notificados = JSON.parse(localStorage.getItem('limites_notificados') || '{}'); } catch (e) { notificados = {}; }
+        if (notificados.mes !== mesKey) notificados = { mes: mesKey, cats: [] };
+
+        navigator.serviceWorker.ready.then(reg => {
+            limites.forEach(l => {
+                const gastado = gastosPorCat[l.categoria] || 0;
+                const tope = Number(l.limite) || 0;
+                if (tope > 0 && gastado > tope && !notificados.cats.includes(l.categoria)) {
+                    const exceso = gastado - tope;
+                    reg.showNotification(`Límite excedido: ${l.categoria}`, {
+                        body: `Llevas ${formatCurrency(gastado)} de ${formatCurrency(tope)} este mes (${formatCurrency(exceso)} de más).`,
+                        icon: '/icon-192.png',
+                        badge: '/icon-192.png',
+                        tag: `limite-${l.categoria}`
+                    });
+                    notificados.cats.push(l.categoria);
+                }
+            });
+            localStorage.setItem('limites_notificados', JSON.stringify(notificados));
+        }).catch(e => console.error('SW no listo para notificar:', e));
+    }, [transacciones, limites, notifPermiso]);
+
     // 1. AUTENTICACIÓN (Google Sign-In)
     const [authError, setAuthError] = useState('');
 
@@ -3009,7 +3088,7 @@ export default function App() {
                 <div className="max-w-7xl mx-auto space-y-8">
                     {activeTab === 'dashboard' && <DashboardView saldoActual={saldoActual} totalIngresos={totalIngresos} totalGastos={totalGastos} totalDeudaPendiente={totalDeudaPendiente} transacciones={transacciones} />}
                     {activeTab === 'analisis' && <FinancialAnalysis transacciones={transacciones} />}
-                    {activeTab === 'presupuesto' && <BudgetPlanner presupuestoItems={presupuestoItems} limites={limites} transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} onEjecutarPago={handleEjecutarPago} />}
+                    {activeTab === 'presupuesto' && <BudgetPlanner presupuestoItems={presupuestoItems} limites={limites} transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} onEjecutarPago={handleEjecutarPago} notifPermiso={notifPermiso} onActivarNotif={activarNotificaciones} />}
                     {activeTab === 'inversiones' && <InvestmentPortfolio transacciones={transacciones} totalInvertido={totalInvertido} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} prefillData={prefillData} setPrefillData={setPrefillData} activeTab={activeTab} pendingBudgetId={pendingBudgetId} setPendingBudgetId={setPendingBudgetId} setActiveTab={setActiveTab} />}
                     {activeTab === 'ingresos' && <TransactionManager tipo="ingreso" transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} prefillData={prefillData} setPrefillData={setPrefillData} activeTab={activeTab} pendingBudgetId={pendingBudgetId} setPendingBudgetId={setPendingBudgetId} setActiveTab={setActiveTab} />}
                     {activeTab === 'gastos' && <TransactionManager tipo="gasto" transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} prefillData={prefillData} setPrefillData={setPrefillData} activeTab={activeTab} pendingBudgetId={pendingBudgetId} setPendingBudgetId={setPendingBudgetId} setActiveTab={setActiveTab} />}
