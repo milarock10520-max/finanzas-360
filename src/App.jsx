@@ -2214,7 +2214,7 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, task
         const saldo = transacciones.reduce((acc, t) => acc + (t.tipo === 'ingreso' ? t.monto : (t.esInversion && t.inversionPatrimonio ? 0 : -t.monto)), 0);
         const ingresosMes = transacciones.filter(t => t.tipo === 'ingreso' && new Date(t.fecha).getMonth() === new Date().getMonth()).reduce((acc, t) => acc + t.monto, 0);
         const gastosMes = transacciones.filter(t => t.tipo === 'gasto' && !t.esInversion && new Date(t.fecha).getMonth() === new Date().getMonth()).reduce((acc, t) => acc + t.monto, 0);
-        const deudasPendientes = deudas.filter(d => !d.pagada).reduce((acc, d) => acc + (d.monto - d.pagado), 0);
+        const deudasPendientes = deudas.reduce((acc, d) => acc + (Number(d.montoTotal || 0) - Number(d.montoPagado || 0)), 0);
         const inversionesTotales = transacciones.filter(t => t.esInversion).reduce((acc, t) => acc + t.monto, 0);
         const metasProgreso = metas.map(m => `- ${m.nombre}: $${m.ahorrado} de $${m.montoObjetivo} (${Math.round((m.ahorrado/m.montoObjetivo)*100)}%)`).join('\n');
         const tareasPendientes = tasks.filter(t => !t.completada).map(t => `- ${t.texto} (Prioridad ${t.prioridad})`).join('\n');
@@ -2404,6 +2404,10 @@ const ProductivityHub = ({ tasks, genericAdd, genericUpdate, genericDelete, goog
                     console.error('Error Google Auth:', response);
                     return;
                 }
+                const expiresAt = Date.now() + ((Number(response.expires_in) || 3600) * 1000);
+                try {
+                    localStorage.setItem('google_calendar_token', JSON.stringify({ token: response.access_token, expiresAt }));
+                } catch (e) { /* almacenamiento lleno o bloqueado */ }
                 setGoogleToken(response.access_token);
                 fetchEvents(response.access_token);
             },
@@ -2419,6 +2423,13 @@ const ProductivityHub = ({ tasks, genericAdd, genericUpdate, genericDelete, goog
             const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${timeMin}&maxResults=10&orderBy=startTime&singleEvents=true`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
+            if (res.status === 401) {
+                // Token caducado o revocado: limpiar para volver a "Conectar".
+                localStorage.removeItem('google_calendar_token');
+                setGoogleToken(null);
+                setEvents([]);
+                return;
+            }
             const data = await res.json();
             setEvents(data.items || []);
         } catch (error) {
@@ -2578,7 +2589,7 @@ const ProductivityHub = ({ tasks, genericAdd, genericUpdate, genericDelete, goog
                                 <Globe size={16} /> Conectar Google
                             </button>
                         ) : (
-                            <button onClick={() => {setGoogleToken(null); setEvents([]);}} className="text-slate-400 hover:text-slate-600 text-sm font-medium">Desconectar</button>
+                            <button onClick={() => {localStorage.removeItem('google_calendar_token'); setGoogleToken(null); setEvents([]);}} className="text-slate-400 hover:text-slate-600 text-sm font-medium">Desconectar</button>
                         )}
                     </div>
 
@@ -2690,7 +2701,17 @@ export default function App() {
     
     // Tareas & Settings
     const [tasks, setTasks] = useState([]);
-    const [googleToken, setGoogleToken] = useState(null);
+    // Token de Google Calendar persistido: sobrevive recargas mientras no caduque (~1h).
+    const [googleToken, setGoogleToken] = useState(() => {
+        try {
+            const raw = localStorage.getItem('google_calendar_token');
+            if (!raw) return null;
+            const { token, expiresAt } = JSON.parse(raw);
+            if (token && expiresAt && Date.now() < expiresAt) return token;
+            localStorage.removeItem('google_calendar_token');
+        } catch (e) { /* ignora json corrupto */ }
+        return null;
+    });
 
     // 1. AUTENTICACIÓN (Google Sign-In)
     const [authError, setAuthError] = useState('');
