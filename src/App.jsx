@@ -47,14 +47,16 @@ import {
     ListTodo,
     Circle,
     Clock,
-    GripVertical
+    GripVertical,
+    LogOut
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import {
     getAuth,
-    signInAnonymously,
     onAuthStateChanged,
-    signInWithCustomToken
+    GoogleAuthProvider,
+    signInWithPopup,
+    signOut
 } from 'firebase/auth';
 import {
     getFirestore,
@@ -2190,12 +2192,10 @@ const PasswordVault = ({ passwords, vaultConfig, genericAdd, genericUpdate, gene
     );
 };
 // =============================================
-// === COMPONENTE: AI COACH (GEMINI API) ===
+// === COMPONENTE: AI COACH (CLAUDE OPUS 4.8) ===
 // =============================================
 const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, tasks }) => {
     const [isOpen, setIsOpen] = useState(false);
-    const [apiKey, setApiKey] = useState('AIzaSyCdazL44Far92JVUrecaynWWzAxGWO5K4U');
-    const [showSettings, setShowSettings] = useState(false);
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
@@ -2209,12 +2209,6 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, task
         scrollToBottom();
     }, [messages, isTyping]);
 
-    const saveApiKey = (key) => {
-        setApiKey(key);
-        localStorage.setItem('gemini_api_key', key);
-        setShowSettings(false);
-    };
-
     const buildFinancialContext = () => {
         // Build context from props
         const saldo = transacciones.reduce((acc, t) => acc + (t.tipo === 'ingreso' ? t.monto : (t.esInversion && t.inversionPatrimonio ? 0 : -t.monto)), 0);
@@ -2225,10 +2219,7 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, task
         const metasProgreso = metas.map(m => `- ${m.nombre}: $${m.ahorrado} de $${m.montoObjetivo} (${Math.round((m.ahorrado/m.montoObjetivo)*100)}%)`).join('\n');
         const tareasPendientes = tasks.filter(t => !t.completada).map(t => `- ${t.texto} (Prioridad ${t.prioridad})`).join('\n');
 
-        return `
-ERES FINANZAS 360 AI COACH, un asistente experto en finanzas personales, productividad e inversiones. 
-Estás ayudando a un usuario con los siguientes datos financieros EN TIEMPO REAL:
-- Saldo Disponible Actual: $${saldo}
+        return `- Saldo Disponible Actual: $${saldo}
 - Ingresos de este mes: $${ingresosMes}
 - Gastos de este mes: $${gastosMes}
 - Total invertido en portafolio: $${inversionesTotales}
@@ -2238,19 +2229,12 @@ METAS ACTUALES DEL USUARIO:
 ${metasProgreso || 'No hay metas definidas.'}
 
 TAREAS PENDIENTES DE LA AGENDA:
-${tareasPendientes || 'No hay tareas pendientes importantes.'}
-
-REGLAS:
-1. Sé cálido, profesional, empático y MUY directo. No des rodeos verbales ni saludes excesivamente en cada mensaje.
-2. Analiza los datos del usuario antes de dar un consejo. Si te preguntan en qué invertir o en qué gastar, MIRA su saldo, gastos del mes, y tareas pendientes.
-3. No uses formatos extremadamente largos, responde con viñetas cortas si es posible, ideal para leer en un widget de movil estructurado en texto simple (solo puedes usar negrita).
-4. NUNCA inventes datos financieros, céntrate en los números provistos.
-`;
+${tareasPendientes || 'No hay tareas pendientes importantes.'}`;
     };
 
     const handleSend = async (e) => {
         e.preventDefault();
-        if (!input.trim() || !apiKey) return;
+        if (!input.trim()) return;
 
         const userMsg = input.trim();
         setInput('');
@@ -2260,36 +2244,29 @@ REGLAS:
 
         try {
             const context = buildFinancialContext();
-            
-            // Format history for Gemini API
-            const contents = newMessages.map(m => ({
-                role: m.role === 'user' ? 'user' : 'model',
-                parts: [{ text: m.content }]
-            }));
 
-            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`, {
+            const res = await fetch('/api/ai-coach', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    system_instruction: { parts: { text: context } },
-                    contents: contents
+                    context,
+                    messages: newMessages.map(m => ({ role: m.role, content: m.content }))
                 })
             });
 
             if (!res.ok) {
-                const errorData = await res.json();
-                throw new Error(errorData.error?.message || 'Error en API Gemini');
+                const errorData = await res.json().catch(() => ({}));
+                throw new Error(errorData.error || 'Error en la API del Coach');
             }
 
             const data = await res.json();
-            const botResponse = data.candidates[0].content.parts[0].text;
-            
+            const botResponse = data.reply || 'No recibí respuesta. Intenta de nuevo.';
+
             setMessages([...newMessages, { role: 'assistant', content: botResponse }]);
 
         } catch (error) {
-            console.error('Gemini API Error:', error);
-            setMessages([...newMessages, { role: 'assistant', content: '❌ Lo siento, hubo un error de conexión con Gemini. Verifica que tu API Key sea correcta en la configuración.' }]);
-            setShowSettings(true);
+            console.error('Coach IA Error:', error);
+            setMessages([...newMessages, { role: 'assistant', content: '❌ Lo siento, hubo un error de conexión con el Coach IA. Intenta de nuevo en unos segundos.' }]);
         } finally {
             setIsTyping(false);
         }
@@ -2308,13 +2285,10 @@ REGLAS:
                         </div>
                         <div>
                             <h3 className="font-bold text-base leading-tight">Coach IA</h3>
-                            <p className="text-[11px] text-indigo-100 font-medium">Finanzas 360 Gemini</p>
+                            <p className="text-[11px] text-indigo-100 font-medium">Finanzas 360 · Claude Opus</p>
                         </div>
                     </div>
                     <div className="flex gap-2">
-                        <button onClick={() => setShowSettings(!showSettings)} className="w-8 h-8 rounded-full hover:bg-white/20 flex items-center justify-center transition-colors">
-                            <SlidersHorizontal size={16} />
-                        </button>
                         <button onClick={() => setIsOpen(false)} className="w-8 h-8 rounded-full hover:bg-white/20 flex items-center justify-center transition-colors">
                             <X size={20} />
                         </button>
@@ -2323,16 +2297,7 @@ REGLAS:
 
                 {/* Body */}
                 <div className="flex-1 bg-slate-50 overflow-y-auto p-4 custom-scrollbar flex flex-col gap-4">
-                    {showSettings ? (
-                        <div className="bg-white p-5 rounded-2xl shadow-sm border border-indigo-100">
-                            <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-2"><KeyRound size={16} className="text-indigo-500"/> Configuración API</h4>
-                            <p className="text-xs text-slate-500 mb-4">Ingresa tu clave de <b>Google Gemini API</b> (Gratuita) para activar tu asistente inteligente.</p>
-                            <input type="password" placeholder="AIzaSy..." defaultValue={apiKey} onBlur={(e) => saveApiKey(e.target.value)}
-                                className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:border-indigo-500 outline-none text-sm font-mono mb-2" />
-                            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-xs text-indigo-600 font-bold hover:underline">Obtener API Key aquí &rarr;</a>
-                            <button onClick={() => setShowSettings(false)} className="w-full mt-4 bg-slate-100 text-slate-700 font-bold py-2 rounded-xl text-sm hover:bg-slate-200 transition-colors">Cerrar</button>
-                        </div>
-                    ) : messages.length === 0 ? (
+                    {messages.length === 0 ? (
                         <div className="flex-1 flex flex-col items-center justify-center text-center p-6 opacity-60">
                             <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mb-4">
                                 <Sparkles size={30} className="text-indigo-600" />
@@ -2366,20 +2331,18 @@ REGLAS:
                 </div>
 
                 {/* Input Area */}
-                {!showSettings && (
-                    <div className="p-3 bg-white border-t border-slate-100">
-                        <form onSubmit={handleSend} className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-full px-2 py-1 focus-within:border-indigo-400 focus-within:bg-white transition-all shadow-inner">
-                            <input 
-                                value={input} onChange={e => setInput(e.target.value)} placeholder="Pide un consejo financiero..." 
-                                className="flex-1 bg-transparent px-3 py-2 outline-none text-sm text-slate-700"
-                                disabled={isTyping}
-                            />
-                            <button type="submit" disabled={!input.trim() || isTyping} className="w-9 h-9 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-full flex items-center justify-center transition-colors shrink-0 shadow-md">
-                                <ArrowRightCircle size={18} />
-                            </button>
-                        </form>
-                    </div>
-                )}
+                <div className="p-3 bg-white border-t border-slate-100">
+                    <form onSubmit={handleSend} className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-full px-2 py-1 focus-within:border-indigo-400 focus-within:bg-white transition-all shadow-inner">
+                        <input
+                            value={input} onChange={e => setInput(e.target.value)} placeholder="Pide un consejo financiero..."
+                            className="flex-1 bg-transparent px-3 py-2 outline-none text-sm text-slate-700"
+                            disabled={isTyping}
+                        />
+                        <button type="submit" disabled={!input.trim() || isTyping} className="w-9 h-9 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-full flex items-center justify-center transition-colors shrink-0 shadow-md">
+                            <ArrowRightCircle size={18} />
+                        </button>
+                    </form>
+                </div>
             </div>
 
             {/* Floating FAB Button */}
@@ -2729,26 +2692,35 @@ export default function App() {
     const [tasks, setTasks] = useState([]);
     const [googleToken, setGoogleToken] = useState(null);
 
-    // 1. AUTENTICACIÓN
+    // 1. AUTENTICACIÓN (Google Sign-In)
+    const [authError, setAuthError] = useState('');
+
     useEffect(() => {
-        const initAuth = async () => {
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-            } catch (error) {
-                console.error("Error de autenticación:", error);
-            }
-        };
-        initAuth();
         const unsubscribe = onAuthStateChanged(auth, (u) => {
             setUser(u);
-            if (u) setLoading(false);
+            setLoading(false);
         });
         return () => unsubscribe();
     }, []);
+
+    const handleGoogleLogin = async () => {
+        setAuthError('');
+        try {
+            const provider = new GoogleAuthProvider();
+            await signInWithPopup(auth, provider);
+        } catch (error) {
+            console.error("Error de autenticación:", error);
+            setAuthError('No se pudo iniciar sesión. Intenta de nuevo.');
+        }
+    };
+
+    const handleLogout = async () => {
+        try {
+            await signOut(auth);
+        } catch (error) {
+            console.error("Error al cerrar sesión:", error);
+        }
+    };
 
     // 2. SINCRONIZACIÓN DE DATOS
     useEffect(() => {
@@ -2904,6 +2876,30 @@ export default function App() {
 
     if (loading) return <div className="h-screen flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-blue-600 w-10 h-10" /></div>;
 
+    if (!user) return (
+        <div className="h-screen flex flex-col items-center justify-center bg-[#F8FAFC] font-sans px-6">
+            <div className="w-full max-w-sm bg-white rounded-3xl shadow-xl shadow-slate-200/60 p-8 flex flex-col items-center text-center">
+                <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white font-bold text-3xl shadow-lg shadow-blue-200 mb-5">F</div>
+                <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Finanzas 360</h1>
+                <p className="text-slate-500 text-sm mt-2 mb-8">Inicia sesión para acceder a tus datos desde cualquier dispositivo.</p>
+                <button
+                    onClick={handleGoogleLogin}
+                    className="w-full flex items-center justify-center gap-3 px-4 py-3.5 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 transition-all font-medium text-slate-700 shadow-sm active:scale-95"
+                >
+                    <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true">
+                        <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/>
+                        <path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/>
+                        <path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/>
+                        <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-.792 2.237-2.231 4.166-4.087 5.571.001-.001.002-.001.003-.002l6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/>
+                    </svg>
+                    Continuar con Google
+                </button>
+                {authError && <p className="text-rose-500 text-sm mt-4">{authError}</p>}
+            </div>
+            <p className="text-slate-400 text-xs mt-6">Tus datos se guardan de forma segura y privada.</p>
+        </div>
+    );
+
     return (
         <div className="flex h-screen bg-[#F8FAFC] font-sans text-slate-900 selection:bg-blue-100 selection:text-blue-900">
 
@@ -2930,6 +2926,21 @@ export default function App() {
                     <NavItem id="agenda" icon={ListTodo} label="Agenda & Tareas" />
                     <NavItem id="passwords" icon={Lock} label="Contraseñas" />
                 </nav>
+                <div className="border-t border-slate-100 pt-4 mt-4">
+                    <div className="flex items-center gap-3 px-2 mb-3">
+                        {user.photoURL
+                            ? <img src={user.photoURL} alt="" className="w-9 h-9 rounded-full" referrerPolicy="no-referrer" />
+                            : <div className="w-9 h-9 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-bold">{(user.displayName || user.email || '?').charAt(0).toUpperCase()}</div>}
+                        <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-700 truncate">{user.displayName || 'Mi cuenta'}</p>
+                            <p className="text-xs text-slate-400 truncate">{user.email}</p>
+                        </div>
+                    </div>
+                    <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition-all font-medium text-sm">
+                        <LogOut size={20} />
+                        <span>Cerrar sesión</span>
+                    </button>
+                </div>
             </aside>
 
             {/* MOBILE HEADER (Minimalista) */}
@@ -2962,6 +2973,13 @@ export default function App() {
                         className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${activeTab === 'passwords' ? 'bg-slate-800 text-white shadow-lg shadow-slate-300' : 'bg-slate-100 text-slate-600'}`}
                     >
                         <Lock size={20} />
+                    </button>
+                    <button
+                        onClick={handleLogout}
+                        className="w-10 h-10 rounded-full flex items-center justify-center transition-all bg-slate-100 text-slate-600 hover:bg-rose-50 hover:text-rose-600"
+                        title="Cerrar sesión"
+                    >
+                        <LogOut size={20} />
                     </button>
                 </div>
             </div>
