@@ -134,7 +134,7 @@ const PLAZOS_METAS = [
 ];
 
 // --- COMPONENTE: MODAL GASTOS RÁPIDOS (HORMIGA) ---
-const QuickExpenseModal = ({ isOpen, onClose, genericAdd }) => {
+const QuickExpenseModal = ({ isOpen, onClose, genericAdd, uid }) => {
     const [concepto, setConcepto] = useState('');
     const [monto, setMonto] = useState('');
     const [saving, setSaving] = useState(false);
@@ -212,6 +212,23 @@ const QuickExpenseModal = ({ isOpen, onClose, genericAdd }) => {
                 <p className="text-center text-xs text-slate-400 mt-4">
                     Se registrará en la categoría "Gastos Hormiga"
                 </p>
+
+                {uid && (
+                    <div className="mt-4 pt-4 border-t border-slate-100">
+                        <p className="text-[11px] text-slate-400 mb-1">Tu ID para el Atajo de Siri:</p>
+                        <button
+                            type="button"
+                            onClick={async () => {
+                                try { await navigator.clipboard.writeText(uid); alert('ID copiado. Pégalo en el Atajo de Siri.'); }
+                                catch { prompt('Copia tu ID para el Atajo de Siri:', uid); }
+                            }}
+                            className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-600 hover:bg-slate-100 transition-colors"
+                        >
+                            <span className="truncate font-mono">{uid}</span>
+                            <Copy size={14} className="text-slate-400 shrink-0" />
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -3156,6 +3173,16 @@ export default function App() {
                             <p className="text-xs text-slate-400 truncate">{user.email}</p>
                         </div>
                     </div>
+                    <button
+                        onClick={async () => {
+                            try { await navigator.clipboard.writeText(user.uid); alert('Tu ID se copió. Pégalo en el Atajo de Siri.'); }
+                            catch { prompt('Copia tu ID para el Atajo de Siri:', user.uid); }
+                        }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 transition-all font-medium text-sm"
+                    >
+                        <Copy size={20} />
+                        <span>Copiar mi ID (para Siri)</span>
+                    </button>
                     <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition-all font-medium text-sm">
                         <LogOut size={20} />
                         <span>Cerrar sesión</span>
@@ -3264,6 +3291,7 @@ export default function App() {
                 isOpen={showQuickExpense}
                 onClose={() => setShowQuickExpense(false)}
                 genericAdd={genericAdd}
+                uid={user.uid}
             />
 
             {/* AI Coach Floating Widget - Injected Globally */}
