@@ -51,6 +51,8 @@ import {
     GripVertical,
     Pin,
     PinOff,
+    ListChecks,
+    Link2,
     LogOut
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
@@ -293,12 +295,28 @@ const DeudaItem = ({ deuda, onAbonar }) => {
     );
 };
 
-const MetaItem = ({ meta, onAhorrar, onToggleCompletada, onDelete, onAddNote, onDeleteNote }) => {
+const MetaItem = ({ meta, metasFinancieras = [], onAhorrar, onToggleCompletada, onDelete, onAddNote, onDeleteNote, onAddChecklistItem, onToggleChecklistItem, onDeleteChecklistItem, onLinkMetaFinanciera }) => {
     const [aporte, setAporte] = useState('');
     const [showNotes, setShowNotes] = useState(false);
     const [newNote, setNewNote] = useState('');
+    const [newChecklistItem, setNewChecklistItem] = useState('');
+    const [showLinkSelect, setShowLinkSelect] = useState(false);
 
     const notas = meta.notas || [];
+    const checklist = meta.checklist || [];
+    const checklistDone = checklist.filter(c => c.completado).length;
+    const checklistPct = checklist.length > 0 ? Math.round((checklistDone / checklist.length) * 100) : 0;
+
+    // Meta financiera vinculada (si existe)
+    const metaVinculada = meta.metaFinancieraId
+        ? metasFinancieras.find(mf => mf.id === meta.metaFinancieraId)
+        : null;
+
+    const handleAddChecklist = () => {
+        if (!newChecklistItem.trim()) return;
+        onAddChecklistItem(meta, newChecklistItem);
+        setNewChecklistItem('');
+    };
 
     const handleAddNote = () => {
         if (!newNote.trim()) return;
@@ -363,52 +381,135 @@ const MetaItem = ({ meta, onAhorrar, onToggleCompletada, onDelete, onAddNote, on
 
     // Renderizado para Metas Personales
     if (meta.tipo === 'personal') {
+        const objVinc = metaVinculada ? (Number(metaVinculada.montoObjetivo) || 1) : 1;
+        const actVinc = metaVinculada ? (Number(metaVinculada.ahorroActual) || 0) : 0;
+        const pctVinc = metaVinculada ? Math.min((actVinc / objVinc) * 100, 100) : 0;
+
         return (
-            <div className={`p-6 rounded-2xl shadow-sm border flex flex-col justify-between h-full transition-all ${meta.completada ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-100'}`}>
-                <div>
-                    <div className="flex justify-between items-start mb-4">
-                        <span className={`px-2 py-1 text-xs rounded-md font-bold uppercase tracking-wider
+            <div className={`p-6 rounded-2xl shadow-sm border flex flex-col h-full transition-all ${meta.completada ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-100'}`}>
+                <div className="flex justify-between items-start mb-4">
+                    <span className={`px-2 py-1 text-xs rounded-md font-bold uppercase tracking-wider
               ${meta.plazo === 'corto' ? 'bg-indigo-100 text-indigo-700' :
-                                meta.plazo === 'mediano' ? 'bg-purple-100 text-purple-700' : 'bg-pink-100 text-pink-700'}`}>
-                            {meta.plazo}
-                        </span>
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={() => setShowNotes(!showNotes)}
-                                className={`p-1.5 rounded-full transition-all ${showNotes ? 'bg-indigo-100 text-indigo-600' : 'text-slate-300 hover:text-indigo-500 hover:bg-slate-50'}`}
-                                title="Ver notas"
-                            >
-                                <StickyNote size={14} />
-                                {notas.length > 0 && (
-                                    <span className="absolute -mt-6 ml-2 bg-indigo-500 text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center">{notas.length}</span>
-                                )}
-                            </button>
-                            <button onClick={() => onDelete(meta.id)} className="text-slate-300 hover:text-rose-500"><Trash2 size={16} /></button>
-                        </div>
+                            meta.plazo === 'mediano' ? 'bg-purple-100 text-purple-700' : 'bg-pink-100 text-pink-700'}`}>
+                        {meta.plazo}
+                    </span>
+                    <div className="flex items-center gap-1">
+                        <button
+                            onClick={() => setShowLinkSelect(!showLinkSelect)}
+                            className={`p-1.5 rounded-full transition-all relative ${metaVinculada ? 'bg-emerald-100 text-emerald-600' : showLinkSelect ? 'bg-slate-100 text-slate-600' : 'text-slate-300 hover:text-emerald-500 hover:bg-slate-50'}`}
+                            title="Vincular ahorro"
+                        >
+                            <Link2 size={14} />
+                        </button>
+                        <button
+                            onClick={() => setShowNotes(!showNotes)}
+                            className={`p-1.5 rounded-full transition-all relative ${showNotes ? 'bg-indigo-100 text-indigo-600' : 'text-slate-300 hover:text-indigo-500 hover:bg-slate-50'}`}
+                            title="Ver notas"
+                        >
+                            <StickyNote size={14} />
+                            {notas.length > 0 && (
+                                <span className="absolute -top-1 -right-1 bg-indigo-500 text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center">{notas.length}</span>
+                            )}
+                        </button>
+                        <button onClick={() => onDelete(meta.id)} className="text-slate-300 hover:text-rose-500 p-1.5"><Trash2 size={16} /></button>
                     </div>
-                    <h3 className={`text-xl font-bold mb-2 ${meta.completada ? 'text-emerald-700 line-through' : 'text-slate-800'}`}>
-                        {meta.nombre}
-                    </h3>
-                    <p className="text-sm text-slate-500">{meta.completada ? '¡Meta alcanzada! 🌟' : 'Propósito personal'}</p>
                 </div>
 
-                {showNotes ? (
-                    notesPanel
-                ) : (
-                    <button
-                        onClick={() => onToggleCompletada(meta)}
-                        className={`mt-6 w-full py-2.5 rounded-lg font-bold flex items-center justify-center gap-2 transition-all
-            ${meta.completada
-                                ? 'bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50'
-                                : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-md shadow-indigo-200'}`}
-                    >
-                        {meta.completada ? (
-                            <>Completada <CheckCircle2 size={18} /></>
-                        ) : (
-                            <>Marcar como Lograda</>
-                        )}
-                    </button>
+                <h3 className={`text-xl font-bold mb-1 ${meta.completada ? 'text-emerald-700 line-through' : 'text-slate-800'}`}>
+                    {meta.nombre}
+                </h3>
+                <p className="text-sm text-slate-500 mb-3">{meta.completada ? '¡Meta alcanzada! 🌟' : 'Propósito personal'}</p>
+
+                {/* Selector para vincular meta financiera */}
+                {showLinkSelect && (
+                    <div className="mb-3 bg-slate-50 border border-slate-200 rounded-xl p-3">
+                        <label className="text-xs font-bold text-slate-500 flex items-center gap-1 mb-1"><Link2 size={12} /> Vincular con un ahorro</label>
+                        <select
+                            value={meta.metaFinancieraId || ''}
+                            onChange={(e) => { onLinkMetaFinanciera(meta, e.target.value); setShowLinkSelect(false); }}
+                            className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-emerald-500 bg-white"
+                        >
+                            <option value="">Sin vínculo</option>
+                            {metasFinancieras.map(mf => <option key={mf.id} value={mf.id}>💰 {mf.nombre}</option>)}
+                        </select>
+                        {metasFinancieras.length === 0 && <p className="text-[11px] text-slate-400 mt-1">Crea una meta financiera primero.</p>}
+                    </div>
                 )}
+
+                {/* Ahorro vinculado */}
+                {metaVinculada && (
+                    <div className="mb-3 bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100 rounded-xl p-3">
+                        <div className="flex justify-between items-center mb-1.5">
+                            <span className="text-xs font-bold text-emerald-700 flex items-center gap-1"><Coins size={12} /> Ahorro: {metaVinculada.nombre}</span>
+                            <span className="text-xs font-bold text-emerald-700">{pctVinc.toFixed(0)}%</span>
+                        </div>
+                        <div className="w-full bg-white/70 rounded-full h-2 mb-1.5">
+                            <div className="h-2 rounded-full bg-emerald-500 transition-all duration-700" style={{ width: `${pctVinc}%` }}></div>
+                        </div>
+                        <div className="flex justify-between text-[11px] text-slate-500">
+                            <span className="font-bold text-emerald-700">{formatCurrency(actVinc)}</span>
+                            <span>de {formatCurrency(objVinc)}</span>
+                        </div>
+                    </div>
+                )}
+
+                {/* Checklist de avances */}
+                <div className="flex-1">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-slate-600 flex items-center gap-1"><ListChecks size={14} /> Avances {checklist.length > 0 && <span className="text-slate-400">({checklistDone}/{checklist.length})</span>}</span>
+                        {checklist.length > 0 && <span className={`text-xs font-bold ${checklistPct === 100 ? 'text-emerald-600' : 'text-indigo-600'}`}>{checklistPct}%</span>}
+                    </div>
+                    {checklist.length > 0 && (
+                        <div className="w-full bg-slate-100 rounded-full h-2 mb-3">
+                            <div className={`h-2 rounded-full transition-all duration-700 ${checklistPct === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{ width: `${checklistPct}%` }}></div>
+                        </div>
+                    )}
+                    <div className="space-y-1.5 mb-3 max-h-44 overflow-y-auto">
+                        {checklist.map((item, idx) => (
+                            <div key={idx} className="flex items-center gap-2 group">
+                                <button onClick={() => onToggleChecklistItem(meta, idx)} className="flex-shrink-0">
+                                    {item.completado
+                                        ? <CheckCircle2 size={18} className="text-emerald-500" />
+                                        : <Circle size={18} className="text-slate-300 hover:text-indigo-400" />}
+                                </button>
+                                <span className={`flex-1 text-sm ${item.completado ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{item.texto}</span>
+                                <button onClick={() => onDeleteChecklistItem(meta, idx)} className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                                    <Trash2 size={13} />
+                                </button>
+                            </div>
+                        ))}
+                        {checklist.length === 0 && <p className="text-xs text-slate-400 py-1">Agrega pasos para llevar el control (ej: cada libro, cada hito).</p>}
+                    </div>
+                    <div className="flex gap-2">
+                        <input
+                            type="text"
+                            placeholder="Nuevo avance…"
+                            value={newChecklistItem}
+                            onChange={(e) => setNewChecklistItem(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddChecklist(); } }}
+                            className="flex-1 px-3 py-1.5 border border-slate-200 rounded-lg text-sm outline-none focus:border-indigo-500"
+                        />
+                        <button onClick={handleAddChecklist} className="bg-indigo-600 text-white px-2.5 rounded-lg hover:bg-indigo-700"><Plus size={16} /></button>
+                    </div>
+                </div>
+
+                {/* Notas (expandible) */}
+                {showNotes && notesPanel}
+
+                {/* Botón completar */}
+                <button
+                    onClick={() => onToggleCompletada(meta)}
+                    className={`mt-4 w-full py-2.5 rounded-lg font-bold flex items-center justify-center gap-2 transition-all
+            ${meta.completada
+                            ? 'bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50'
+                            : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-md shadow-indigo-200'}`}
+                >
+                    {meta.completada ? (
+                        <>Completada <CheckCircle2 size={18} /></>
+                    ) : (
+                        <>Marcar como Lograda</>
+                    )}
+                </button>
             </div>
         );
     }
@@ -1771,6 +1872,11 @@ const GoalTracker = ({ metas, genericAdd, genericUpdate, genericDelete }) => {
     const [montoObjetivo, setMontoObjetivo] = useState('');
     const [plazo, setPlazo] = useState('corto');
     const [ahorroActual, setAhorroActual] = useState('');
+    // Vincular meta personal a una meta financiera (opcional)
+    const [metaFinancieraId, setMetaFinancieraId] = useState('');
+
+    // Lista de metas financieras (para el selector de vínculo)
+    const metasFinancieras = metas.filter(m => m.tipo === 'financiera' || !m.tipo);
 
     const agregarMetaHandler = async (e) => {
         e.preventDefault();
@@ -1785,10 +1891,36 @@ const GoalTracker = ({ metas, genericAdd, genericUpdate, genericDelete }) => {
             montoObjetivo: isPersonal ? 0 : parseFloat(montoObjetivo),
             ahorroActual: isPersonal ? 0 : parseFloat(ahorroActual || 0),
             // Campos exclusivos personales
-            completada: false
+            completada: false,
+            checklist: [],
+            metaFinancieraId: isPersonal ? (metaFinancieraId || null) : null
         });
 
-        setNombre(''); setMontoObjetivo(''); setAhorroActual('');
+        setNombre(''); setMontoObjetivo(''); setAhorroActual(''); setMetaFinancieraId('');
+    };
+
+    // --- Checklist (avances) de una meta ---
+    const addChecklistItem = async (meta, texto) => {
+        if (!texto.trim()) return;
+        const lista = meta.checklist || [];
+        await genericUpdate('metas', meta.id, { checklist: [...lista, { texto: texto.trim(), completado: false }] });
+    };
+
+    const toggleChecklistItem = async (meta, index) => {
+        const lista = (meta.checklist || []).slice();
+        if (!lista[index]) return;
+        lista[index] = { ...lista[index], completado: !lista[index].completado };
+        await genericUpdate('metas', meta.id, { checklist: lista });
+    };
+
+    const deleteChecklistItem = async (meta, index) => {
+        const lista = (meta.checklist || []).filter((_, i) => i !== index);
+        await genericUpdate('metas', meta.id, { checklist: lista });
+    };
+
+    // Vincular / desvincular una meta financiera a una meta personal
+    const linkMetaFinanciera = async (meta, id) => {
+        await genericUpdate('metas', meta.id, { metaFinancieraId: id || null });
     };
 
     const actualizarAhorro = async (meta, monto) => {
@@ -1866,6 +1998,13 @@ const GoalTracker = ({ metas, genericAdd, genericUpdate, genericDelete }) => {
                                 </div>
                             )}
 
+                            {viewMode === 'personales' && metasFinancieras.length > 0 && (
+                                <select value={metaFinancieraId} onChange={e => setMetaFinancieraId(e.target.value)} className="w-full bg-black/20 border-0 rounded-lg px-3 py-2 text-white">
+                                    <option value="" className="text-slate-800">Vincular ahorro (opcional)…</option>
+                                    {metasFinancieras.map(mf => <option key={mf.id} value={mf.id} className="text-slate-800">💰 {mf.nombre}</option>)}
+                                </select>
+                            )}
+
                             <select value={plazo} onChange={e => setPlazo(e.target.value)} className="w-full bg-black/20 border-0 rounded-lg px-3 py-2 text-white">
                                 {PLAZOS_METAS.map(p => <option key={p.value} value={p.value} className="text-slate-800">{p.label}</option>)}
                             </select>
@@ -1888,11 +2027,16 @@ const GoalTracker = ({ metas, genericAdd, genericUpdate, genericDelete }) => {
                         <MetaItem
                             key={meta.id}
                             meta={meta}
+                            metasFinancieras={metasFinancieras}
                             onAhorrar={actualizarAhorro}
                             onToggleCompletada={toggleCompletada}
                             onDelete={(id) => genericDelete('metas', id)}
                             onAddNote={addNote}
                             onDeleteNote={deleteNote}
+                            onAddChecklistItem={addChecklistItem}
+                            onToggleChecklistItem={toggleChecklistItem}
+                            onDeleteChecklistItem={deleteChecklistItem}
+                            onLinkMetaFinanciera={linkMetaFinanciera}
                         />
                     ))
                 )}
