@@ -59,7 +59,8 @@ import {
     BookOpen,
     CalendarClock,
     LogOut,
-    UserCog
+    UserCog,
+    Mic
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import {
@@ -3002,7 +3003,70 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, task
     const [showPerfil, setShowPerfil] = useState(false);
     const [perfilDraft, setPerfilDraft] = useState('');
     const [perfilGuardado, setPerfilGuardado] = useState(false);
+    const [isListening, setIsListening] = useState(false);
+    const [vozError, setVozError] = useState('');
     const messagesEndRef = useRef(null);
+    const recognitionRef = useRef(null);
+
+    // ¿El navegador soporta reconocimiento de voz? (Safari iOS usa el prefijo webkit)
+    const SpeechRecognition = typeof window !== 'undefined'
+        ? (window.SpeechRecognition || window.webkitSpeechRecognition)
+        : null;
+    const vozDisponible = !!SpeechRecognition;
+
+    const baseInputRef = useRef('');
+
+    const toggleVoz = () => {
+        setVozError('');
+        if (!vozDisponible) {
+            setVozError('Tu navegador no soporta dictado por voz.');
+            return;
+        }
+        // Si ya está escuchando, detener.
+        if (isListening) {
+            try { recognitionRef.current?.stop(); } catch (_) {}
+            return;
+        }
+        try {
+            const rec = new SpeechRecognition();
+            rec.lang = 'es-CO';
+            rec.continuous = true;
+            rec.interimResults = true;
+            baseInputRef.current = input ? input + ' ' : '';
+
+            rec.onresult = (event) => {
+                let texto = '';
+                for (let i = 0; i < event.results.length; i++) {
+                    texto += event.results[i][0].transcript;
+                }
+                setInput(baseInputRef.current + texto);
+            };
+            rec.onerror = (e) => {
+                if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+                    setVozError('Permiso de micrófono denegado. Actívalo en los ajustes del navegador.');
+                } else if (e.error === 'no-speech') {
+                    setVozError('No te escuché. Intenta de nuevo.');
+                }
+                setIsListening(false);
+            };
+            rec.onend = () => setIsListening(false);
+
+            recognitionRef.current = rec;
+            rec.start();
+            setIsListening(true);
+        } catch (e) {
+            console.error('Error al iniciar reconocimiento de voz:', e);
+            setVozError('No se pudo iniciar el dictado.');
+            setIsListening(false);
+        }
+    };
+
+    // Detener el micrófono al cerrar el chat.
+    useEffect(() => {
+        if (!isOpen && isListening) {
+            try { recognitionRef.current?.stop(); } catch (_) {}
+        }
+    }, [isOpen, isListening]);
 
     const perfilDoc = coachPerfil[0] || null;
     const perfilNotas = perfilDoc?.notas || '';
@@ -3255,6 +3319,7 @@ ${diarioTxt || 'No hay entradas en el diario.'}`;
         e.preventDefault();
         if (!input.trim()) return;
 
+        if (isListening) { try { recognitionRef.current?.stop(); } catch (_) {} }
         const userMsg = input.trim();
         setInput('');
         const newMessages = [...messages, { role: 'user', content: userMsg }];
@@ -3400,9 +3465,27 @@ ${diarioTxt || 'No hay entradas en el diario.'}`;
 
                 {/* Input Area */}
                 <div className="p-3 bg-white border-t border-slate-100">
+                    {vozError && (
+                        <p className="text-[11px] text-rose-500 mb-1.5 px-2">{vozError}</p>
+                    )}
+                    {isListening && (
+                        <p className="text-[11px] text-indigo-600 font-medium mb-1.5 px-2 flex items-center gap-1.5">
+                            <span className="w-2 h-2 bg-rose-500 rounded-full animate-pulse"></span>
+                            Escuchando… habla y luego envía.
+                        </p>
+                    )}
                     <form onSubmit={handleSend} className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-full px-2 py-1 focus-within:border-indigo-400 focus-within:bg-white transition-all shadow-inner">
+                        {vozDisponible && (
+                            <button
+                                type="button" onClick={toggleVoz} disabled={isTyping}
+                                title={isListening ? 'Detener dictado' : 'Dictar por voz'}
+                                className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors shrink-0 ${isListening ? 'bg-rose-500 text-white animate-pulse' : 'bg-slate-200 hover:bg-slate-300 text-slate-600'}`}
+                            >
+                                <Mic size={18} />
+                            </button>
+                        )}
                         <input
-                            value={input} onChange={e => setInput(e.target.value)} placeholder="Pide un consejo financiero..."
+                            value={input} onChange={e => setInput(e.target.value)} placeholder={isListening ? 'Habla ahora…' : 'Pide un consejo o usa el micrófono…'}
                             className="flex-1 bg-transparent px-3 py-2 outline-none text-sm text-slate-700"
                             disabled={isTyping}
                         />
