@@ -2532,6 +2532,13 @@ const ProductivityHub = ({ tasks, genericAdd, genericUpdate, genericDelete, goog
     // Calendar
     const [events, setEvents] = useState([]);
     const [loadingEvents, setLoadingEvents] = useState(false);
+
+    // Google Tasks
+    const [gtasks, setGtasks] = useState([]);
+    const [loadingGtasks, setLoadingGtasks] = useState(false);
+    const [gtaskError, setGtaskError] = useState('');
+    const [newGtaskTitle, setNewGtaskTitle] = useState('');
+    const [newGtaskDue, setNewGtaskDue] = useState('');
     
     // Formulario Evento
     const [eventTitle, setEventTitle] = useState('');
@@ -2547,7 +2554,7 @@ const ProductivityHub = ({ tasks, genericAdd, genericUpdate, genericDelete, goog
         }
         const client = window.google.accounts.oauth2.initTokenClient({
             client_id: '871176559846-qctr4g2s05te327su654gpg91oq85gfd.apps.googleusercontent.com', // Configuracion manual posterior
-            scope: 'https://www.googleapis.com/auth/calendar.events',
+            scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks',
             callback: (response) => {
                 if (response.error) {
                     console.error('Error Google Auth:', response);
@@ -2591,6 +2598,103 @@ const ProductivityHub = ({ tasks, genericAdd, genericUpdate, genericDelete, goog
     useEffect(() => {
         if (googleToken && activeView === 'calendar') fetchEvents(googleToken);
     }, [googleToken, activeView]);
+
+    // --- Google Tasks (API REST) ---
+    const GTASKS_BASE = 'https://tasks.googleapis.com/tasks/v1/lists/@default/tasks';
+
+    const fetchGoogleTasks = async (token) => {
+        if (!token) return;
+        setLoadingGtasks(true);
+        setGtaskError('');
+        try {
+            const res = await fetch(`${GTASKS_BASE}?showCompleted=false&maxResults=100`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.status === 401 || res.status === 403) {
+                // El token guardado no tiene permiso de Tasks: hay que reconectar Google.
+                setGtaskError('Reconecta tu cuenta de Google para activar el permiso de Tasks.');
+                setGtasks([]);
+                return;
+            }
+            const data = await res.json();
+            // Ordenar: las que tienen fecha primero, por fecha; luego el resto.
+            const items = (data.items || []).slice().sort((a, b) => {
+                if (a.due && b.due) return new Date(a.due) - new Date(b.due);
+                if (a.due) return -1;
+                if (b.due) return 1;
+                return 0;
+            });
+            setGtasks(items);
+        } catch (error) {
+            console.error('Error fetching Google Tasks:', error);
+            setGtaskError('No se pudieron cargar las tareas de Google.');
+        } finally {
+            setLoadingGtasks(false);
+        }
+    };
+
+    useEffect(() => {
+        if (googleToken && activeView === 'gtasks') fetchGoogleTasks(googleToken);
+    }, [googleToken, activeView]);
+
+    const handleAddGoogleTask = async (e) => {
+        e.preventDefault();
+        if (!googleToken) return alert('Conecta tu cuenta de Google primero.');
+        if (!newGtaskTitle.trim()) return;
+
+        const body = { title: newGtaskTitle.trim() };
+        // Google Tasks usa due en formato RFC3339 (solo se respeta la fecha, no la hora).
+        if (newGtaskDue) body.due = new Date(`${newGtaskDue}T00:00:00`).toISOString();
+
+        try {
+            const res = await fetch(GTASKS_BASE, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${googleToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            if (res.status === 401 || res.status === 403) {
+                setGtaskError('Reconecta tu cuenta de Google para activar el permiso de Tasks.');
+                return;
+            }
+            if (res.ok) {
+                setNewGtaskTitle('');
+                setNewGtaskDue('');
+                fetchGoogleTasks(googleToken);
+            } else {
+                alert('No se pudo crear la tarea en Google Tasks.');
+            }
+        } catch (error) {
+            console.error('Error creando Google Task:', error);
+        }
+    };
+
+    const toggleGoogleTask = async (task) => {
+        if (!googleToken) return;
+        const nuevoEstado = task.status === 'completed' ? 'needsAction' : 'completed';
+        try {
+            const res = await fetch(`${GTASKS_BASE}/${task.id}`, {
+                method: 'PATCH',
+                headers: { Authorization: `Bearer ${googleToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: nuevoEstado })
+            });
+            if (res.ok) fetchGoogleTasks(googleToken);
+        } catch (error) {
+            console.error('Error actualizando Google Task:', error);
+        }
+    };
+
+    const deleteGoogleTask = async (task) => {
+        if (!googleToken) return;
+        try {
+            const res = await fetch(`${GTASKS_BASE}/${task.id}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${googleToken}` }
+            });
+            if (res.ok || res.status === 204) fetchGoogleTasks(googleToken);
+        } catch (error) {
+            console.error('Error eliminando Google Task:', error);
+        }
+    };
 
     const handleAddEvent = async (e) => {
         e.preventDefault();
@@ -2649,11 +2753,15 @@ const ProductivityHub = ({ tasks, genericAdd, genericUpdate, genericDelete, goog
             <div className="flex p-1 bg-slate-100 rounded-xl w-full md:max-w-md">
                 <button onClick={() => setActiveView('tasks')}
                     className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all ${activeView === 'tasks' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                    <CheckCircle2 size={16} /> Tareas Pendientes
+                    <CheckCircle2 size={16} /> Tareas
                 </button>
                 <button onClick={() => setActiveView('calendar')}
                     className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all ${activeView === 'calendar' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                    <CalendarDays size={16} /> Google Calendar
+                    <CalendarDays size={16} /> Calendar
+                </button>
+                <button onClick={() => setActiveView('gtasks')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all ${activeView === 'gtasks' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                    <ListTodo size={16} /> Google Tasks
                 </button>
             </div>
 
@@ -2817,6 +2925,106 @@ const ProductivityHub = ({ tasks, genericAdd, genericUpdate, genericDelete, goog
                                                                 : 'Todo el día'}
                                                         </p>
                                                     </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* GOOGLE TASKS VIEW */}
+            {activeView === 'gtasks' && (
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                    <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center border border-slate-200">
+                                <svg className="w-5 h-5" viewBox="0 0 24 24"><path fill="#4285F4" d="M21.35,11.1H12.18V13.83H18.69C18.36,17.64 15.19,19.27 12.19,19.27C8.36,19.27 5,16.25 5,12C5,7.9 8.2,4.73 12.2,4.73C15.29,4.73 17.1,6.7 17.1,6.7L19,4.72C19,4.72 16.56,2 12.1,2C6.42,2 2.03,6.8 2.03,12C2.03,17.05 6.16,22 12.25,22C17.08,22 21.67,18.52 21.67,12.29C21.67,11.9 21.5,11.1 21.5,11.1"></path></svg>
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-slate-800">Google Tasks</h3>
+                                <p className="text-xs text-slate-500">{googleToken ? 'Conectado. Estas son tus tareas de Google.' : 'Conecta tu cuenta para ver y crear tareas'}</p>
+                            </div>
+                        </div>
+                        {!googleToken ? (
+                            <button onClick={handleGoogleLogin} className="bg-white border text-slate-700 px-4 py-2 rounded-xl text-sm font-bold shadow-sm hover:bg-slate-50 transition-colors flex items-center gap-2">
+                                <Globe size={16} /> Conectar Google
+                            </button>
+                        ) : (
+                            <button onClick={() => {localStorage.removeItem('google_calendar_token'); setGoogleToken(null); setGtasks([]);}} className="text-slate-400 hover:text-slate-600 text-sm font-medium">Desconectar</button>
+                        )}
+                    </div>
+
+                    {googleToken && (
+                        <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
+                            {/* Formulario Nueva Tarea Google */}
+                            <div className="p-6 lg:col-span-1 bg-slate-50/50">
+                                <h4 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><Plus size={16}/> Nueva Tarea en Google</h4>
+                                <form onSubmit={handleAddGoogleTask} className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 mb-1">¿Qué necesitas hacer?</label>
+                                        <input placeholder="Ej: Pagar arriendo" value={newGtaskTitle} onChange={e => setNewGtaskTitle(e.target.value)} required
+                                            className="w-full px-3 py-2 border rounded-lg outline-none focus:border-blue-500 text-sm" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 mb-1">Fecha límite (opcional)</label>
+                                        <input type="date" value={newGtaskDue} onChange={e => setNewGtaskDue(e.target.value)}
+                                            className="w-full px-3 py-2 border rounded-lg outline-none focus:border-blue-500 text-sm" />
+                                    </div>
+                                    <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded-lg font-bold hover:bg-blue-700 transition-colors shadow-sm mt-2 text-sm">
+                                        Crear en Google Tasks
+                                    </button>
+                                </form>
+                            </div>
+
+                            {/* Lista Google Tasks */}
+                            <div className="p-6 lg:col-span-2">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h4 className="font-bold text-slate-700 flex items-center gap-2"><ListTodo size={18} className="text-blue-500"/> Mis Tareas de Google ({gtasks.length})</h4>
+                                    <button onClick={() => fetchGoogleTasks(googleToken)} className="text-slate-400 hover:text-blue-600"><RefreshCw size={14}/></button>
+                                </div>
+
+                                {gtaskError ? (
+                                    <div className="text-center py-8 bg-amber-50 rounded-xl border border-dashed border-amber-200">
+                                        <p className="text-amber-700 text-sm mb-3">{gtaskError}</p>
+                                        <button onClick={handleGoogleLogin} className="bg-white border border-amber-300 text-amber-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-amber-100 transition-colors inline-flex items-center gap-2">
+                                            <Globe size={16} /> Reconectar Google
+                                        </button>
+                                    </div>
+                                ) : loadingGtasks ? (
+                                    <div className="flex flex-col justify-center items-center py-10 opacity-50">
+                                        <Loader2 size={24} className="animate-spin text-blue-500 mb-2" />
+                                        <span className="text-sm font-medium">Cargando...</span>
+                                    </div>
+                                ) : gtasks.length === 0 ? (
+                                    <div className="text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                                        <p className="text-slate-500 text-sm">No tienes tareas pendientes en Google Tasks.</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                                        {gtasks.map(task => {
+                                            const due = task.due ? new Date(task.due) : null;
+                                            return (
+                                                <div key={task.id} className="bg-white p-4 rounded-xl border border-slate-200 flex items-center justify-between gap-4 transition-all hover:shadow-sm group">
+                                                    <div className="flex items-center gap-3 flex-1 overflow-hidden">
+                                                        <button onClick={() => toggleGoogleTask(task)} className="shrink-0 text-slate-300 hover:text-emerald-500 transition-colors">
+                                                            <div className="w-[22px] h-[22px] rounded-full border-2 border-current" />
+                                                        </button>
+                                                        <div className="flex-1 overflow-hidden">
+                                                            <span className="text-slate-700 font-medium block truncate">{task.title || '(Sin título)'}</span>
+                                                            {due && (
+                                                                <span className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+                                                                    <CalendarDays size={12} /> {due.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <button onClick={() => deleteGoogleTask(task)} className="text-slate-300 hover:text-rose-500 p-2 opacity-0 group-hover:opacity-100 transition-all rounded-lg hover:bg-rose-50">
+                                                        <Trash2 size={16} />
+                                                    </button>
                                                 </div>
                                             );
                                         })}
