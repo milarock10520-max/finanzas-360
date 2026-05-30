@@ -2750,8 +2750,17 @@ const ProductivityHub = ({ tasks, genericAdd, genericUpdate, genericDelete, goog
                 headers: { Authorization: `Bearer ${token}` }
             });
             if (res.status === 401 || res.status === 403) {
-                // El token guardado no tiene permiso de Tasks: hay que reconectar Google.
-                setGtaskError('Reconecta tu cuenta de Google para activar el permiso de Tasks.');
+                // 401 = token sin permiso de Tasks (reconectar). 403 = puede ser API deshabilitada.
+                let detalle = '';
+                try {
+                    const err = await res.json();
+                    detalle = err?.error?.message || '';
+                } catch (e) { /* sin cuerpo */ }
+                if (res.status === 403 && /has not been used|is disabled|disabled/i.test(detalle)) {
+                    setGtaskError('La API de Google Tasks no está habilitada en tu proyecto de Google Cloud. Actívala en console.cloud.google.com (APIs y servicios → habilitar "Tasks API") y vuelve a intentar.');
+                } else {
+                    setGtaskError('Reconecta tu cuenta de Google para activar el permiso de Tasks.' + (detalle ? ` (${detalle})` : ''));
+                }
                 setGtasks([]);
                 return;
             }
@@ -2792,12 +2801,22 @@ const ProductivityHub = ({ tasks, genericAdd, genericUpdate, genericDelete, goog
                 body: JSON.stringify(body)
             });
             if (res.status === 401 || res.status === 403) {
-                setGtaskError('Reconecta tu cuenta de Google para activar el permiso de Tasks.');
+                let detalle = '';
+                try {
+                    const err = await res.json();
+                    detalle = err?.error?.message || '';
+                } catch (e) { /* sin cuerpo */ }
+                if (res.status === 403 && /has not been used|is disabled|disabled/i.test(detalle)) {
+                    setGtaskError('La API de Google Tasks no está habilitada en tu proyecto de Google Cloud. Actívala en console.cloud.google.com (APIs y servicios → habilitar "Tasks API") y vuelve a intentar.');
+                } else {
+                    setGtaskError('Reconecta tu cuenta de Google para activar el permiso de Tasks.' + (detalle ? ` (${detalle})` : ''));
+                }
                 return;
             }
             if (res.ok) {
                 setNewGtaskTitle('');
                 setNewGtaskDue('');
+                setGtaskError('');
                 fetchGoogleTasks(googleToken);
             } else {
                 alert('No se pudo crear la tarea en Google Tasks.');
