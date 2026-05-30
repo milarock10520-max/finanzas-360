@@ -2993,7 +2993,7 @@ const PasswordVault = ({ passwords, vaultConfig, genericAdd, genericUpdate, gene
 // =============================================
 // === COMPONENTE: AI COACH (CLAUDE OPUS 4.8) ===
 // =============================================
-const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, tasks, habitos = [], diario = [], googleToken = null }) => {
+const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, tasks, habitos = [], diario = [], googleToken = null, coachMensajes = [], genericAdd, genericDelete }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
@@ -3007,6 +3007,27 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, task
     useEffect(() => {
         scrollToBottom();
     }, [messages, isTyping]);
+
+    // Cargar/sincronizar el historial guardado en Firestore (memoria del coach).
+    // Mientras el coach está "escribiendo" no sobreescribimos para no pisar el
+    // mensaje optimista que se muestra al instante.
+    useEffect(() => {
+        if (isTyping) return;
+        const ordenados = [...coachMensajes]
+            .sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''))
+            .map(m => ({ id: m.id, role: m.role, content: m.content }));
+        setMessages(ordenados);
+    }, [coachMensajes, isTyping]);
+
+    const handleNuevaConversacion = async () => {
+        if (!coachMensajes.length) { setMessages([]); return; }
+        if (!window.confirm('¿Borrar todo el historial del coach? Esto no se puede deshacer.')) return;
+        const ids = coachMensajes.map(m => m.id);
+        setMessages([]);
+        try {
+            await Promise.all(ids.map(id => genericDelete && genericDelete('coach_mensajes', id)));
+        } catch (e) { console.error('Error al borrar historial del coach:', e); }
+    };
 
     const buildFinancialContext = async () => {
         const fmt = (n) => '$' + (Number(n) || 0).toLocaleString('es-CO');
@@ -3199,19 +3220,27 @@ ${diarioTxt || 'No hay entradas en el diario.'}`;
         const userMsg = input.trim();
         setInput('');
         const newMessages = [...messages, { role: 'user', content: userMsg }];
-        setMessages(newMessages);
+        setMessages(newMessages); // feedback optimista inmediato
         setIsTyping(true);
+
+        // Guardar el mensaje del usuario en el historial (memoria persistente).
+        const userTs = new Date().toISOString();
+        if (genericAdd) {
+            genericAdd('coach_mensajes', { role: 'user', content: userMsg, createdAt: userTs })
+                .catch(e => console.error('No se pudo guardar el mensaje del usuario:', e));
+        }
 
         try {
             const context = await buildFinancialContext();
 
+            // Enviamos los últimos 30 mensajes como contexto de la conversación
+            // (memoria) para no disparar el costo en chats muy largos.
+            const historreciente = newMessages.slice(-30).map(m => ({ role: m.role, content: m.content }));
+
             const res = await fetch('/api/ai-coach', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    context,
-                    messages: newMessages.map(m => ({ role: m.role, content: m.content }))
-                })
+                body: JSON.stringify({ context, messages: historreciente })
             });
 
             if (!res.ok) {
@@ -3223,11 +3252,18 @@ ${diarioTxt || 'No hay entradas en el diario.'}`;
             const botResponse = data.reply || 'No recibí respuesta. Intenta de nuevo.';
 
             setMessages([...newMessages, { role: 'assistant', content: botResponse }]);
+            setIsTyping(false);
+
+            // Guardar la respuesta del coach. createdAt posterior al del usuario
+            // para conservar el orden cronológico.
+            if (genericAdd) {
+                genericAdd('coach_mensajes', { role: 'assistant', content: botResponse, createdAt: new Date(Date.now() + 1).toISOString() })
+                    .catch(e => console.error('No se pudo guardar la respuesta del coach:', e));
+            }
 
         } catch (error) {
             console.error('Coach IA Error:', error);
             setMessages([...newMessages, { role: 'assistant', content: '❌ Lo siento, hubo un error de conexión con el Coach IA. Intenta de nuevo en unos segundos.' }]);
-        } finally {
             setIsTyping(false);
         }
     };
@@ -3249,6 +3285,9 @@ ${diarioTxt || 'No hay entradas en el diario.'}`;
                         </div>
                     </div>
                     <div className="flex gap-2">
+                        <button onClick={handleNuevaConversacion} title="Nueva conversación (borra el historial)" className="w-8 h-8 rounded-full hover:bg-white/20 flex items-center justify-center transition-colors">
+                            <Trash2 size={18} />
+                        </button>
                         <button onClick={() => setIsOpen(false)} className="w-8 h-8 rounded-full hover:bg-white/20 flex items-center justify-center transition-colors">
                             <X size={20} />
                         </button>
@@ -3890,6 +3929,7 @@ export default function App() {
     const [tasks, setTasks] = useState([]);
     const [habitos, setHabitos] = useState([]);
     const [diario, setDiario] = useState([]);
+    const [coachMensajes, setCoachMensajes] = useState([]);
     // Token de Google Calendar persistido: sobrevive recargas mientras no caduque (~1h).
     const [googleToken, setGoogleToken] = useState(() => {
         try {
@@ -4036,7 +4076,10 @@ export default function App() {
         const unsubDiario = onSnapshot(collection(db, `${basePath}/diario`), (snap) =>
             setDiario(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
-        return () => { unsubTrans(); unsubDeudas(); unsubMetas(); unsubPresupuesto(); unsubLimites(); unsubPasswords(); unsubVaultConfig(); unsubTasks(); unsubHabitos(); unsubDiario(); };
+        const unsubCoach = onSnapshot(collection(db, `${basePath}/coach_mensajes`), (snap) =>
+            setCoachMensajes(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+
+        return () => { unsubTrans(); unsubDeudas(); unsubMetas(); unsubPresupuesto(); unsubLimites(); unsubPasswords(); unsubVaultConfig(); unsubTasks(); unsubHabitos(); unsubDiario(); unsubCoach(); };
     }, [user]);
 
     // --- ACTIONS FIREBASE ---
@@ -4134,7 +4177,7 @@ export default function App() {
 
         try {
             setLoading(true);
-            const collections = ['transacciones', 'deudas', 'metas', 'presupuesto', 'limites', 'passwords', 'vault_config', 'tasks', 'habitos', 'diario'];
+            const collections = ['transacciones', 'deudas', 'metas', 'presupuesto', 'limites', 'passwords', 'vault_config', 'tasks', 'habitos', 'diario', 'coach_mensajes'];
             const { getDocs, setDoc, doc } = await import('firebase/firestore');
 
             let totalMigrated = 0;
@@ -4347,7 +4390,7 @@ export default function App() {
             />
 
             {/* AI Coach Floating Widget - Injected Globally */}
-            <AICoach transacciones={transacciones} deudas={deudas} metas={metas} presupuestoItems={presupuestoItems} limites={limites} tasks={tasks} habitos={habitos} diario={diario} googleToken={googleToken} />
+            <AICoach transacciones={transacciones} deudas={deudas} metas={metas} presupuestoItems={presupuestoItems} limites={limites} tasks={tasks} habitos={habitos} diario={diario} googleToken={googleToken} coachMensajes={coachMensajes} genericAdd={genericAdd} genericDelete={genericDelete} />
         </div>
     );
 }
