@@ -49,6 +49,8 @@ import {
     Circle,
     Clock,
     GripVertical,
+    Pin,
+    PinOff,
     LogOut
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
@@ -518,11 +520,12 @@ const FinancialAnalysis = ({ transacciones }) => {
     const transaccionesMes = transacciones.filter(t => t.fecha && t.fecha.startsWith(mesSeleccionado));
 
     const ingresosMes = transaccionesMes.filter(t => t.tipo === 'ingreso').reduce((acc, curr) => acc + (Number(curr.monto) || 0), 0);
-    const gastosMes = transaccionesMes.filter(t => t.tipo === 'gasto').reduce((acc, curr) => acc + (Number(curr.monto) || 0), 0);
+    // Los aportes a inversión NO cuentan como gasto real (no es consumo, es mover dinero a tu patrimonio)
+    const gastosMes = transaccionesMes.filter(t => t.tipo === 'gasto' && !t.esInversion).reduce((acc, curr) => acc + (Number(curr.monto) || 0), 0);
     const balanceMes = ingresosMes - gastosMes;
 
     const gastosPorCategoria = transaccionesMes
-        .filter(t => t.tipo === 'gasto')
+        .filter(t => t.tipo === 'gasto' && !t.esInversion)
         .reduce((acc, curr) => {
             acc[curr.categoria] = (acc[curr.categoria] || 0) + (Number(curr.monto) || 0);
             return acc;
@@ -709,6 +712,7 @@ const BudgetPlanner = ({ presupuestoItems, limites, transacciones, genericAdd, g
     const [concepto, setConcepto] = useState('');
     const [monto, setMonto] = useState('');
     const [categoria, setCategoria] = useState(CATEGORIAS_GASTOS[0]);
+    const [recurrente, setRecurrente] = useState(true);
     const [editandoId, setEditandoId] = useState(null);
     const [montoEdit, setMontoEdit] = useState('');
 
@@ -717,11 +721,17 @@ const BudgetPlanner = ({ presupuestoItems, limites, transacciones, genericAdd, g
 
     // Calcular total presupuesto
     const totalPresupuesto = presupuestoItems.reduce((acc, item) => acc + (Number(item.monto) || 0), 0);
+    // Un ítem es fijo si recurrente === true. Los ítems antiguos (sin el campo) se tratan como fijos.
+    const esFijo = (item) => item.recurrente !== false;
 
     const agregarObligacion = async (e) => {
         e.preventDefault();
-        await genericAdd('presupuesto', { concepto, monto: parseFloat(monto), categoria, lastPaid: '' });
-        setConcepto(''); setMonto('');
+        await genericAdd('presupuesto', { concepto, monto: parseFloat(monto), categoria, lastPaid: '', recurrente });
+        setConcepto(''); setMonto(''); setRecurrente(true);
+    };
+
+    const toggleRecurrente = async (item) => {
+        await genericUpdate('presupuesto', item.id, { recurrente: !esFijo(item) });
     };
 
     const iniciarEdicion = (item) => {
@@ -735,9 +745,18 @@ const BudgetPlanner = ({ presupuestoItems, limites, transacciones, genericAdd, g
     };
 
     const prepararNuevoMes = async () => {
-        if (!confirm(`¿Estás listo para iniciar el mes de ${nombreMesActual}? \n\nEsta acción desmarcará todos los pagos.`)) return;
-        const batchUpdates = presupuestoItems.map(item => genericUpdate('presupuesto', item.id, { lastPaid: '' }));
-        await Promise.all(batchUpdates);
+        const fijos = presupuestoItems.filter(esFijo);
+        const noFijos = presupuestoItems.filter(item => !esFijo(item));
+        let mensaje = `¿Iniciar el mes de ${nombreMesActual}?\n\n• Se desmarcarán los pagos de tus ${fijos.length} ítem(s) fijo(s) para volver a usarlos.`;
+        if (noFijos.length > 0) {
+            mensaje += `\n• Se eliminarán ${noFijos.length} ítem(s) marcado(s) como de un solo mes.`;
+        }
+        if (!confirm(mensaje)) return;
+        const operaciones = [
+            ...fijos.map(item => genericUpdate('presupuesto', item.id, { lastPaid: '' })),
+            ...noFijos.map(item => genericDelete('presupuesto', item.id)),
+        ];
+        await Promise.all(operaciones);
     };
 
     return (
@@ -769,12 +788,19 @@ const BudgetPlanner = ({ presupuestoItems, limites, transacciones, genericAdd, g
                             <input placeholder="Obligación (Ej: Arriendo)" value={concepto} onChange={e => setConcepto(e.target.value)} className="w-full px-4 py-2 border rounded-lg outline-none focus:border-indigo-500" required />
                             <input type="number" placeholder="Monto Estimado" value={monto} onChange={e => setMonto(e.target.value)} className="w-full px-4 py-2 border rounded-lg outline-none focus:border-indigo-500" required />
                             <select value={categoria} onChange={e => setCategoria(e.target.value)} className="w-full px-4 py-2 border rounded-lg outline-none bg-white">{CATEGORIAS_GASTOS.map(c => <option key={c} value={c}>{c}</option>)}</select>
+                            <label className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer select-none">
+                                <input type="checkbox" checked={recurrente} onChange={e => setRecurrente(e.target.checked)} className="w-5 h-5 accent-indigo-600" />
+                                <div className="flex-1">
+                                    <span className="text-sm font-semibold text-slate-700 flex items-center gap-1"><Pin size={14} className="text-indigo-500" /> Fijo todos los meses</span>
+                                    <p className="text-xs text-slate-400">Se queda y se reutiliza cada mes (ej: Arriendo). Desactívalo si es un gasto de un solo mes.</p>
+                                </div>
+                            </label>
                             <button type="submit" className="w-full bg-indigo-600 text-white py-3 rounded-lg font-bold hover:bg-indigo-700">Agregar al Presupuesto</button>
                         </form>
 
                         <div className="mt-8 p-4 bg-indigo-50 rounded-xl border border-indigo-100">
                             <h4 className="font-bold text-indigo-800 mb-2 text-sm">💡 Tip para nuevo mes</h4>
-                            <p className="text-xs text-indigo-600 mb-3">¿Empieza un nuevo mes? Usa este botón para reciclar tu lista.</p>
+                            <p className="text-xs text-indigo-600 mb-3">Al iniciar un mes, los ítems <strong>fijos</strong> se conservan (se les quita el "pagado") y los de un solo mes se eliminan.</p>
                             <button onClick={prepararNuevoMes} className="w-full flex items-center justify-center gap-2 text-sm bg-white border border-indigo-200 text-indigo-700 py-2 rounded-lg hover:bg-indigo-100 transition-colors font-semibold"><RotateCcw size={16} /> Preparar {nombreMesActual}</button>
                         </div>
                     </div>
@@ -791,7 +817,15 @@ const BudgetPlanner = ({ presupuestoItems, limites, transacciones, genericAdd, g
                                     <div key={item.id} className={`p-4 rounded-xl border flex justify-between items-center transition-all ${isPaid ? 'bg-emerald-50 border-emerald-200 opacity-70' : 'bg-white border-slate-100 shadow-sm'}`}>
                                         <div className="flex items-center gap-4">
                                             <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${isPaid ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300'}`}>{isPaid && <CheckCircle2 size={16} />}</div>
-                                            <div><h4 className={`font-bold ${isPaid ? 'text-emerald-700 line-through' : 'text-slate-800'}`}>{item.concepto}</h4><p className="text-xs text-slate-500">{item.categoria}</p></div>
+                                            <div>
+                                                <h4 className={`font-bold flex items-center gap-1.5 ${isPaid ? 'text-emerald-700 line-through' : 'text-slate-800'}`}>
+                                                    {item.concepto}
+                                                    {esFijo(item)
+                                                        ? <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full"><Pin size={10} /> Fijo</span>
+                                                        : <span className="inline-flex items-center text-[10px] font-semibold bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded-full">1 mes</span>}
+                                                </h4>
+                                                <p className="text-xs text-slate-500">{item.categoria}</p>
+                                            </div>
                                         </div>
                                         <div className="flex items-center gap-3">
                                             {editandoId === item.id ? (
@@ -829,7 +863,10 @@ const BudgetPlanner = ({ presupuestoItems, limites, transacciones, genericAdd, g
                                                 </button>
                                             )}
 
-                                            <button onClick={() => genericDelete('presupuesto', item.id)} className="text-slate-300 hover:text-rose-500 ml-2"><Trash2 size={16} /></button>
+                                            <button onClick={() => toggleRecurrente(item)} className={`ml-2 transition-colors ${esFijo(item) ? 'text-indigo-500 hover:text-slate-400' : 'text-slate-300 hover:text-indigo-500'}`} title={esFijo(item) ? 'Quitar de fijos (será de un solo mes)' : 'Marcar como fijo todos los meses'}>
+                                                {esFijo(item) ? <Pin size={16} /> : <PinOff size={16} />}
+                                            </button>
+                                            <button onClick={() => genericDelete('presupuesto', item.id)} className="text-slate-300 hover:text-rose-500 ml-1"><Trash2 size={16} /></button>
                                         </div>
                                     </div>
                                 );
@@ -2232,7 +2269,11 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, task
         };
 
         // --- Resumen general ---
-        const saldo = transacciones.reduce((acc, t) => acc + (t.tipo === 'ingreso' ? t.monto : (t.esInversion && t.inversionPatrimonio ? 0 : -t.monto)), 0);
+        // Mismo cálculo que la pantalla de Inicio: ingresos - gastos (las inversiones
+        // de tipo patrimonio no son 'gasto', así que no se descuentan del saldo).
+        const totalIngresosAll = transacciones.filter(t => t.tipo === 'ingreso').reduce((a, c) => a + (Number(c.monto) || 0), 0);
+        const totalGastosAll = transacciones.filter(t => t.tipo === 'gasto').reduce((a, c) => a + (Number(c.monto) || 0), 0);
+        const saldo = totalIngresosAll - totalGastosAll;
         const ingresosMes = transacciones.filter(t => t.tipo === 'ingreso' && esEsteMes(t.fecha)).reduce((acc, t) => acc + t.monto, 0);
         const gastosMes = transacciones.filter(t => t.tipo === 'gasto' && !t.esInversion && esEsteMes(t.fecha)).reduce((acc, t) => acc + t.monto, 0);
         const deudasPendientes = deudas.reduce((acc, d) => acc + (Number(d.montoTotal || 0) - Number(d.montoPagado || 0)), 0);
