@@ -2446,17 +2446,24 @@ const MiDia = ({ user, tasks, habitos, diario, transacciones, presupuestoItems, 
 // === CRYPTO HELPERS (AES-256-GCM + PBKDF2) ===
 // =============================================
 
-const PBKDF2_ITERATIONS = 100000;
+// Nº de iteraciones PBKDF2 para bóvedas NUEVAS. Recomendación OWASP 2023
+// para PBKDF2-HMAC-SHA256 es 600.000. Las bóvedas antiguas (creadas con
+// 100.000) guardan su propio valor en vault_config para seguir funcionando.
+const PBKDF2_ITERATIONS = 600000;
+const LEGACY_PBKDF2_ITERATIONS = 100000;
+// Texto fijo que ciframos con la clave maestra para verificar el desbloqueo
+// SIN almacenar ningún hash rápido de la clave (que sería atacable offline).
+const VAULT_VERIFIER_TEXT = 'FINANZAS_360_VAULT_VERIFIER_V1';
 
 const getKeyMaterial = async (password) => {
     const enc = new TextEncoder();
     return crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
 };
 
-const deriveEncryptionKey = async (password, salt) => {
+const deriveEncryptionKey = async (password, salt, iterations = PBKDF2_ITERATIONS) => {
     const keyMaterial = await getKeyMaterial(password);
     return crypto.subtle.deriveKey(
-        { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+        { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
         keyMaterial,
         { name: 'AES-GCM', length: 256 },
         false,
@@ -2464,8 +2471,8 @@ const deriveEncryptionKey = async (password, salt) => {
     );
 };
 
-const encryptText = async (plaintext, masterPassword, salt) => {
-    const key = await deriveEncryptionKey(masterPassword, salt);
+const encryptText = async (plaintext, masterPassword, salt, iterations = PBKDF2_ITERATIONS) => {
+    const key = await deriveEncryptionKey(masterPassword, salt, iterations);
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const enc = new TextEncoder();
     const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(plaintext));
@@ -2475,9 +2482,9 @@ const encryptText = async (plaintext, masterPassword, salt) => {
     };
 };
 
-const decryptText = async (encryptedData, masterPassword, salt) => {
+const decryptText = async (encryptedData, masterPassword, salt, iterations = PBKDF2_ITERATIONS) => {
     try {
-        const key = await deriveEncryptionKey(masterPassword, salt);
+        const key = await deriveEncryptionKey(masterPassword, salt, iterations);
         const iv = new Uint8Array(atob(encryptedData.iv).split('').map(c => c.charCodeAt(0)));
         const ciphertext = new Uint8Array(atob(encryptedData.ciphertext).split('').map(c => c.charCodeAt(0)));
         const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
@@ -2493,6 +2500,15 @@ const hashText = async (text) => {
     return btoa(String.fromCharCode(...new Uint8Array(hashBuffer)));
 };
 
+// Entero aleatorio seguro en [0, max) usando crypto.getRandomValues sin sesgo.
+const secureRandomInt = (max) => {
+    const limit = Math.floor(0xffffffff / max) * max;
+    const buf = new Uint32Array(1);
+    let x;
+    do { crypto.getRandomValues(buf); x = buf[0]; } while (x >= limit);
+    return x % max;
+};
+
 const generateStrongPassword = (length = 20) => {
     const upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     const lower = 'abcdefghijklmnopqrstuvwxyz';
@@ -2500,13 +2516,18 @@ const generateStrongPassword = (length = 20) => {
     const symbols = '!@#$%^&*()-_=+[]{}|;:,.<>?';
     const all = upper + lower + digits + symbols;
     let pw = [
-        upper[Math.floor(Math.random() * upper.length)],
-        lower[Math.floor(Math.random() * lower.length)],
-        digits[Math.floor(Math.random() * digits.length)],
-        symbols[Math.floor(Math.random() * symbols.length)],
+        upper[secureRandomInt(upper.length)],
+        lower[secureRandomInt(lower.length)],
+        digits[secureRandomInt(digits.length)],
+        symbols[secureRandomInt(symbols.length)],
     ];
-    for (let i = pw.length; i < length; i++) pw.push(all[Math.floor(Math.random() * all.length)]);
-    return pw.sort(() => Math.random() - 0.5).join('');
+    for (let i = pw.length; i < length; i++) pw.push(all[secureRandomInt(all.length)]);
+    // Mezcla Fisher-Yates con aleatoriedad criptográfica.
+    for (let i = pw.length - 1; i > 0; i--) {
+        const j = secureRandomInt(i + 1);
+        [pw[i], pw[j]] = [pw[j], pw[i]];
+    }
+    return pw.join('');
 };
 
 const CATEGORIAS_PASSWORDS = ['Correo', 'Red Social', 'Banco / Finanzas', 'Trabajo', 'Entretenimiento', 'Compras', 'Otro'];
@@ -2533,6 +2554,7 @@ const PasswordVault = ({ passwords, vaultConfig, genericAdd, genericUpdate, gene
     const [isCreatingMaster, setIsCreatingMaster] = useState(false);
     const [error, setError] = useState('');
     const [salt, setSalt] = useState(null);
+    const [iterations, setIterations] = useState(PBKDF2_ITERATIONS);
 
     // Form states
     const [servicio, setServicio] = useState('');
@@ -2565,22 +2587,29 @@ const PasswordVault = ({ passwords, vaultConfig, genericAdd, genericUpdate, gene
             if (config.salt) {
                 setSalt(new Uint8Array(atob(config.salt).split('').map(c => c.charCodeAt(0))));
             }
+            // Bóvedas antiguas no guardan iterations -> usaban 100.000.
+            setIterations(config.iterations || LEGACY_PBKDF2_ITERATIONS);
         } else {
             setIsCreatingMaster(true);
+            setIterations(PBKDF2_ITERATIONS);
         }
     }, [vaultConfig]);
 
     const handleCreateMaster = async (e) => {
         e.preventDefault();
-        if (masterInput.length < 6) { setError('La clave debe tener al menos 6 caracteres'); return; }
+        if (masterInput.length < 10) { setError('Usa al menos 10 caracteres (mejor una frase larga)'); return; }
         if (masterInput !== confirmInput) { setError('Las claves no coinciden'); return; }
 
         const newSalt = crypto.getRandomValues(new Uint8Array(16));
         const saltB64 = btoa(String.fromCharCode(...newSalt));
-        const masterHash = await hashText(masterInput + saltB64);
+        // Verificador: ciframos un texto fijo con la clave maestra. Para
+        // desbloquear hay que poder descifrarlo (no se guarda ningún hash
+        // rápido que pueda atacarse offline).
+        const verifier = await encryptText(VAULT_VERIFIER_TEXT, masterInput, newSalt, PBKDF2_ITERATIONS);
 
-        await genericAdd('vault_config', { masterHash, salt: saltB64 });
+        await genericAdd('vault_config', { salt: saltB64, iterations: PBKDF2_ITERATIONS, verifier });
         setSalt(newSalt);
+        setIterations(PBKDF2_ITERATIONS);
         setMasterPassword(masterInput);
         setIsUnlocked(true);
         setMasterInput('');
@@ -2592,10 +2621,33 @@ const PasswordVault = ({ passwords, vaultConfig, genericAdd, genericUpdate, gene
         e.preventDefault();
         if (!vaultConfig || vaultConfig.length === 0) return;
         const config = vaultConfig[0];
-        const inputHash = await hashText(masterInput + config.salt);
-        if (inputHash === config.masterHash) {
+        const saltBytes = new Uint8Array(atob(config.salt).split('').map(c => c.charCodeAt(0)));
+        const iters = config.iterations || LEGACY_PBKDF2_ITERATIONS;
+
+        let ok = false;
+        if (config.verifier) {
+            // Esquema nuevo: desbloqueo = poder descifrar el verificador.
+            const dec = await decryptText(config.verifier, masterInput, saltBytes, iters);
+            ok = dec === VAULT_VERIFIER_TEXT;
+        } else if (config.masterHash) {
+            // Esquema antiguo: hash rápido. Si coincide, MIGRAMOS a verificador
+            // y eliminamos el hash para cerrar el ataque offline.
+            const inputHash = await hashText(masterInput + config.salt);
+            ok = inputHash === config.masterHash;
+            if (ok) {
+                try {
+                    const verifier = await encryptText(VAULT_VERIFIER_TEXT, masterInput, saltBytes, iters);
+                    await genericUpdate('vault_config', config.id, {
+                        verifier, iterations: iters, masterHash: null
+                    });
+                } catch (_) { /* si falla, seguimos desbloqueando igual */ }
+            }
+        }
+
+        if (ok) {
             setMasterPassword(masterInput);
-            setSalt(new Uint8Array(atob(config.salt).split('').map(c => c.charCodeAt(0))));
+            setSalt(saltBytes);
+            setIterations(iters);
             setIsUnlocked(true);
             setMasterInput('');
             setError('');
@@ -2607,7 +2659,7 @@ const PasswordVault = ({ passwords, vaultConfig, genericAdd, genericUpdate, gene
     const handleAddPassword = async (e) => {
         e.preventDefault();
         if (!salt) return;
-        const encrypted = await encryptText(passwordInput, masterPassword, salt);
+        const encrypted = await encryptText(passwordInput, masterPassword, salt, iterations);
         await genericAdd('passwords', {
             servicio,
             usuario,
@@ -2629,7 +2681,7 @@ const PasswordVault = ({ passwords, vaultConfig, genericAdd, genericUpdate, gene
             setShowPasswords(prev => ({ ...prev, [item.id]: true }));
             return;
         }
-        const decrypted = await decryptText({ ciphertext: item.passwordEncrypted, iv: item.iv }, masterPassword, salt);
+        const decrypted = await decryptText({ ciphertext: item.passwordEncrypted, iv: item.iv }, masterPassword, salt, iterations);
         if (decrypted) {
             setDecryptedCache(prev => ({ ...prev, [item.id]: decrypted }));
             setShowPasswords(prev => ({ ...prev, [item.id]: true }));
@@ -2641,7 +2693,7 @@ const PasswordVault = ({ passwords, vaultConfig, genericAdd, genericUpdate, gene
     const handleCopy = async (item) => {
         let text = decryptedCache[item.id];
         if (!text) {
-            text = await decryptText({ ciphertext: item.passwordEncrypted, iv: item.iv }, masterPassword, salt);
+            text = await decryptText({ ciphertext: item.passwordEncrypted, iv: item.iv }, masterPassword, salt, iterations);
         }
         if (text) {
             navigator.clipboard.writeText(text);
@@ -2654,7 +2706,7 @@ const PasswordVault = ({ passwords, vaultConfig, genericAdd, genericUpdate, gene
         if (!salt) return;
         const updates = { ...editForm };
         if (editForm.newPassword) {
-            const encrypted = await encryptText(editForm.newPassword, masterPassword, salt);
+            const encrypted = await encryptText(editForm.newPassword, masterPassword, salt, iterations);
             updates.passwordEncrypted = encrypted.ciphertext;
             updates.iv = encrypted.iv;
             delete updates.newPassword;
@@ -2686,7 +2738,7 @@ const PasswordVault = ({ passwords, vaultConfig, genericAdd, genericUpdate, gene
                     </h2>
                     <p className="text-slate-400 text-sm mb-6">
                         {isCreatingMaster
-                            ? 'Crea una clave maestra para proteger tus contraseñas. No la olvides — no se puede recuperar.'
+                            ? 'Crea una clave maestra fuerte (mínimo 10 caracteres; ideal una frase larga). No la olvides — no se puede recuperar y de ella depende toda la seguridad.'
                             : 'Ingresa tu clave maestra para acceder'
                         }
                     </p>
