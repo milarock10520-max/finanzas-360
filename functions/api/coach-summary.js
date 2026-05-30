@@ -151,7 +151,8 @@ const calcStreak = (historial) => {
 const fmt = (n) => '$' + (Number(n) || 0).toLocaleString('es-CO');
 
 function buildContext(data) {
-    const { transacciones, deudas, metas, presupuesto, limites, tasks, habitos, diario } = data;
+    const { transacciones, deudas, metas, presupuesto, limites, tasks, habitos, diario, perfil } = data;
+    const perfilNotas = (perfil && perfil[0] && perfil[0].notas) ? perfil[0].notas : '';
     const ahoraMes = new Date().getMonth();
     const ahoraAnio = new Date().getFullYear();
     const esEsteMes = (fecha) => {
@@ -211,7 +212,10 @@ function buildContext(data) {
     const diarioOrd = [...diario].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).slice(0, 5);
     const diarioTxt = diarioOrd.map(d => `- ${d.fecha} ${MOODS[d.animo] || ''} (${d.animo || '?'}/5)${d.texto ? `: "${d.texto}"` : ''}`).join('\n');
 
-    return `RESUMEN FINANCIERO GENERAL:
+    return `PERFIL DEL USUARIO (memoria de largo plazo, tenlo SIEMPRE presente):
+${perfilNotas ? `- Notas del usuario: ${perfilNotas}` : '- (Sin notas de perfil.)'}
+
+RESUMEN FINANCIERO GENERAL:
 - Saldo disponible actual: ${fmt(saldo)}
 - Ingresos de este mes: ${fmt(ingresosMes)}
 - Gastos de este mes: ${fmt(gastosMes)}
@@ -275,7 +279,7 @@ export async function onRequestPost(context) {
         const accessToken = await getAccessToken(env);
         const projectId = env.FIREBASE_PROJECT_ID || 'appfinanzas-84626';
 
-        const [transacciones, deudas, metas, presupuesto, limites, tasks, habitos, diario] = await Promise.all([
+        const [transacciones, deudas, metas, presupuesto, limites, tasks, habitos, diario, perfil] = await Promise.all([
             fetchCollection(accessToken, projectId, userId, 'transacciones'),
             fetchCollection(accessToken, projectId, userId, 'deudas'),
             fetchCollection(accessToken, projectId, userId, 'metas'),
@@ -284,9 +288,10 @@ export async function onRequestPost(context) {
             fetchCollection(accessToken, projectId, userId, 'tasks'),
             fetchCollection(accessToken, projectId, userId, 'habitos'),
             fetchCollection(accessToken, projectId, userId, 'diario'),
+            fetchCollection(accessToken, projectId, userId, 'coach_perfil'),
         ]);
 
-        const ctx = buildContext({ transacciones, deudas, metas, presupuesto, limites, tasks, habitos, diario });
+        const ctx = buildContext({ transacciones, deudas, metas, presupuesto, limites, tasks, habitos, diario, perfil });
 
         // 3) Llamar a Claude
         const userQ = (pregunta && String(pregunta).trim())

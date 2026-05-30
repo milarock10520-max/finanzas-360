@@ -58,7 +58,8 @@ import {
     Smile,
     BookOpen,
     CalendarClock,
-    LogOut
+    LogOut,
+    UserCog
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import {
@@ -2993,12 +2994,36 @@ const PasswordVault = ({ passwords, vaultConfig, genericAdd, genericUpdate, gene
 // =============================================
 // === COMPONENTE: AI COACH (CLAUDE OPUS 4.8) ===
 // =============================================
-const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, tasks, habitos = [], diario = [], googleToken = null, coachMensajes = [], genericAdd, genericDelete }) => {
+const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, tasks, habitos = [], diario = [], googleToken = null, coachMensajes = [], coachPerfil = [], genericAdd, genericUpdate, genericDelete }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
+    const [showPerfil, setShowPerfil] = useState(false);
+    const [perfilDraft, setPerfilDraft] = useState('');
+    const [perfilGuardado, setPerfilGuardado] = useState(false);
     const messagesEndRef = useRef(null);
+
+    const perfilDoc = coachPerfil[0] || null;
+    const perfilNotas = perfilDoc?.notas || '';
+
+    // Sincronizar el borrador del editor cuando carga/cambia el perfil guardado.
+    useEffect(() => {
+        if (!showPerfil) setPerfilDraft(perfilNotas);
+    }, [perfilNotas, showPerfil]);
+
+    const handleGuardarPerfil = async () => {
+        try {
+            if (perfilDoc && genericUpdate) {
+                await genericUpdate('coach_perfil', perfilDoc.id, { notas: perfilDraft, updatedAt: new Date().toISOString() });
+            } else if (genericAdd) {
+                await genericAdd('coach_perfil', { notas: perfilDraft, updatedAt: new Date().toISOString() });
+            }
+            setPerfilGuardado(true);
+            setTimeout(() => setPerfilGuardado(false), 2000);
+            setShowPerfil(false);
+        } catch (e) { console.error('Error al guardar el perfil del coach:', e); }
+    };
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -3174,7 +3199,20 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, task
             } catch (_) { /* ignorar errores de Google Tasks */ }
         }
 
-        return `RESUMEN FINANCIERO GENERAL:
+        // --- Perfil de largo plazo (memoria estable que el usuario define) ---
+        const metasActivas = metas.filter(m => !m.completada)
+            .map(m => m.nombre)
+            .slice(0, 6)
+            .join(', ');
+        const habitosClave = (habitos || []).map(h => h.nombre).slice(0, 6).join(', ');
+        const perfilBloque = `PERFIL DEL USUARIO (memoria de largo plazo, tenlo SIEMPRE presente):
+${perfilNotas ? `- Notas que el usuario quiere que recuerdes: ${perfilNotas}` : '- (El usuario aún no escribió notas de perfil.)'}
+- Metas activas: ${metasActivas || 'ninguna definida'}
+- Hábitos que cultiva: ${habitosClave || 'ninguno definido'}`;
+
+        return `${perfilBloque}
+
+RESUMEN FINANCIERO GENERAL:
 - Saldo disponible actual: ${fmt(saldo)}
 - Ingresos de este mes: ${fmt(ingresosMes)}
 - Gastos de este mes: ${fmt(gastosMes)}
@@ -3233,9 +3271,10 @@ ${diarioTxt || 'No hay entradas en el diario.'}`;
         try {
             const context = await buildFinancialContext();
 
-            // Enviamos los últimos 30 mensajes como contexto de la conversación
-            // (memoria) para no disparar el costo en chats muy largos.
-            const historreciente = newMessages.slice(-30).map(m => ({ role: m.role, content: m.content }));
+            // Enviamos los últimos 12 mensajes como contexto de la conversación.
+            // La memoria de largo plazo vive en el PERFIL del contexto, así que
+            // una ventana corta basta y mantiene bajo el costo de tokens.
+            const historreciente = newMessages.slice(-12).map(m => ({ role: m.role, content: m.content }));
 
             const res = await fetch('/api/ai-coach', {
                 method: 'POST',
@@ -3285,6 +3324,9 @@ ${diarioTxt || 'No hay entradas en el diario.'}`;
                         </div>
                     </div>
                     <div className="flex gap-2">
+                        <button onClick={() => { setPerfilDraft(perfilNotas); setShowPerfil(v => !v); }} title="Sobre mí (lo que el coach siempre recordará)" className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${showPerfil ? 'bg-white/30' : 'hover:bg-white/20'}`}>
+                            <UserCog size={18} />
+                        </button>
                         <button onClick={handleNuevaConversacion} title="Nueva conversación (borra el historial)" className="w-8 h-8 rounded-full hover:bg-white/20 flex items-center justify-center transition-colors">
                             <Trash2 size={18} />
                         </button>
@@ -3294,8 +3336,35 @@ ${diarioTxt || 'No hay entradas en el diario.'}`;
                     </div>
                 </div>
 
+                {/* Panel "Sobre mí" (memoria de largo plazo) */}
+                {showPerfil && (
+                    <div className="bg-indigo-50 border-b border-indigo-100 p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                            <UserCog size={16} className="text-indigo-600" />
+                            <h4 className="font-bold text-sm text-indigo-800">Sobre mí</h4>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mb-2">Escribe lo que quieras que el coach recuerde siempre: tu situación, prioridades, compromisos, lo que te cuesta, etc. Esto viaja en cada conversación.</p>
+                        <textarea
+                            value={perfilDraft}
+                            onChange={e => setPerfilDraft(e.target.value)}
+                            rows={4}
+                            placeholder="Ej: Tengo 2 hijos, mi prioridad es comprar casa en 2027. Me cuesta controlar gastos en restaurantes. Quiero crear un fondo de emergencia de 6 meses."
+                            className="w-full text-xs p-2 border border-indigo-200 rounded-xl outline-none focus:border-indigo-400 resize-none bg-white"
+                        />
+                        <div className="flex justify-end gap-2 mt-2">
+                            <button onClick={() => setShowPerfil(false)} className="text-xs text-slate-500 px-3 py-1.5 rounded-lg hover:bg-slate-100">Cancelar</button>
+                            <button onClick={handleGuardarPerfil} className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-indigo-700 flex items-center gap-1">
+                                <Save size={13} /> Guardar
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* Body */}
                 <div className="flex-1 bg-slate-50 overflow-y-auto p-4 custom-scrollbar flex flex-col gap-4">
+                    {perfilGuardado && (
+                        <div className="text-center text-[11px] text-emerald-600 font-medium">✓ Perfil guardado</div>
+                    )}
                     {messages.length === 0 ? (
                         <div className="flex-1 flex flex-col items-center justify-center text-center p-6 opacity-60">
                             <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mb-4">
@@ -3930,6 +3999,7 @@ export default function App() {
     const [habitos, setHabitos] = useState([]);
     const [diario, setDiario] = useState([]);
     const [coachMensajes, setCoachMensajes] = useState([]);
+    const [coachPerfil, setCoachPerfil] = useState([]);
     // Token de Google Calendar persistido: sobrevive recargas mientras no caduque (~1h).
     const [googleToken, setGoogleToken] = useState(() => {
         try {
@@ -4079,7 +4149,10 @@ export default function App() {
         const unsubCoach = onSnapshot(collection(db, `${basePath}/coach_mensajes`), (snap) =>
             setCoachMensajes(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
-        return () => { unsubTrans(); unsubDeudas(); unsubMetas(); unsubPresupuesto(); unsubLimites(); unsubPasswords(); unsubVaultConfig(); unsubTasks(); unsubHabitos(); unsubDiario(); unsubCoach(); };
+        const unsubCoachPerfil = onSnapshot(collection(db, `${basePath}/coach_perfil`), (snap) =>
+            setCoachPerfil(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+
+        return () => { unsubTrans(); unsubDeudas(); unsubMetas(); unsubPresupuesto(); unsubLimites(); unsubPasswords(); unsubVaultConfig(); unsubTasks(); unsubHabitos(); unsubDiario(); unsubCoach(); unsubCoachPerfil(); };
     }, [user]);
 
     // --- ACTIONS FIREBASE ---
@@ -4177,7 +4250,7 @@ export default function App() {
 
         try {
             setLoading(true);
-            const collections = ['transacciones', 'deudas', 'metas', 'presupuesto', 'limites', 'passwords', 'vault_config', 'tasks', 'habitos', 'diario', 'coach_mensajes'];
+            const collections = ['transacciones', 'deudas', 'metas', 'presupuesto', 'limites', 'passwords', 'vault_config', 'tasks', 'habitos', 'diario', 'coach_mensajes', 'coach_perfil'];
             const { getDocs, setDoc, doc } = await import('firebase/firestore');
 
             let totalMigrated = 0;
@@ -4390,7 +4463,7 @@ export default function App() {
             />
 
             {/* AI Coach Floating Widget - Injected Globally */}
-            <AICoach transacciones={transacciones} deudas={deudas} metas={metas} presupuestoItems={presupuestoItems} limites={limites} tasks={tasks} habitos={habitos} diario={diario} googleToken={googleToken} coachMensajes={coachMensajes} genericAdd={genericAdd} genericDelete={genericDelete} />
+            <AICoach transacciones={transacciones} deudas={deudas} metas={metas} presupuestoItems={presupuestoItems} limites={limites} tasks={tasks} habitos={habitos} diario={diario} googleToken={googleToken} coachMensajes={coachMensajes} coachPerfil={coachPerfil} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} />
         </div>
     );
 }
