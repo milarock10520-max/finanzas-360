@@ -2607,7 +2607,26 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, task
         // --- Metas (personales y financieras) ---
         const metasTxt = metas.map(m => {
             if (m.tipo === 'personal') {
-                return `- ${m.nombre} (personal, plazo: ${m.plazo || 'sin definir'}): ${m.completada ? '✅ completada' : 'en progreso'}`;
+                const checklist = m.checklist || [];
+                const hechos = checklist.filter(c => c.completado).length;
+                let linea = `- ${m.nombre} (personal, plazo: ${m.plazo || 'sin definir'}): ${m.completada ? '✅ completada' : 'en progreso'}`;
+                if (checklist.length > 0) {
+                    const pctChk = Math.round((hechos / checklist.length) * 100);
+                    const pendientes = checklist.filter(c => !c.completado).map(c => c.texto);
+                    linea += `; avances ${hechos}/${checklist.length} (${pctChk}%)`;
+                    if (pendientes.length > 0) linea += `; pendientes: ${pendientes.join(', ')}`;
+                }
+                // Ahorro vinculado a una meta financiera
+                if (m.metaFinancieraId) {
+                    const mf = metas.find(x => x.id === m.metaFinancieraId);
+                    if (mf) {
+                        const a = Number(mf.ahorroActual) || 0;
+                        const o = Number(mf.montoObjetivo) || 0;
+                        const p = o > 0 ? Math.round((a / o) * 100) : 0;
+                        linea += `; ahorro vinculado "${mf.nombre}": ${fmt(a)} de ${fmt(o)} (${p}%)`;
+                    }
+                }
+                return linea;
             }
             const actual = Number(m.ahorroActual) || 0;
             const objetivo = Number(m.montoObjetivo) || 0;
@@ -2626,9 +2645,15 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, task
 
         // --- Inversiones detalladas ---
         const inversionesTxt = inversiones.map(t => {
-            const tasa = t.tasaInteres ? `, tasa ${t.tasaInteres}%` : '';
+            const tasa = t.tasaInteres ? `, tasa ${t.tasaInteres}% E.A.` : '';
             const tipo = t.subTipo ? ` [${t.subTipo}]` : '';
-            return `- ${t.concepto || t.categoria}${tipo}: ${fmt(t.monto)}${tasa}`;
+            const tk = t.ticker ? `, ticker ${t.ticker}` : '';
+            const montoTxt = t.moneda === 'USD' ? formatUSD(Number(t.monto) || 0) : fmt(t.monto);
+            const util = Number(t.utilidad) || 0;
+            const montoBase = Number(t.monto) || 0;
+            const rent = montoBase > 0 ? ((util / montoBase) * 100).toFixed(1) : '0';
+            const utilTxt = util !== 0 ? `, utilidad ${util >= 0 ? '+' : ''}${t.moneda === 'USD' ? formatUSD(util) : fmt(util)} (${rent}%)` : '';
+            return `- ${t.concepto || t.categoria}${tipo}: ${montoTxt}${tasa}${tk}${utilTxt}`;
         }).join('\n');
 
         // --- Tareas pendientes de la agenda ---
