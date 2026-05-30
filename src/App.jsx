@@ -53,6 +53,11 @@ import {
     PinOff,
     ListChecks,
     Link2,
+    Flame,
+    Sun,
+    Smile,
+    BookOpen,
+    CalendarClock,
     LogOut
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
@@ -844,6 +849,7 @@ const BudgetPlanner = ({ presupuestoItems, limites, transacciones, genericAdd, g
     const [monto, setMonto] = useState('');
     const [categoria, setCategoria] = useState(CATEGORIAS_GASTOS[0]);
     const [recurrente, setRecurrente] = useState(true);
+    const [diaPago, setDiaPago] = useState('');
     const [editandoId, setEditandoId] = useState(null);
     const [montoEdit, setMontoEdit] = useState('');
 
@@ -857,8 +863,9 @@ const BudgetPlanner = ({ presupuestoItems, limites, transacciones, genericAdd, g
 
     const agregarObligacion = async (e) => {
         e.preventDefault();
-        await genericAdd('presupuesto', { concepto, monto: parseFloat(monto), categoria, lastPaid: '', recurrente });
-        setConcepto(''); setMonto(''); setRecurrente(true);
+        const dp = parseInt(diaPago);
+        await genericAdd('presupuesto', { concepto, monto: parseFloat(monto), categoria, lastPaid: '', recurrente, diaPago: (dp >= 1 && dp <= 31) ? dp : null });
+        setConcepto(''); setMonto(''); setRecurrente(true); setDiaPago('');
     };
 
     const toggleRecurrente = async (item) => {
@@ -919,6 +926,10 @@ const BudgetPlanner = ({ presupuestoItems, limites, transacciones, genericAdd, g
                             <input placeholder="Obligación (Ej: Arriendo)" value={concepto} onChange={e => setConcepto(e.target.value)} className="w-full px-4 py-2 border rounded-lg outline-none focus:border-indigo-500" required />
                             <input type="number" placeholder="Monto Estimado" value={monto} onChange={e => setMonto(e.target.value)} className="w-full px-4 py-2 border rounded-lg outline-none focus:border-indigo-500" required />
                             <select value={categoria} onChange={e => setCategoria(e.target.value)} className="w-full px-4 py-2 border rounded-lg outline-none bg-white">{CATEGORIAS_GASTOS.map(c => <option key={c} value={c}>{c}</option>)}</select>
+                            <div>
+                                <input type="number" min="1" max="31" placeholder="Día de pago (1-31, opcional)" value={diaPago} onChange={e => setDiaPago(e.target.value)} className="w-full px-4 py-2 border rounded-lg outline-none focus:border-indigo-500" />
+                                <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1"><CalendarClock size={12} /> Te recordaré en "Mi Día" cuando se acerque.</p>
+                            </div>
                             <label className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer select-none">
                                 <input type="checkbox" checked={recurrente} onChange={e => setRecurrente(e.target.checked)} className="w-5 h-5 accent-indigo-600" />
                                 <div className="flex-1">
@@ -955,7 +966,7 @@ const BudgetPlanner = ({ presupuestoItems, limites, transacciones, genericAdd, g
                                                         ? <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full"><Pin size={10} /> Fijo</span>
                                                         : <span className="inline-flex items-center text-[10px] font-semibold bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded-full">1 mes</span>}
                                                 </h4>
-                                                <p className="text-xs text-slate-500">{item.categoria}</p>
+                                                <p className="text-xs text-slate-500">{item.categoria}{item.diaPago ? ` • paga el ${item.diaPago}` : ''}</p>
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-3">
@@ -2046,6 +2057,392 @@ const GoalTracker = ({ metas, genericAdd, genericUpdate, genericDelete }) => {
 };
 
 // =============================================
+// === HELPERS: FECHAS / HÁBITOS / PAGOS ===
+// =============================================
+
+// Clave de fecha local YYYY-MM-DD (sin desfase de zona horaria).
+const dateKey = (d = new Date()) => {
+    const x = new Date(d);
+    return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+};
+
+// Racha de días consecutivos cumplidos (incluye hoy o, si hoy aún no, desde ayer).
+const calcStreak = (historial) => {
+    const set = new Set(historial || []);
+    let streak = 0;
+    const cursor = new Date();
+    if (!set.has(dateKey(cursor))) cursor.setDate(cursor.getDate() - 1);
+    while (set.has(dateKey(cursor))) {
+        streak++;
+        cursor.setDate(cursor.getDate() - 1);
+    }
+    return streak;
+};
+
+// Próxima fecha de pago a partir de un día del mes (1-31). Devuelve {fecha, dias}.
+const proximaFechaPago = (diaPago) => {
+    const dia = Number(diaPago);
+    if (!dia || dia < 1 || dia > 31) return null;
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    let candidato = new Date(hoy.getFullYear(), hoy.getMonth(), dia);
+    if (candidato < hoy) candidato = new Date(hoy.getFullYear(), hoy.getMonth() + 1, dia);
+    const dias = Math.round((candidato - hoy) / (1000 * 60 * 60 * 24));
+    return { fecha: candidato, dias };
+};
+
+const HABIT_GRADIENTS = {
+    cyan: 'from-cyan-500 to-sky-600',
+    emerald: 'from-emerald-500 to-teal-600',
+    amber: 'from-amber-500 to-orange-600',
+    indigo: 'from-indigo-500 to-violet-600',
+    rose: 'from-rose-500 to-pink-600',
+};
+const HABIT_EMOJIS = ['💧', '🏃', '🧘', '📚', '💪', '🚭', '🥗', '😴', '🙏', '✍️', '☀️', '🧠'];
+const MOODS = [
+    { v: 1, e: '😣', label: 'Muy mal' },
+    { v: 2, e: '😕', label: 'Mal' },
+    { v: 3, e: '😐', label: 'Normal' },
+    { v: 4, e: '🙂', label: 'Bien' },
+    { v: 5, e: '😄', label: 'Genial' },
+];
+
+// =============================================
+// === COMPONENTE: HÁBITOS (RASTREADOR) ===
+// =============================================
+const HabitTracker = ({ habitos, genericAdd, genericUpdate, genericDelete }) => {
+    const [nombre, setNombre] = useState('');
+    const [emoji, setEmoji] = useState(HABIT_EMOJIS[0]);
+    const [color, setColor] = useState('cyan');
+
+    const hoy = dateKey();
+
+    const agregarHabito = async (e) => {
+        e.preventDefault();
+        if (!nombre.trim()) return;
+        await genericAdd('habitos', {
+            nombre: nombre.trim(),
+            emoji,
+            color,
+            historial: [],
+            createdAt: new Date().toISOString(),
+        });
+        setNombre(''); setEmoji(HABIT_EMOJIS[0]); setColor('cyan');
+    };
+
+    const toggleHoy = async (h) => {
+        const set = new Set(h.historial || []);
+        if (set.has(hoy)) set.delete(hoy); else set.add(hoy);
+        await genericUpdate('habitos', h.id, { historial: Array.from(set) });
+    };
+
+    // Últimos 7 días (de más antiguo a hoy)
+    const ultimos7 = () => {
+        const arr = [];
+        for (let i = 6; i >= 0; i--) {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            arr.push(dateKey(d));
+        }
+        return arr;
+    };
+    const dias7 = ultimos7();
+
+    return (
+        <div className="space-y-6 animate-in fade-in duration-500">
+            <div className="bg-gradient-to-r from-cyan-600 to-blue-700 text-white p-8 rounded-3xl shadow-lg">
+                <h2 className="text-3xl font-bold mb-2 flex items-center gap-2"><Flame /> Mis Hábitos</h2>
+                <p className="text-cyan-100">Pequeñas acciones diarias construyen grandes cambios. Marca cada día. 🔥</p>
+            </div>
+
+            {/* Formulario */}
+            <form onSubmit={agregarHabito} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
+                <h3 className="font-bold text-lg text-slate-700">Nuevo hábito</h3>
+                <div className="flex flex-col md:flex-row gap-3">
+                    <input value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Ej: Tomar 2L de agua, Leer 20 min"
+                        className="flex-1 px-4 py-2.5 border rounded-xl outline-none focus:border-cyan-500" required />
+                    <button type="submit" className="bg-cyan-600 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-cyan-700">Crear</button>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                    {HABIT_EMOJIS.map(em => (
+                        <button type="button" key={em} onClick={() => setEmoji(em)}
+                            className={`w-9 h-9 rounded-lg text-lg transition-all ${emoji === em ? 'bg-cyan-100 ring-2 ring-cyan-400 scale-110' : 'bg-slate-50 hover:bg-slate-100'}`}>
+                            {em}
+                        </button>
+                    ))}
+                </div>
+                <div className="flex gap-2">
+                    {Object.keys(HABIT_GRADIENTS).map(c => (
+                        <button type="button" key={c} onClick={() => setColor(c)}
+                            className={`w-8 h-8 rounded-full bg-gradient-to-r ${HABIT_GRADIENTS[c]} transition-all ${color === c ? 'ring-2 ring-offset-2 ring-slate-400 scale-110' : ''}`} />
+                    ))}
+                </div>
+            </form>
+
+            {/* Lista de hábitos */}
+            {habitos.length === 0 ? (
+                <div className="text-center py-12 bg-white rounded-2xl border border-dashed border-slate-300">
+                    <Flame size={42} className="mx-auto text-slate-300 mb-3" />
+                    <p className="text-slate-500 font-medium">Aún no tienes hábitos. ¡Crea el primero!</p>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {habitos.map(h => {
+                        const set = new Set(h.historial || []);
+                        const hechoHoy = set.has(hoy);
+                        const streak = calcStreak(h.historial);
+                        const grad = HABIT_GRADIENTS[h.color] || HABIT_GRADIENTS.cyan;
+                        return (
+                            <div key={h.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+                                <div className="flex items-center justify-between mb-3">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-11 h-11 rounded-xl bg-gradient-to-r ${grad} flex items-center justify-center text-xl shadow-sm`}>{h.emoji || '⭐'}</div>
+                                        <div>
+                                            <h4 className="font-bold text-slate-800">{h.nombre}</h4>
+                                            <p className="text-xs text-slate-400 flex items-center gap-1">
+                                                <Flame size={12} className="text-orange-500" /> {streak} día{streak !== 1 ? 's' : ''} de racha
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => genericDelete('habitos', h.id)} className="text-slate-300 hover:text-rose-500 p-1"><Trash2 size={16} /></button>
+                                </div>
+                                {/* Mini grid 7 días */}
+                                <div className="flex items-center justify-between gap-1 mb-3">
+                                    {dias7.map(dk => {
+                                        const done = set.has(dk);
+                                        const esHoy = dk === hoy;
+                                        const dow = new Date(`${dk}T00:00:00`).toLocaleDateString('es-CO', { weekday: 'narrow' });
+                                        return (
+                                            <div key={dk} className="flex flex-col items-center gap-1 flex-1">
+                                                <span className="text-[9px] text-slate-400 uppercase">{dow}</span>
+                                                <div className={`w-full h-7 rounded-md flex items-center justify-center text-xs ${done ? `bg-gradient-to-r ${grad} text-white` : 'bg-slate-100 text-slate-300'} ${esHoy ? 'ring-2 ring-offset-1 ring-cyan-400' : ''}`}>
+                                                    {done ? '✓' : ''}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                <button onClick={() => toggleHoy(h)}
+                                    className={`w-full py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${hechoHoy
+                                        ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
+                                        : `bg-gradient-to-r ${grad} text-white shadow-sm hover:opacity-90`}`}>
+                                    {hechoHoy ? <><CheckCircle2 size={18} /> Hecho hoy</> : <>Marcar hoy</>}
+                                </button>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+};
+
+// =============================================
+// === COMPONENTE: MI DÍA (DASHBOARD DIARIO) ===
+// =============================================
+const MiDia = ({ user, tasks, habitos, diario, transacciones, presupuestoItems, saldoActual, googleToken, genericAdd, genericUpdate, setActiveTab }) => {
+    const [eventos, setEventos] = useState([]);
+    const [moodTexto, setMoodTexto] = useState('');
+
+    const hoy = dateKey();
+    const ahora = new Date();
+    const hora = ahora.getHours();
+    const saludo = hora < 12 ? 'Buenos días' : hora < 19 ? 'Buenas tardes' : 'Buenas noches';
+    const nombre = (user?.displayName || '').split(' ')[0] || '';
+    const fechaLarga = ahora.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' });
+
+    // Eventos de Google de hoy
+    useEffect(() => {
+        if (!googleToken) return;
+        const fetchHoy = async () => {
+            try {
+                const inicio = new Date(); inicio.setHours(0, 0, 0, 0);
+                const fin = new Date(); fin.setHours(23, 59, 59, 999);
+                const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${inicio.toISOString()}&timeMax=${fin.toISOString()}&singleEvents=true&orderBy=startTime`, {
+                    headers: { Authorization: `Bearer ${googleToken}` }
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+                setEventos(data.items || []);
+            } catch (e) { /* sin conexión */ }
+        };
+        fetchHoy();
+    }, [googleToken]);
+
+    // Tareas pendientes
+    const tareasPend = tasks.filter(t => !t.completada).slice(0, 5);
+
+    // Pagos próximos (≤7 días, no pagados este ciclo)
+    const cicloActual = new Date().toISOString().slice(0, 7);
+    const pagosProximos = presupuestoItems
+        .map(i => ({ ...i, prox: proximaFechaPago(i.diaPago) }))
+        .filter(i => i.prox && i.prox.dias <= 7 && i.lastPaid !== cicloActual)
+        .sort((a, b) => a.prox.dias - b.prox.dias);
+
+    // Finanzas de hoy
+    const gastoHoy = transacciones
+        .filter(t => t.tipo === 'gasto' && !t.esInversion && t.fecha === hoy)
+        .reduce((a, c) => a + (Number(c.monto) || 0), 0);
+
+    // Hábitos de hoy
+    const toggleHabitoHoy = async (h) => {
+        const set = new Set(h.historial || []);
+        if (set.has(hoy)) set.delete(hoy); else set.add(hoy);
+        await genericUpdate('habitos', h.id, { historial: Array.from(set) });
+    };
+    const habitosHechos = habitos.filter(h => (h.historial || []).includes(hoy)).length;
+
+    // Diario de hoy
+    const entradaHoy = diario.find(d => d.fecha === hoy);
+    const guardarMood = async (v) => {
+        if (entradaHoy) {
+            await genericUpdate('diario', entradaHoy.id, { animo: v, texto: moodTexto || entradaHoy.texto || '' });
+        } else {
+            await genericAdd('diario', { fecha: hoy, animo: v, texto: moodTexto, createdAt: new Date().toISOString() });
+        }
+    };
+    const guardarTextoDiario = async () => {
+        if (!moodTexto.trim() && !entradaHoy) return;
+        if (entradaHoy) {
+            await genericUpdate('diario', entradaHoy.id, { texto: moodTexto });
+        } else {
+            await genericAdd('diario', { fecha: hoy, animo: 3, texto: moodTexto, createdAt: new Date().toISOString() });
+        }
+        setMoodTexto('');
+    };
+
+    const fmtHoraEvento = (ev) => {
+        const dt = ev.start?.dateTime;
+        if (!dt) return 'Todo el día';
+        return new Date(dt).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+    };
+
+    return (
+        <div className="space-y-6 animate-in fade-in duration-500">
+            {/* Saludo */}
+            <div className="bg-gradient-to-br from-indigo-600 via-blue-600 to-cyan-600 text-white p-8 rounded-3xl shadow-lg">
+                <div className="flex items-center gap-2 text-blue-100 text-sm font-medium mb-1"><Sun size={16} /> {fechaLarga}</div>
+                <h2 className="text-3xl font-bold">{saludo}{nombre ? `, ${nombre}` : ''} 👋</h2>
+                <div className="flex flex-wrap gap-3 mt-4">
+                    <div className="bg-white/15 backdrop-blur-sm rounded-xl px-4 py-2">
+                        <p className="text-[10px] text-blue-100 uppercase font-bold tracking-wider">Saldo</p>
+                        <p className="font-bold text-lg">{formatCurrency(saldoActual)}</p>
+                    </div>
+                    <div className="bg-white/15 backdrop-blur-sm rounded-xl px-4 py-2">
+                        <p className="text-[10px] text-blue-100 uppercase font-bold tracking-wider">Gastado hoy</p>
+                        <p className="font-bold text-lg">{formatCurrency(gastoHoy)}</p>
+                    </div>
+                    <div className="bg-white/15 backdrop-blur-sm rounded-xl px-4 py-2">
+                        <p className="text-[10px] text-blue-100 uppercase font-bold tracking-wider">Hábitos</p>
+                        <p className="font-bold text-lg">{habitosHechos}/{habitos.length}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Pagos próximos */}
+                <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                    <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2"><CalendarClock size={18} className="text-rose-500" /> Pagos próximos</h3>
+                    {pagosProximos.length === 0 ? (
+                        <p className="text-sm text-slate-400">Nada por pagar en los próximos 7 días. 🎉</p>
+                    ) : (
+                        <div className="space-y-2">
+                            {pagosProximos.map(p => (
+                                <div key={p.id} className="flex justify-between items-center p-2.5 rounded-xl bg-slate-50">
+                                    <div>
+                                        <p className="font-semibold text-sm text-slate-700">{p.concepto}</p>
+                                        <p className={`text-xs font-medium ${p.prox.dias === 0 ? 'text-rose-600' : p.prox.dias <= 2 ? 'text-amber-600' : 'text-slate-400'}`}>
+                                            {p.prox.dias === 0 ? '¡Vence hoy!' : p.prox.dias === 1 ? 'Mañana' : `En ${p.prox.dias} días`}
+                                        </p>
+                                    </div>
+                                    <span className="font-bold text-slate-800 text-sm">{formatCurrency(p.monto)}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {/* Agenda de hoy: eventos + tareas */}
+                <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                    <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2"><Calendar size={18} className="text-indigo-500" /> Tu día</h3>
+                    {eventos.length === 0 && tareasPend.length === 0 ? (
+                        <p className="text-sm text-slate-400">Sin eventos ni tareas pendientes.</p>
+                    ) : (
+                        <div className="space-y-2">
+                            {eventos.map(ev => (
+                                <div key={ev.id} className="flex items-center gap-2 p-2 rounded-lg bg-indigo-50">
+                                    <span className="text-xs font-bold text-indigo-600 w-14 flex-shrink-0">{fmtHoraEvento(ev)}</span>
+                                    <span className="text-sm text-slate-700 truncate">{ev.summary || '(sin título)'}</span>
+                                </div>
+                            ))}
+                            {tareasPend.map(t => (
+                                <div key={t.id} className="flex items-center gap-2 p-2 rounded-lg bg-slate-50">
+                                    <button onClick={() => genericUpdate('tasks', t.id, { completada: true })} className="text-slate-300 hover:text-emerald-500"><Circle size={16} /></button>
+                                    <span className="text-sm text-slate-700 truncate flex-1">{t.texto}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    <button onClick={() => setActiveTab('agenda')} className="text-xs text-indigo-600 font-bold mt-3 hover:underline">Ver agenda completa →</button>
+                </div>
+            </div>
+
+            {/* Hábitos rápidos */}
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-bold text-slate-700 flex items-center gap-2"><Flame size={18} className="text-orange-500" /> Hábitos de hoy</h3>
+                    <button onClick={() => setActiveTab('habitos')} className="text-xs text-cyan-600 font-bold hover:underline">Gestionar →</button>
+                </div>
+                {habitos.length === 0 ? (
+                    <p className="text-sm text-slate-400">Crea hábitos para llevar tus rutinas. <button onClick={() => setActiveTab('habitos')} className="text-cyan-600 font-bold">Empezar</button></p>
+                ) : (
+                    <div className="flex flex-wrap gap-2">
+                        {habitos.map(h => {
+                            const done = (h.historial || []).includes(hoy);
+                            const grad = HABIT_GRADIENTS[h.color] || HABIT_GRADIENTS.cyan;
+                            return (
+                                <button key={h.id} onClick={() => toggleHabitoHoy(h)}
+                                    className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all border ${done ? `bg-gradient-to-r ${grad} text-white border-transparent` : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}>
+                                    <span>{h.emoji || '⭐'}</span> {h.nombre} {done && <CheckCircle2 size={14} />}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+
+            {/* Diario / estado de ánimo */}
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2"><BookOpen size={18} className="text-purple-500" /> ¿Cómo te sientes hoy?</h3>
+                <div className="flex gap-2 mb-3">
+                    {MOODS.map(m => (
+                        <button key={m.v} onClick={() => guardarMood(m.v)} title={m.label}
+                            className={`flex-1 py-3 rounded-xl text-2xl transition-all ${entradaHoy?.animo === m.v ? 'bg-purple-100 ring-2 ring-purple-400 scale-105' : 'bg-slate-50 hover:bg-slate-100'}`}>
+                            {m.e}
+                        </button>
+                    ))}
+                </div>
+                <div className="flex gap-2">
+                    <input value={moodTexto} onChange={e => setMoodTexto(e.target.value)} placeholder={entradaHoy?.texto || 'Una nota del día (opcional)…'}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); guardarTextoDiario(); } }}
+                        className="flex-1 px-3 py-2 border rounded-xl text-sm outline-none focus:border-purple-500" />
+                    <button onClick={guardarTextoDiario} className="bg-purple-600 text-white px-4 rounded-xl hover:bg-purple-700"><Save size={16} /></button>
+                </div>
+                {/* Últimas entradas */}
+                {diario.length > 0 && (
+                    <div className="mt-4 flex gap-1.5 flex-wrap">
+                        {diario.slice().sort((a, b) => b.fecha.localeCompare(a.fecha)).slice(0, 14).map(d => {
+                            const mood = MOODS.find(m => m.v === d.animo);
+                            return <span key={d.id} title={`${d.fecha}${d.texto ? ': ' + d.texto : ''}`} className="text-lg">{mood?.e || '😐'}</span>;
+                        })}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// =============================================
 // === CRYPTO HELPERS (AES-256-GCM + PBKDF2) ===
 // =============================================
 
@@ -2544,7 +2941,7 @@ const PasswordVault = ({ passwords, vaultConfig, genericAdd, genericUpdate, gene
 // =============================================
 // === COMPONENTE: AI COACH (CLAUDE OPUS 4.8) ===
 // =============================================
-const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, tasks }) => {
+const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, tasks, habitos = [], diario = [], googleToken = null }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
@@ -2559,7 +2956,7 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, task
         scrollToBottom();
     }, [messages, isTyping]);
 
-    const buildFinancialContext = () => {
+    const buildFinancialContext = async () => {
         const fmt = (n) => '$' + (Number(n) || 0).toLocaleString('es-CO');
         const ahoraMes = new Date().getMonth();
         const ahoraAnio = new Date().getFullYear();
@@ -2659,6 +3056,51 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, task
         // --- Tareas pendientes de la agenda ---
         const tareasPendientes = tasks.filter(t => !t.completada).map(t => `- ${t.texto} (Prioridad ${t.prioridad})`).join('\n');
 
+        // --- Hábitos y rachas ---
+        const habitosTxt = (habitos || []).map(h => {
+            const hist = h.historial || [];
+            const streak = calcStreak(hist);
+            const hoy = hist.includes(dateKey());
+            // últimos 7 días: cuántos completados
+            let ultimos7 = 0;
+            for (let i = 0; i < 7; i++) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                if (hist.includes(dateKey(d))) ultimos7++;
+            }
+            return `- ${h.emoji || ''} ${h.nombre}: racha de ${streak} día(s)${hoy ? ' (✅ hecho hoy)' : ' (⬜ pendiente hoy)'}, ${ultimos7}/7 últimos días`;
+        }).join('\n');
+
+        // --- Diario / estado de ánimo (últimas 7 entradas) ---
+        const moodEmoji = (v) => (MOODS.find(m => m.v === v)?.e || '');
+        const diarioOrdenado = [...(diario || [])].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+        const ultimasEntradas = diarioOrdenado.slice(0, 7);
+        const diarioTxt = ultimasEntradas.map(d => {
+            const txt = d.texto ? `: "${d.texto}"` : '';
+            return `- ${d.fecha} ${moodEmoji(d.animo)} (ánimo ${d.animo || '?'}/5)${txt}`;
+        }).join('\n');
+        const animosValidos = ultimasEntradas.filter(d => d.animo).map(d => d.animo);
+        const promedioAnimo = animosValidos.length > 0
+            ? (animosValidos.reduce((a, c) => a + c, 0) / animosValidos.length).toFixed(1)
+            : null;
+
+        // --- Google Tasks (lista @default) ---
+        let googleTasksTxt = '';
+        if (googleToken) {
+            try {
+                const gres = await fetch('https://tasks.googleapis.com/tasks/v1/lists/@default/tasks?showCompleted=false&maxResults=50', {
+                    headers: { Authorization: `Bearer ${googleToken}` }
+                });
+                if (gres.ok) {
+                    const gdata = await gres.json();
+                    googleTasksTxt = (gdata.items || [])
+                        .filter(t => t.status !== 'completed')
+                        .map(t => `- ${t.title}${t.due ? ` (vence ${t.due.split('T')[0]})` : ''}`)
+                        .join('\n');
+                }
+            } catch (_) { /* ignorar errores de Google Tasks */ }
+        }
+
         return `RESUMEN FINANCIERO GENERAL:
 - Saldo disponible actual: ${fmt(saldo)}
 - Ingresos de este mes: ${fmt(ingresosMes)}
@@ -2686,7 +3128,16 @@ INVERSIONES / PORTAFOLIO:
 ${inversionesTxt || 'No hay inversiones registradas.'}
 
 TAREAS PENDIENTES DE LA AGENDA:
-${tareasPendientes || 'No hay tareas pendientes importantes.'}`;
+${tareasPendientes || 'No hay tareas pendientes importantes.'}
+
+TAREAS DE GOOGLE TASKS:
+${googleTasksTxt || (googleToken ? 'No hay tareas pendientes en Google Tasks.' : 'Google Tasks no está conectado.')}
+
+HÁBITOS Y RACHAS:
+${habitosTxt || 'No hay hábitos registrados.'}
+
+DIARIO / ESTADO DE ÁNIMO (últimas entradas)${promedioAnimo ? ` — promedio reciente: ${promedioAnimo}/5` : ''}:
+${diarioTxt || 'No hay entradas en el diario.'}`;
     };
 
     const handleSend = async (e) => {
@@ -2700,7 +3151,7 @@ ${tareasPendientes || 'No hay tareas pendientes importantes.'}`;
         setIsTyping(true);
 
         try {
-            const context = buildFinancialContext();
+            const context = await buildFinancialContext();
 
             const res = await fetch('/api/ai-coach', {
                 method: 'POST',
@@ -3368,7 +3819,7 @@ const ProductivityHub = ({ tasks, genericAdd, genericUpdate, genericDelete, goog
 
 export default function App() {
     const [user, setUser] = useState(null);
-    const [activeTab, setActiveTab] = useState('dashboard');
+    const [activeTab, setActiveTab] = useState('midia');
     const [loading, setLoading] = useState(true);
     const [prefillData, setPrefillData] = useState(null);
     const [pendingBudgetId, setPendingBudgetId] = useState(null);
@@ -3385,6 +3836,8 @@ export default function App() {
     
     // Tareas & Settings
     const [tasks, setTasks] = useState([]);
+    const [habitos, setHabitos] = useState([]);
+    const [diario, setDiario] = useState([]);
     // Token de Google Calendar persistido: sobrevive recargas mientras no caduque (~1h).
     const [googleToken, setGoogleToken] = useState(() => {
         try {
@@ -3525,7 +3978,13 @@ export default function App() {
         const unsubTasks = onSnapshot(collection(db, `${basePath}/tasks`), (snap) =>
             setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
-        return () => { unsubTrans(); unsubDeudas(); unsubMetas(); unsubPresupuesto(); unsubLimites(); unsubPasswords(); unsubVaultConfig(); unsubTasks(); };
+        const unsubHabitos = onSnapshot(collection(db, `${basePath}/habitos`), (snap) =>
+            setHabitos(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+
+        const unsubDiario = onSnapshot(collection(db, `${basePath}/diario`), (snap) =>
+            setDiario(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+
+        return () => { unsubTrans(); unsubDeudas(); unsubMetas(); unsubPresupuesto(); unsubLimites(); unsubPasswords(); unsubVaultConfig(); unsubTasks(); unsubHabitos(); unsubDiario(); };
     }, [user]);
 
     // --- ACTIONS FIREBASE ---
@@ -3623,7 +4082,7 @@ export default function App() {
 
         try {
             setLoading(true);
-            const collections = ['transacciones', 'deudas', 'metas', 'presupuesto', 'limites', 'passwords', 'vault_config', 'tasks'];
+            const collections = ['transacciones', 'deudas', 'metas', 'presupuesto', 'limites', 'passwords', 'vault_config', 'tasks', 'habitos', 'diario'];
             const { getDocs, setDoc, doc } = await import('firebase/firestore');
 
             let totalMigrated = 0;
@@ -3682,7 +4141,11 @@ export default function App() {
                     <span className="text-2xl font-bold text-slate-800 tracking-tight">Finanzas 360</span>
                 </div>
                 <nav className="space-y-2 flex-1 overflow-y-auto no-scrollbar pb-safe">
-                    <div className="text-xs font-bold text-slate-400 uppercase tracking-widest px-4 mb-2 mt-2">Principal</div>
+                    <div className="text-xs font-bold text-slate-400 uppercase tracking-widest px-4 mb-2 mt-2">Mi Vida</div>
+                    <NavItem id="midia" icon={Sun} label="Mi Día" />
+                    <NavItem id="habitos" icon={Flame} label="Hábitos" />
+
+                    <div className="text-xs font-bold text-slate-400 uppercase tracking-widest px-4 mb-2 mt-8">Principal</div>
                     <NavItem id="dashboard" icon={LayoutDashboard} label="Resumen" />
                     <NavItem id="analisis" icon={BarChart3} label="Análisis Mensual" />
                     <NavItem id="presupuesto" icon={ClipboardList} label="Presupuesto" />
@@ -3768,6 +4231,8 @@ export default function App() {
 
             <main className="flex-1 md:ml-72 p-4 md:p-10 mt-16 md:mt-0 overflow-y-auto h-screen pb-32 md:pb-10 no-scrollbar scroll-smooth">
                 <div className="max-w-7xl mx-auto space-y-8">
+                    {activeTab === 'midia' && <MiDia user={user} tasks={tasks} habitos={habitos} diario={diario} transacciones={transacciones} presupuestoItems={presupuestoItems} saldoActual={saldoActual} googleToken={googleToken} genericAdd={genericAdd} genericUpdate={genericUpdate} setActiveTab={setActiveTab} />}
+                    {activeTab === 'habitos' && <HabitTracker habitos={habitos} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} />}
                     {activeTab === 'dashboard' && <DashboardView saldoActual={saldoActual} totalIngresos={totalIngresos} totalGastos={totalGastos} totalDeudaPendiente={totalDeudaPendiente} transacciones={transacciones} />}
                     {activeTab === 'analisis' && <FinancialAnalysis transacciones={transacciones} />}
                     {activeTab === 'presupuesto' && <BudgetPlanner presupuestoItems={presupuestoItems} limites={limites} transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} onEjecutarPago={handleEjecutarPago} notifPermiso={notifPermiso} onActivarNotif={activarNotificaciones} />}
@@ -3795,8 +4260,8 @@ export default function App() {
                     </button>
 
                     <div className="relative -top-8">
-                        <button onClick={() => setActiveTab('dashboard')} className="w-16 h-16 bg-blue-600 rounded-full text-white shadow-xl shadow-blue-300 flex items-center justify-center transition-transform active:scale-95 border-4 border-[#F8FAFC]">
-                            <LayoutDashboard size={28} />
+                        <button onClick={() => setActiveTab('midia')} className="w-16 h-16 bg-blue-600 rounded-full text-white shadow-xl shadow-blue-300 flex items-center justify-center transition-transform active:scale-95 border-4 border-[#F8FAFC]">
+                            <Sun size={28} />
                         </button>
                     </div>
 
@@ -3830,7 +4295,7 @@ export default function App() {
             />
 
             {/* AI Coach Floating Widget - Injected Globally */}
-            <AICoach transacciones={transacciones} deudas={deudas} metas={metas} presupuestoItems={presupuestoItems} limites={limites} tasks={tasks} />
+            <AICoach transacciones={transacciones} deudas={deudas} metas={metas} presupuestoItems={presupuestoItems} limites={limites} tasks={tasks} habitos={habitos} diario={diario} googleToken={googleToken} />
         </div>
     );
 }
