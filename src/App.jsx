@@ -112,6 +112,19 @@ const formatCurrency = (amount) => {
     }).format(amount);
 };
 
+const formatUSD = (amount) => {
+    if (amount === undefined || amount === null || isNaN(amount)) return 'US$0';
+    return 'US' + new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(amount);
+};
+
+// Formatea según la moneda de la inversión ('USD' o 'COP' por defecto).
+const formatMoney = (amount, moneda) => (moneda === 'USD' ? formatUSD(amount) : formatCurrency(amount));
+
 // --- CONSTANTES ---
 const CATEGORIAS_INGRESOS = [
     "Salario", "Freelance", "Retorno Inversión", "Regalos", "Venta", "Otros"
@@ -1009,26 +1022,81 @@ const INVERSION_CONFIG = {
     'Fondo de Emergencia': { icon: Shield, color: 'cyan', gradient: 'from-cyan-500 to-sky-600', label: 'Emergencia' },
 };
 
-// --- Sparkline Graph Component ---
-const SparklineGraph = ({ data, color = "#10b981" }) => {
+// --- Gráfica de precios mejorada (acciones / ETF) ---
+// data: array de { t: timestampSeg, v: precio }
+const PriceChart = ({ data, ticker }) => {
     if (!data || data.length < 2) return null;
-    const min = Math.min(...data);
-    const max = Math.max(...data);
+
+    const prices = data.map(d => d.v);
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
     const range = max - min || 1;
-    const width = 200;
-    const height = 40;
-    
-    const points = data.map((val, i) => {
-        const x = (i / (data.length - 1)) * width;
-        const y = height - ((val - min) / range) * height;
-        return `${x},${y}`;
-    }).join(' ');
+
+    const W = 320;   // viewBox width
+    const H = 120;   // viewBox height
+    const padTop = 8;
+    const padBottom = 18;
+    const plotH = H - padTop - padBottom;
+
+    const first = prices[0];
+    const last = prices[prices.length - 1];
+    const periodChange = first > 0 ? ((last / first) - 1) * 100 : 0;
+    const sube = last >= first;
+    const stroke = sube ? '#10b981' : '#f43f5e';
+    const gradId = `grad-${ticker || 'x'}-${sube ? 'up' : 'down'}`;
+
+    const xOf = (i) => (i / (prices.length - 1)) * W;
+    const yOf = (val) => padTop + (plotH - ((val - min) / range) * plotH);
+
+    const linePoints = prices.map((v, i) => `${xOf(i).toFixed(1)},${yOf(v).toFixed(1)}`).join(' ');
+    const areaPoints = `0,${padTop + plotH} ${linePoints} ${W},${padTop + plotH}`;
+
+    // Etiquetas de fecha (primera y última)
+    const fmtFecha = (ts) => {
+        if (!ts) return '';
+        const d = new Date(ts * 1000);
+        return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' });
+    };
+    const fechaIni = fmtFecha(data[0].t);
+    const fechaFin = fmtFecha(data[data.length - 1].t);
+
+    const fmtPrecio = (p) => p.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     return (
-        <div className="w-full h-10 mt-4 flex justify-end items-end opacity-80 border-t border-slate-100 pt-2">
-             <svg viewBox={`0 -5 ${width} ${height + 10}`} preserveAspectRatio="none" className="w-[80%] h-full">
-                  <polyline fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" points={points} />
-             </svg>
+        <div className="mt-4 border-t border-slate-100 pt-3">
+            <div className="flex justify-between items-center mb-1">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                    {ticker || 'Índice'} · últimos {data.length} días
+                </span>
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${sube ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                    {sube ? '▲' : '▼'} {periodChange >= 0 ? '+' : ''}{periodChange.toFixed(2)}%
+                </span>
+            </div>
+            <div className="relative w-full">
+                <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-28">
+                    <defs>
+                        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={stroke} stopOpacity="0.28" />
+                            <stop offset="100%" stopColor={stroke} stopOpacity="0" />
+                        </linearGradient>
+                    </defs>
+                    {/* línea de máximo y mínimo */}
+                    <line x1="0" y1={yOf(max)} x2={W} y2={yOf(max)} stroke="#e2e8f0" strokeWidth="0.7" strokeDasharray="3 3" />
+                    <line x1="0" y1={yOf(min)} x2={W} y2={yOf(min)} stroke="#e2e8f0" strokeWidth="0.7" strokeDasharray="3 3" />
+                    <polygon fill={`url(#${gradId})`} points={areaPoints} />
+                    <polyline fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" points={linePoints} vectorEffect="non-scaling-stroke" />
+                    {/* punto final */}
+                    <circle cx={xOf(prices.length - 1)} cy={yOf(last)} r="2.5" fill={stroke} />
+                </svg>
+                {/* Etiquetas de precio máx / mín */}
+                <span className="absolute top-0 left-1 text-[10px] font-semibold text-slate-400">${fmtPrecio(max)}</span>
+                <span className="absolute bottom-4 left-1 text-[10px] font-semibold text-slate-400">${fmtPrecio(min)}</span>
+            </div>
+            {/* Eje de fechas */}
+            <div className="flex justify-between text-[10px] text-slate-400 font-medium px-1">
+                <span>{fechaIni}</span>
+                <span>{fechaFin}</span>
+            </div>
         </div>
     );
 };
@@ -1112,12 +1180,12 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
                         const historyBuffer = [];
                         for (let i = Math.max(0, closePrices.length - 120); i < closePrices.length; i++) {
                             if (closePrices[i] !== null && closePrices[i] !== undefined) {
-                                historyBuffer.push(closePrices[i]);
+                                historyBuffer.push({ t: timestamps[i], v: closePrices[i] });
                             }
                         }
-                        
+
                         if (isMounted) {
-                            setHistoryData(historyBuffer.slice(-60));
+                            setHistoryData(historyBuffer.slice(-90));
                             setCurrentTickerPrice(currentPrice);
                         }
 
@@ -1159,6 +1227,45 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
         setMontoEditInput('');
     };
 
+    // Cálculo dinámico de renta fija (Fondo de Emergencia / CDT)
+    const renderRentaFijaDetalle = () => {
+        const tasa = Number(inv.tasaInteres) || 9;
+        const startDate = inv.fecha ? new Date(`${inv.fecha}T00:00:00`) : new Date();
+        const diffDays = Math.max(0, Math.floor((new Date() - startDate) / (1000 * 60 * 60 * 24)));
+        const dailyRate = Math.pow(1 + tasa / 100, 1 / 365) - 1;
+        const interesDiarioHoy = valorActual * dailyRate;          // lo que rinde hoy (aprox)
+        const interesMensual = valorActual * (Math.pow(1 + tasa / 100, 30 / 365) - 1);
+        const valor30dias = valorActual * Math.pow(1 + tasa / 100, 30 / 365);
+        const valor1anio = valorActual * (1 + tasa / 100);
+
+        return (
+            <div className="mt-3 bg-gradient-to-br from-cyan-50 to-sky-50 border border-cyan-100 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-bold text-cyan-700 uppercase tracking-wider flex items-center gap-1">
+                        <TrendingUp size={13} /> Rentabilidad en vivo · {tasa}% E.A.
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-medium">{diffDays} día{diffDays !== 1 ? 's' : ''}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                    <div className="bg-white/70 rounded-lg p-2.5 text-center">
+                        <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">Ganado hasta hoy</p>
+                        <p className="font-bold text-emerald-600 text-base mt-0.5">+{formatMoney(utilidad, inv.moneda)}</p>
+                        <p className="text-[10px] text-slate-400">{rentabilidad >= 0 ? '+' : ''}{rentabilidad.toFixed(2)}%</p>
+                    </div>
+                    <div className="bg-white/70 rounded-lg p-2.5 text-center">
+                        <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">Rinde por día</p>
+                        <p className="font-bold text-cyan-600 text-base mt-0.5">≈ {formatMoney(interesDiarioHoy, inv.moneda)}</p>
+                        <p className="text-[10px] text-slate-400">{formatMoney(interesMensual, inv.moneda)} / mes</p>
+                    </div>
+                </div>
+                <div className="flex justify-between text-xs border-t border-cyan-100 pt-2">
+                    <span className="text-slate-500">En 30 días: <span className="font-bold text-slate-700">{formatMoney(valor30dias, inv.moneda)}</span></span>
+                    <span className="text-slate-500">En 1 año: <span className="font-bold text-slate-700">{formatMoney(valor1anio, inv.moneda)}</span></span>
+                </div>
+            </div>
+        );
+    };
+
     // Métricas especializadas por tipo
     const renderTypeMetrics = () => {
         switch (inv.subTipo) {
@@ -1169,7 +1276,8 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
                 const mesesCubiertos = totalGastosMensuales > 0 ? (valorActual / totalGastosMensuales) : 0;
                 return (
                     <div className="mt-3 space-y-2">
-                        <div className="flex justify-between text-xs text-slate-500">
+                        {renderRentaFijaDetalle()}
+                        <div className="flex justify-between text-xs text-slate-500 pt-1">
                             <span>Progreso hacia meta (6 meses gastos)</span>
                             <span className="font-bold">{progresoEmergencia.toFixed(0)}%</span>
                         </div>
@@ -1185,6 +1293,9 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
                         </div>
                     </div>
                 );
+            }
+            case 'CDT / Renta Fija': {
+                return renderRentaFijaDetalle();
             }
             case 'Acciones / Bolsa':
             case 'Criptomonedas': {
@@ -1203,7 +1314,7 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
                             </div>
                             <div className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 ${utilidad >= 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
                                 <DollarSign size={12} />
-                                P&L: {utilidad >= 0 ? '+' : ''}{formatCurrency(utilidad)}
+                                P&L: {utilidad >= 0 ? '+' : ''}{formatMoney(utilidad, inv.moneda)}
                             </div>
                         </div>
                     </div>
@@ -1218,7 +1329,7 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
                             Valorización: {valorizacion >= 0 ? '+' : ''}{valorizacion.toFixed(1)}%
                         </div>
                         <div className="px-3 py-1.5 rounded-lg text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1">
-                            <DollarSign size={12} /> Valor Propiedad: {formatCurrency(valorActual)}
+                            <DollarSign size={12} /> Valor Propiedad: {formatMoney(valorActual, inv.moneda)}
                         </div>
                     </div>
                 );
@@ -1233,7 +1344,7 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
                         </div>
                         <div className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 ${utilidad >= 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
                             <DollarSign size={12} />
-                            Retorno: {utilidad >= 0 ? '+' : ''}{formatCurrency(utilidad)}
+                            Retorno: {utilidad >= 0 ? '+' : ''}{formatMoney(utilidad, inv.moneda)}
                         </div>
                     </div>
                 );
@@ -1265,7 +1376,7 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
                 </div>
                 <div className="text-right">
                     <p className="text-white/60 text-xs uppercase tracking-wider">Valor Actual</p>
-                    <p className="font-bold text-xl text-white">{formatCurrency(valorActual)}</p>
+                    <p className="font-bold text-xl text-white">{formatMoney(valorActual, inv.moneda)}</p>
                 </div>
             </div>
 
@@ -1284,14 +1395,14 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
                         ) : (
                             <p className="font-bold text-purple-700 text-sm mt-1 cursor-pointer hover:text-purple-500 flex items-center justify-center gap-1"
                                 onClick={() => { setEditingMonto(true); setMontoEditInput(montoInv); }}>
-                                {formatCurrency(montoInv)} <Edit2 size={10} className="text-slate-300" />
+                                {formatMoney(montoInv, inv.moneda)} <Edit2 size={10} className="text-slate-300" />
                             </p>
                         )}
                     </div>
                     <div className="text-center p-3 bg-slate-50 rounded-xl">
                         <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Utilidad</p>
                         <p className={`font-bold text-sm mt-1 ${utilidad >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                            {utilidad >= 0 ? '+' : ''}{formatCurrency(utilidad)}
+                            {utilidad >= 0 ? '+' : ''}{formatMoney(utilidad, inv.moneda)}
                         </p>
                     </div>
                     <div className="text-center p-3 bg-slate-50 rounded-xl">
@@ -1305,7 +1416,7 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
                 {/* Métricas especializadas por tipo */}
                 {renderTypeMetrics()}
 
-                {historyData.length > 0 && <SparklineGraph data={historyData} color={rentabilidad >= 0 ? '#10b981' : '#f43f5e'} />}
+                {historyData.length > 0 && <PriceChart data={historyData} ticker={inv.ticker} />}
 
                 {/* Badge: afecta balance */}
                 <div className="mt-3 flex justify-between items-center">
@@ -1356,6 +1467,8 @@ const InvestmentPortfolio = ({ transacciones, totalInvertido, genericAdd, generi
     const [afectaBalance, setAfectaBalance] = useState(true);
     const [tasaInteres, setTasaInteres] = useState('');
     const [ticker, setTicker] = useState('');
+    const [moneda, setMoneda] = useState('COP');
+    const esBolsaOCripto = (tipoInv === 'Acciones / Bolsa' || tipoInv === 'Criptomonedas');
 
     useEffect(() => {
         if (prefillData && activeTab === 'inversiones') {
@@ -1368,10 +1481,15 @@ const InvestmentPortfolio = ({ transacciones, totalInvertido, genericAdd, generi
     const registrarInversion = async (e) => {
         e.preventDefault();
         
+        // Si la inversión es en USD, NO debe afectar el saldo en COP (evita mezclar monedas)
+        const monedaFinal = esBolsaOCripto ? moneda : 'COP';
+        const afectaFinal = monedaFinal === 'USD' ? false : afectaBalance;
+
         const dataInversion = {
-            tipo: afectaBalance ? 'gasto' : 'inversion_patrimonio',
+            tipo: afectaFinal ? 'gasto' : 'inversion_patrimonio',
             esInversion: true,
-            afectaBalance: afectaBalance,
+            afectaBalance: afectaFinal,
+            moneda: monedaFinal,
             monto: parseFloat(monto),
             concepto,
             categoria: 'Aporte Inversión',
@@ -1395,7 +1513,7 @@ const InvestmentPortfolio = ({ transacciones, totalInvertido, genericAdd, generi
             setPendingBudgetId(null);
             setActiveTab('presupuesto');
         }
-        setConcepto(''); setMonto(''); setAfectaBalance(true); setTasaInteres(''); setTicker('');
+        setConcepto(''); setMonto(''); setAfectaBalance(true); setTasaInteres(''); setTicker(''); setMoneda('COP');
     };
 
     const registrarUtilidad = async (inv, utilidadInput) => {
@@ -1493,23 +1611,44 @@ const InvestmentPortfolio = ({ transacciones, totalInvertido, genericAdd, generi
                                 className="w-full px-4 py-2.5 border rounded-xl focus:border-purple-500 outline-none transition-colors" required />
                         </div>
                     )}
-                    {(tipoInv === 'Acciones / Bolsa' || tipoInv === 'Criptomonedas') && (
+                    {esBolsaOCripto && (
                         <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Ticker</label>
                             <input placeholder="Ej: SPY, TSLA" value={ticker} onChange={e => setTicker(e.target.value)}
                                 className="w-full px-4 py-2.5 border rounded-xl focus:border-purple-500 outline-none transition-colors" required />
                         </div>
                     )}
+                    {esBolsaOCripto && (
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Moneda</label>
+                            <div className="flex rounded-xl border overflow-hidden">
+                                <button type="button" onClick={() => setMoneda('USD')}
+                                    className={`flex-1 py-2.5 text-sm font-bold transition-colors ${moneda === 'USD' ? 'bg-purple-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
+                                    USD
+                                </button>
+                                <button type="button" onClick={() => setMoneda('COP')}
+                                    className={`flex-1 py-2.5 text-sm font-bold transition-colors border-l ${moneda === 'COP' ? 'bg-purple-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
+                                    COP
+                                </button>
+                            </div>
+                        </div>
+                    )}
                     <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">¿Afecta saldo?</label>
-                        <button type="button" onClick={() => setAfectaBalance(!afectaBalance)}
-                            className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border font-medium transition-all ${afectaBalance
-                                ? 'bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100'
-                                : 'bg-slate-50 border-slate-300 text-slate-500 hover:bg-slate-100'
-                                }`}>
-                            {afectaBalance ? <ToggleRight size={20} className="text-blue-600" /> : <ToggleLeft size={20} />}
-                            {afectaBalance ? 'Sí, descuenta' : 'No, es patrimonio'}
-                        </button>
+                        {esBolsaOCripto && moneda === 'USD' ? (
+                            <div className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-400 text-sm font-medium">
+                                <ToggleLeft size={20} /> Patrimonio (USD)
+                            </div>
+                        ) : (
+                            <button type="button" onClick={() => setAfectaBalance(!afectaBalance)}
+                                className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border font-medium transition-all ${afectaBalance
+                                    ? 'bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100'
+                                    : 'bg-slate-50 border-slate-300 text-slate-500 hover:bg-slate-100'
+                                    }`}>
+                                {afectaBalance ? <ToggleRight size={20} className="text-blue-600" /> : <ToggleLeft size={20} />}
+                                {afectaBalance ? 'Sí, descuenta' : 'No, es patrimonio'}
+                            </button>
+                        )}
                     </div>
                     <button type="submit" className="bg-purple-600 text-white py-2.5 rounded-xl font-bold hover:bg-purple-700 transition-colors shadow-sm hover:shadow-md">
                         Registrar
