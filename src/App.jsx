@@ -171,7 +171,7 @@ const QuickExpenseModal = ({ isOpen, onClose, genericAdd, uid }) => {
             monto: parseFloat(monto),
             concepto,
             categoria: 'Gastos Hormiga',
-            fecha: new Date().toISOString().split('T')[0],
+            fecha: dateKey(),
             createdAt: new Date().toISOString()
         });
 
@@ -1040,7 +1040,7 @@ const TransactionManager = ({ tipo, transacciones, genericAdd, genericUpdate, ge
     const [monto, setMonto] = useState('');
     const [concepto, setConcepto] = useState('');
     const [categoria, setCategoria] = useState(tipo === 'ingreso' ? CATEGORIAS_INGRESOS[0] : CATEGORIAS_GASTOS[0]);
-    const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
+    const [fecha, setFecha] = useState(dateKey());
 
     useEffect(() => {
         // Auto-rellenar solo si estamos en la pestaña correcta
@@ -1608,7 +1608,7 @@ const InvestmentPortfolio = ({ transacciones, totalInvertido, genericAdd, generi
             concepto,
             categoria: 'Aporte Inversión',
             subTipo: tipoInv,
-            fecha: new Date().toISOString().split('T')[0],
+            fecha: dateKey(),
             createdAt: new Date().toISOString(),
             utilidad: 0
         };
@@ -1855,7 +1855,7 @@ const DebtManager = ({ deudas, genericAdd, genericUpdate }) => {
     const registrarPagoDeuda = async (deuda, montoPago) => {
         if (!montoPago || montoPago <= 0) return;
         await genericUpdate('deudas', deuda.id, { montoPagado: deuda.montoPagado + parseFloat(montoPago) });
-        await genericAdd('transacciones', { tipo: 'gasto', monto: parseFloat(montoPago), concepto: `Abono Deuda: ${deuda.nombre}`, categoria: 'Pago de Deudas', fecha: new Date().toISOString().split('T')[0], createdAt: new Date().toISOString() });
+        await genericAdd('transacciones', { tipo: 'gasto', monto: parseFloat(montoPago), concepto: `Abono Deuda: ${deuda.nombre}`, categoria: 'Pago de Deudas', fecha: dateKey(), createdAt: new Date().toISOString() });
     };
 
     return (
@@ -2242,8 +2242,9 @@ const HabitTracker = ({ habitos, genericAdd, genericUpdate, genericDelete }) => 
 // =============================================
 // === COMPONENTE: MI DÍA (DASHBOARD DIARIO) ===
 // =============================================
-const MiDia = ({ user, tasks, habitos, diario, transacciones, presupuestoItems, saldoActual, googleToken, genericAdd, genericUpdate, setActiveTab }) => {
+const MiDia = ({ user, habitos, diario, transacciones, presupuestoItems, saldoActual, googleToken, genericAdd, genericUpdate, setActiveTab }) => {
     const [eventos, setEventos] = useState([]);
+    const [gtareas, setGtareas] = useState([]);
     const [moodTexto, setMoodTexto] = useState('');
 
     const hoy = dateKey();
@@ -2268,11 +2269,32 @@ const MiDia = ({ user, tasks, habitos, diario, transacciones, presupuestoItems, 
                 setEventos(data.items || []);
             } catch (e) { /* sin conexión */ }
         };
+        const fetchTareas = async () => {
+            try {
+                const res = await fetch('https://tasks.googleapis.com/tasks/v1/lists/@default/tasks?showCompleted=false&maxResults=10', {
+                    headers: { Authorization: `Bearer ${googleToken}` }
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+                setGtareas((data.items || []).slice(0, 5));
+            } catch (e) { /* sin conexión */ }
+        };
         fetchHoy();
+        fetchTareas();
     }, [googleToken]);
 
-    // Tareas pendientes
-    const tareasPend = tasks.filter(t => !t.completada).slice(0, 5);
+    // Marca una tarea de Google como completada.
+    const completarGtarea = async (t) => {
+        if (!googleToken) return;
+        setGtareas(prev => prev.filter(x => x.id !== t.id));
+        try {
+            await fetch(`https://tasks.googleapis.com/tasks/v1/lists/@default/tasks/${t.id}`, {
+                method: 'PATCH',
+                headers: { Authorization: `Bearer ${googleToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'completed' })
+            });
+        } catch (e) { /* sin conexión */ }
+    };
 
     // Pagos próximos (≤7 días, no pagados este ciclo)
     const cicloActual = new Date().toISOString().slice(0, 7);
@@ -2367,7 +2389,9 @@ const MiDia = ({ user, tasks, habitos, diario, transacciones, presupuestoItems, 
                 {/* Agenda de hoy: eventos + tareas */}
                 <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
                     <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2"><Calendar size={18} className="text-indigo-500" /> Tu día</h3>
-                    {eventos.length === 0 && tareasPend.length === 0 ? (
+                    {!googleToken ? (
+                        <p className="text-sm text-slate-400">Conecta Google en la pestaña Agenda para ver tus eventos y tareas aquí.</p>
+                    ) : eventos.length === 0 && gtareas.length === 0 ? (
                         <p className="text-sm text-slate-400">Sin eventos ni tareas pendientes.</p>
                     ) : (
                         <div className="space-y-2">
@@ -2377,10 +2401,10 @@ const MiDia = ({ user, tasks, habitos, diario, transacciones, presupuestoItems, 
                                     <span className="text-sm text-slate-700 truncate">{ev.summary || '(sin título)'}</span>
                                 </div>
                             ))}
-                            {tareasPend.map(t => (
+                            {gtareas.map(t => (
                                 <div key={t.id} className="flex items-center gap-2 p-2 rounded-lg bg-slate-50">
-                                    <button onClick={() => genericUpdate('tasks', t.id, { completada: true })} className="text-slate-300 hover:text-emerald-500"><Circle size={16} /></button>
-                                    <span className="text-sm text-slate-700 truncate flex-1">{t.texto}</span>
+                                    <button onClick={() => completarGtarea(t)} className="text-slate-300 hover:text-emerald-500"><Circle size={16} /></button>
+                                    <span className="text-sm text-slate-700 truncate flex-1">{t.title}</span>
                                 </div>
                             ))}
                         </div>
@@ -2995,7 +3019,7 @@ const PasswordVault = ({ passwords, vaultConfig, genericAdd, genericUpdate, gene
 // =============================================
 // === COMPONENTE: AI COACH (CLAUDE OPUS 4.8) ===
 // =============================================
-const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, tasks, habitos = [], diario = [], googleToken = null, coachMensajes = [], coachPerfil = [], genericAdd, genericUpdate, genericDelete }) => {
+const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, habitos = [], diario = [], googleToken = null, coachMensajes = [], coachPerfil = [], genericAdd, genericUpdate, genericDelete }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
@@ -3120,12 +3144,12 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, task
 
     const buildFinancialContext = async () => {
         const fmt = (n) => '$' + (Number(n) || 0).toLocaleString('es-CO');
-        const ahoraMes = new Date().getMonth();
-        const ahoraAnio = new Date().getFullYear();
-        const esEsteMes = (fecha) => {
-            const d = new Date(fecha);
-            return d.getMonth() === ahoraMes && d.getFullYear() === ahoraAnio;
-        };
+        // Comparación por texto YYYY-MM-DD para evitar desfases de zona horaria
+        // (las fechas se guardan como 'YYYY-MM-DD' en hora local).
+        const hoyKey = dateKey();
+        const mesKey = hoyKey.slice(0, 7); // 'YYYY-MM'
+        const esEsteMes = (fecha) => typeof fecha === 'string' && fecha.slice(0, 7) === mesKey;
+        const esHoy = (fecha) => fecha === hoyKey;
 
         // --- Resumen general ---
         // Mismo cálculo que la pantalla de Inicio: ingresos - gastos (las inversiones
@@ -3145,6 +3169,23 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, task
             .filter(t => t.tipo === 'gasto' && !t.esInversion && esEsteMes(t.fecha))
             .forEach(t => { gastosPorCat[t.categoria] = (gastosPorCat[t.categoria] || 0) + (Number(t.monto) || 0); });
         const gastosCatTxt = Object.entries(gastosPorCat)
+            .sort((a, b) => b[1] - a[1])
+            .map(([cat, val]) => `- ${cat}: ${fmt(val)}`)
+            .join('\n');
+
+        // --- Movimientos de HOY (clave para preguntas tipo "gastos de hoy") ---
+        const gastosHoy = transacciones.filter(t => t.tipo === 'gasto' && !t.esInversion && esHoy(t.fecha));
+        const ingresosHoyArr = transacciones.filter(t => t.tipo === 'ingreso' && esHoy(t.fecha));
+        const totalGastoHoy = gastosHoy.reduce((a, c) => a + (Number(c.monto) || 0), 0);
+        const totalIngresoHoy = ingresosHoyArr.reduce((a, c) => a + (Number(c.monto) || 0), 0);
+        const gastosHoyPorCat = {};
+        gastosHoy.forEach(t => { gastosHoyPorCat[t.categoria] = (gastosHoyPorCat[t.categoria] || 0) + (Number(t.monto) || 0); });
+        const gastosHoyTxt = gastosHoy.length === 0
+            ? 'No hay gastos registrados hoy.'
+            : gastosHoy
+                .map(t => `- ${t.concepto || t.categoria} (${t.categoria}): ${fmt(t.monto)}`)
+                .join('\n');
+        const gastosHoyCatTxt = Object.entries(gastosHoyPorCat)
             .sort((a, b) => b[1] - a[1])
             .map(([cat, val]) => `- ${cat}: ${fmt(val)}`)
             .join('\n');
@@ -3215,9 +3256,6 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, task
             return `- ${t.concepto || t.categoria}${tipo}: ${montoTxt}${tasa}${tk}${utilTxt}`;
         }).join('\n');
 
-        // --- Tareas pendientes de la agenda ---
-        const tareasPendientes = tasks.filter(t => !t.completada).map(t => `- ${t.texto} (Prioridad ${t.prioridad})`).join('\n');
-
         // --- Hábitos y rachas ---
         const habitosTxt = (habitos || []).map(h => {
             const hist = h.historial || [];
@@ -3284,6 +3322,14 @@ RESUMEN FINANCIERO GENERAL:
 - Total invertido en portafolio: ${fmt(inversionesTotales)}
 - Total de deudas pendientes: ${fmt(deudasPendientes)}
 
+MOVIMIENTOS DE HOY (${hoyKey}):
+- Total gastado hoy: ${fmt(totalGastoHoy)} (${gastosHoy.length} gasto(s))
+- Total ingresado hoy: ${fmt(totalIngresoHoy)}
+Detalle de gastos de hoy:
+${gastosHoyTxt}
+Gastos de hoy por categoría:
+${gastosHoyCatTxt || 'Ninguno.'}
+
 GASTOS DE ESTE MES POR CATEGORÍA:
 ${gastosCatTxt || 'Sin gastos registrados este mes.'}
 
@@ -3301,9 +3347,6 @@ ${deudasTxt || 'No hay deudas registradas.'}
 
 INVERSIONES / PORTAFOLIO:
 ${inversionesTxt || 'No hay inversiones registradas.'}
-
-TAREAS PENDIENTES DE LA AGENDA:
-${tareasPendientes || 'No hay tareas pendientes importantes.'}
 
 TAREAS DE GOOGLE TASKS:
 ${googleTasksTxt || (googleToken ? 'No hay tareas pendientes en Google Tasks.' : 'Google Tasks no está conectado.')}
@@ -3508,29 +3551,50 @@ ${diarioTxt || 'No hay entradas en el diario.'}`;
 };
 
 // =============================================
+// === GOOGLE OAUTH (flujo implícito) ===
+// =============================================
+const GOOGLE_CLIENT_ID = '871176559846-qctr4g2s05te327su654gpg91oq85gfd.apps.googleusercontent.com';
+const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks';
+
+// Pide un token de acceso de Google.
+// interactive=true muestra el selector de cuenta; interactive=false intenta una renovación silenciosa
+// (prompt:'' reutiliza la sesión y el consentimiento ya dados, sin volver a pedir permisos).
+const requestGoogleToken = (interactive) => new Promise((resolve, reject) => {
+    if (!window.google?.accounts?.oauth2) {
+        reject(new Error('Google Identity Services no está cargado aún.'));
+        return;
+    }
+    const client = window.google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: GOOGLE_SCOPES,
+        callback: (response) => {
+            if (response.error) { reject(response); return; }
+            const expiresAt = Date.now() + ((Number(response.expires_in) || 3600) * 1000);
+            try {
+                localStorage.setItem('google_calendar_token', JSON.stringify({ token: response.access_token, expiresAt }));
+                localStorage.setItem('google_connected', '1');
+            } catch (e) { /* almacenamiento lleno o bloqueado */ }
+            resolve({ token: response.access_token, expiresAt });
+        },
+        error_callback: (err) => reject(err),
+    });
+    client.requestAccessToken({ prompt: interactive ? '' : 'none' });
+});
+
+// Borra el token y la marca de "conectado" (detiene la renovación silenciosa).
+const disconnectGoogle = () => {
+    try {
+        localStorage.removeItem('google_calendar_token');
+        localStorage.removeItem('google_connected');
+    } catch (e) { /* ignora */ }
+};
+
+// =============================================
 // === COMPONENTE: PRODUCTIVITY HUB ===
 // =============================================
-const ProductivityHub = ({ tasks, genericAdd, genericUpdate, genericDelete, googleToken, setGoogleToken }) => {
-    const [activeView, setActiveView] = useState('tasks'); // 'tasks' | 'calendar'
-    
-    // Tareas
-    const [newTaskText, setNewTaskText] = useState('');
-    const [newTaskPriority, setNewTaskPriority] = useState('Media');
+const ProductivityHub = ({ genericAdd, genericUpdate, genericDelete, googleToken, setGoogleToken }) => {
+    const [activeView, setActiveView] = useState('calendar'); // 'calendar' | 'gtasks'
 
-    const handleAddTask = async (e) => {
-        e.preventDefault();
-        if (!newTaskText.trim()) return;
-        await genericAdd('tasks', {
-            texto: newTaskText,
-            prioridad: newTaskPriority,
-            completada: false,
-            createdAt: new Date().toISOString()
-        });
-        setNewTaskText('');
-    };
-
-    const toggleTask = (task) => genericUpdate('tasks', task.id, { completada: !task.completada });
-    
     // Calendar
     const [events, setEvents] = useState([]);
     const [loadingEvents, setLoadingEvents] = useState(false);
@@ -3548,29 +3612,16 @@ const ProductivityHub = ({ tasks, genericAdd, genericUpdate, genericDelete, goog
     const [eventTime, setEventTime] = useState('');
     const [eventDuration, setEventDuration] = useState('60');
 
-    // Inicializar Google Client
-    const handleGoogleLogin = () => {
-        if (!window.google) {
-            alert('Google Identity Services no está cargado aún. Intenta de nuevo en unos segundos.');
-            return;
+    // Inicializar Google Client (conexión interactiva)
+    const handleGoogleLogin = async () => {
+        try {
+            const { token } = await requestGoogleToken(true);
+            setGoogleToken(token);
+            fetchEvents(token);
+        } catch (e) {
+            console.error('Error Google Auth:', e);
+            alert('No se pudo conectar con Google. Intenta de nuevo en unos segundos.');
         }
-        const client = window.google.accounts.oauth2.initTokenClient({
-            client_id: '871176559846-qctr4g2s05te327su654gpg91oq85gfd.apps.googleusercontent.com', // Configuracion manual posterior
-            scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks',
-            callback: (response) => {
-                if (response.error) {
-                    console.error('Error Google Auth:', response);
-                    return;
-                }
-                const expiresAt = Date.now() + ((Number(response.expires_in) || 3600) * 1000);
-                try {
-                    localStorage.setItem('google_calendar_token', JSON.stringify({ token: response.access_token, expiresAt }));
-                } catch (e) { /* almacenamiento lleno o bloqueado */ }
-                setGoogleToken(response.access_token);
-                fetchEvents(response.access_token);
-            },
-        });
-        client.requestAccessToken();
     };
 
     const fetchEvents = async (token) => {
@@ -3764,7 +3815,7 @@ const ProductivityHub = ({ tasks, genericAdd, genericUpdate, genericDelete, goog
                         </div>
                         <div>
                             <h2 className="text-3xl font-bold">Agenda & Tareas</h2>
-                            <p className="text-blue-100 text-sm">Gestiona tu tiempo y obligaciones personales</p>
+                            <p className="text-blue-100 text-sm">Tu Google Calendar y Google Tasks en un solo lugar</p>
                         </div>
                     </div>
                 </div>
@@ -3772,10 +3823,6 @@ const ProductivityHub = ({ tasks, genericAdd, genericUpdate, genericDelete, goog
 
             {/* View Toggle */}
             <div className="flex p-1 bg-slate-100 rounded-xl w-full md:max-w-md">
-                <button onClick={() => setActiveView('tasks')}
-                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all ${activeView === 'tasks' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                    <CheckCircle2 size={16} /> Tareas
-                </button>
                 <button onClick={() => setActiveView('calendar')}
                     className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all ${activeView === 'calendar' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
                     <CalendarDays size={16} /> Calendar
@@ -3785,69 +3832,6 @@ const ProductivityHub = ({ tasks, genericAdd, genericUpdate, genericDelete, goog
                     <ListTodo size={16} /> Google Tasks
                 </button>
             </div>
-
-            {/* TASKS VIEW */}
-            {activeView === 'tasks' && (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div className="lg:col-span-1">
-                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 sticky top-24">
-                            <h3 className="font-bold text-lg text-slate-800 mb-4">Nueva Tarea</h3>
-                            <form onSubmit={handleAddTask} className="space-y-4">
-                                <div>
-                                    <input placeholder="¿Qué necesitas hacer?" value={newTaskText} onChange={e => setNewTaskText(e.target.value)}
-                                        className="w-full px-4 py-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors bg-slate-50" required />
-                                </div>
-                                <div className="flex gap-2">
-                                    {['Alta', 'Media', 'Baja'].map(p => (
-                                        <button key={p} type="button" onClick={() => setNewTaskPriority(p)}
-                                            className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${newTaskPriority === p ? (p === 'Alta' ? 'bg-rose-100 text-rose-700 border-rose-200' : p === 'Media' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-emerald-100 text-emerald-700 border-emerald-200') : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'}`}>
-                                            {p}
-                                        </button>
-                                    ))}
-                                </div>
-                                <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-md shadow-blue-200">
-                                    Agregar Tarea
-                                </button>
-                            </form>
-                        </div>
-                    </div>
-
-                    <div className="lg:col-span-2 space-y-3">
-                        <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-2">
-                            <ListTodo size={18} className="text-slate-400" /> Pendientes ({tasks.filter(t => !t.completada).length})
-                        </h3>
-                        {tasks.length === 0 ? (
-                            <div className="text-center py-12 bg-white rounded-2xl border border-dashed border-slate-300">
-                                <ListTodo size={40} className="mx-auto text-slate-300 mb-3" />
-                                <p className="text-slate-500 font-medium">No tienes tareas registradas</p>
-                            </div>
-                        ) : (
-                            <div className="space-y-2">
-                                {tasks.sort((a,b) => a.completada - b.completada || new Date(b.createdAt) - new Date(a.createdAt)).map(task => (
-                                    <div key={task.id} className={`bg-white p-4 rounded-xl border flex items-center justify-between gap-4 transition-all hover:shadow-sm ${task.completada ? 'opacity-60 bg-slate-50 border-slate-200' : 'border-slate-200'} group`}>
-                                        <div className="flex items-center gap-3 flex-1 overflow-hidden">
-                                            <button onClick={() => toggleTask(task)} className={`shrink-0 transition-colors ${task.completada ? 'text-emerald-500' : 'text-slate-300 hover:text-emerald-500'}`}>
-                                                {task.completada ? <CheckCircle2 size={22} className="fill-emerald-100" /> : <div className="w-[22px] h-[22px] rounded-full border-2 border-current" />}
-                                            </button>
-                                            <span className={`text-slate-700 truncate ${task.completada ? 'line-through text-slate-400' : 'font-medium'}`}>
-                                                {task.texto}
-                                            </span>
-                                            {!task.completada && (
-                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${task.prioridad === 'Alta' ? 'bg-rose-100 text-rose-700' : task.prioridad === 'Media' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                                                    {task.prioridad}
-                                                </span>
-                                            )}
-                                        </div>
-                                        <button onClick={() => genericDelete('tasks', task.id)} className="text-slate-300 hover:text-rose-500 p-2 opacity-0 group-hover:opacity-100 transition-all rounded-lg hover:bg-rose-50">
-                                            <Trash2 size={16} />
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
 
             {/* CALENDAR VIEW */}
             {activeView === 'calendar' && (
@@ -3867,7 +3851,7 @@ const ProductivityHub = ({ tasks, genericAdd, genericUpdate, genericDelete, goog
                                 <Globe size={16} /> Conectar Google
                             </button>
                         ) : (
-                            <button onClick={() => {localStorage.removeItem('google_calendar_token'); setGoogleToken(null); setEvents([]);}} className="text-slate-400 hover:text-slate-600 text-sm font-medium">Desconectar</button>
+                            <button onClick={() => {disconnectGoogle(); setGoogleToken(null); setEvents([]);}} className="text-slate-400 hover:text-slate-600 text-sm font-medium">Desconectar</button>
                         )}
                     </div>
 
@@ -3885,7 +3869,7 @@ const ProductivityHub = ({ tasks, genericAdd, genericUpdate, genericDelete, goog
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
                                             <label className="block text-xs font-bold text-slate-500 mb-1">Fecha</label>
-                                            <input type="date" value={eventDate} onChange={e => setEventDate(e.target.value)} required min={new Date().toISOString().split('T')[0]}
+                                            <input type="date" value={eventDate} onChange={e => setEventDate(e.target.value)} required min={dateKey()}
                                                 className="w-full px-3 py-2 border rounded-lg outline-none focus:border-indigo-500 text-sm" />
                                         </div>
                                         <div>
@@ -3975,7 +3959,7 @@ const ProductivityHub = ({ tasks, genericAdd, genericUpdate, genericDelete, goog
                                 <Globe size={16} /> Conectar Google
                             </button>
                         ) : (
-                            <button onClick={() => {localStorage.removeItem('google_calendar_token'); setGoogleToken(null); setGtasks([]);}} className="text-slate-400 hover:text-slate-600 text-sm font-medium">Desconectar</button>
+                            <button onClick={() => {disconnectGoogle(); setGoogleToken(null); setGtasks([]);}} className="text-slate-400 hover:text-slate-600 text-sm font-medium">Desconectar</button>
                         )}
                     </div>
 
@@ -4077,8 +4061,7 @@ export default function App() {
     const [passwords, setPasswords] = useState([]);
     const [vaultConfig, setVaultConfig] = useState([]);
     
-    // Tareas & Settings
-    const [tasks, setTasks] = useState([]);
+    // Hábitos & Settings
     const [habitos, setHabitos] = useState([]);
     const [diario, setDiario] = useState([]);
     const [coachMensajes, setCoachMensajes] = useState([]);
@@ -4094,6 +4077,54 @@ export default function App() {
         } catch (e) { /* ignora json corrupto */ }
         return null;
     });
+
+    // Renovación silenciosa del token de Google.
+    // Los tokens del flujo implícito caducan en ~1h y no hay refresh token; al cerrar y
+    // reabrir la app el token suele estar vencido. Si el usuario ya conectó alguna vez
+    // (marca 'google_connected'), renovamos sin interacción y reprogramamos antes de caducar.
+    useEffect(() => {
+        if (localStorage.getItem('google_connected') !== '1') return;
+        let timer;
+        let cancelado = false;
+
+        const asegurarToken = async () => {
+            if (cancelado) return;
+            let expiresAt = 0;
+            try {
+                const raw = localStorage.getItem('google_calendar_token');
+                if (raw) expiresAt = JSON.parse(raw).expiresAt || 0;
+            } catch (e) { /* */ }
+            // Renueva si no hay token o si caduca en menos de 5 minutos.
+            if (Date.now() > expiresAt - 5 * 60 * 1000) {
+                try {
+                    const res = await requestGoogleToken(false);
+                    if (cancelado) return;
+                    setGoogleToken(res.token);
+                    expiresAt = res.expiresAt;
+                } catch (e) {
+                    console.warn('No se pudo renovar el token de Google en silencio:', e);
+                    return; // El usuario tendrá que reconectar manualmente.
+                }
+            }
+            // Reprograma la próxima renovación 5 min antes de que caduque.
+            const espera = Math.max(60 * 1000, expiresAt - Date.now() - 5 * 60 * 1000);
+            timer = setTimeout(asegurarToken, espera);
+        };
+
+        // Espera a que Google Identity Services cargue antes de renovar.
+        let intentos = 0;
+        const esperarGis = setInterval(() => {
+            intentos++;
+            if (window.google?.accounts?.oauth2) {
+                clearInterval(esperarGis);
+                asegurarToken();
+            } else if (intentos > 40) {
+                clearInterval(esperarGis);
+            }
+        }, 250);
+
+        return () => { cancelado = true; clearInterval(esperarGis); clearTimeout(timer); };
+    }, []);
 
     // Notificaciones (avisos de límite de gastos)
     const [notifPermiso, setNotifPermiso] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'denied');
@@ -4220,9 +4251,6 @@ export default function App() {
         const unsubVaultConfig = onSnapshot(collection(db, `${basePath}/vault_config`), (snap) =>
             setVaultConfig(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
-        const unsubTasks = onSnapshot(collection(db, `${basePath}/tasks`), (snap) =>
-            setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-
         const unsubHabitos = onSnapshot(collection(db, `${basePath}/habitos`), (snap) =>
             setHabitos(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
@@ -4235,7 +4263,7 @@ export default function App() {
         const unsubCoachPerfil = onSnapshot(collection(db, `${basePath}/coach_perfil`), (snap) =>
             setCoachPerfil(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
-        return () => { unsubTrans(); unsubDeudas(); unsubMetas(); unsubPresupuesto(); unsubLimites(); unsubPasswords(); unsubVaultConfig(); unsubTasks(); unsubHabitos(); unsubDiario(); unsubCoach(); unsubCoachPerfil(); };
+        return () => { unsubTrans(); unsubDeudas(); unsubMetas(); unsubPresupuesto(); unsubLimites(); unsubPasswords(); unsubVaultConfig(); unsubHabitos(); unsubDiario(); unsubCoach(); unsubCoachPerfil(); };
     }, [user]);
 
     // --- ACTIONS FIREBASE ---
@@ -4333,7 +4361,7 @@ export default function App() {
 
         try {
             setLoading(true);
-            const collections = ['transacciones', 'deudas', 'metas', 'presupuesto', 'limites', 'passwords', 'vault_config', 'tasks', 'habitos', 'diario', 'coach_mensajes', 'coach_perfil'];
+            const collections = ['transacciones', 'deudas', 'metas', 'presupuesto', 'limites', 'passwords', 'vault_config', 'habitos', 'diario', 'coach_mensajes', 'coach_perfil'];
             const { getDocs, setDoc, doc } = await import('firebase/firestore');
 
             let totalMigrated = 0;
@@ -4482,7 +4510,7 @@ export default function App() {
 
             <main className="flex-1 md:ml-72 p-4 md:p-10 mt-16 md:mt-0 overflow-y-auto h-screen pb-32 md:pb-10 no-scrollbar scroll-smooth">
                 <div className="max-w-7xl mx-auto space-y-8">
-                    {activeTab === 'midia' && <MiDia user={user} tasks={tasks} habitos={habitos} diario={diario} transacciones={transacciones} presupuestoItems={presupuestoItems} saldoActual={saldoActual} googleToken={googleToken} genericAdd={genericAdd} genericUpdate={genericUpdate} setActiveTab={setActiveTab} />}
+                    {activeTab === 'midia' && <MiDia user={user} habitos={habitos} diario={diario} transacciones={transacciones} presupuestoItems={presupuestoItems} saldoActual={saldoActual} googleToken={googleToken} genericAdd={genericAdd} genericUpdate={genericUpdate} setActiveTab={setActiveTab} />}
                     {activeTab === 'habitos' && <HabitTracker habitos={habitos} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} />}
                     {activeTab === 'dashboard' && <DashboardView saldoActual={saldoActual} totalIngresos={totalIngresos} totalGastos={totalGastos} totalDeudaPendiente={totalDeudaPendiente} transacciones={transacciones} />}
                     {activeTab === 'analisis' && <FinancialAnalysis transacciones={transacciones} />}
@@ -4493,7 +4521,7 @@ export default function App() {
                     {activeTab === 'deudas' && <DebtManager deudas={deudas} genericAdd={genericAdd} genericUpdate={genericUpdate} />}
                     {activeTab === 'metas' && <GoalTracker metas={metas} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} />}
                     {activeTab === 'passwords' && <PasswordVault passwords={passwords} vaultConfig={vaultConfig} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} user={user} db={db} activeTab={activeTab} />}
-                    {activeTab === 'agenda' && <ProductivityHub tasks={tasks} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} googleToken={googleToken} setGoogleToken={setGoogleToken} />}
+                    {activeTab === 'agenda' && <ProductivityHub genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} googleToken={googleToken} setGoogleToken={setGoogleToken} />}
                 </div>
             </main>
 
@@ -4546,7 +4574,7 @@ export default function App() {
             />
 
             {/* AI Coach Floating Widget - Injected Globally */}
-            <AICoach transacciones={transacciones} deudas={deudas} metas={metas} presupuestoItems={presupuestoItems} limites={limites} tasks={tasks} habitos={habitos} diario={diario} googleToken={googleToken} coachMensajes={coachMensajes} coachPerfil={coachPerfil} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} />
+            <AICoach transacciones={transacciones} deudas={deudas} metas={metas} presupuestoItems={presupuestoItems} limites={limites} habitos={habitos} diario={diario} googleToken={googleToken} coachMensajes={coachMensajes} coachPerfil={coachPerfil} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} />
         </div>
     );
 }

@@ -151,14 +151,13 @@ const calcStreak = (historial) => {
 const fmt = (n) => '$' + (Number(n) || 0).toLocaleString('es-CO');
 
 function buildContext(data) {
-    const { transacciones, deudas, metas, presupuesto, limites, tasks, habitos, diario, perfil } = data;
+    const { transacciones, deudas, metas, presupuesto, limites, habitos, diario, perfil } = data;
     const perfilNotas = (perfil && perfil[0] && perfil[0].notas) ? perfil[0].notas : '';
-    const ahoraMes = new Date().getMonth();
-    const ahoraAnio = new Date().getFullYear();
-    const esEsteMes = (fecha) => {
-        const d = new Date(fecha);
-        return d.getMonth() === ahoraMes && d.getFullYear() === ahoraAnio;
-    };
+    // Comparación por texto (YYYY-MM-DD) para evitar el desfase de zona horaria de new Date().
+    const hoyKey = dateKey();
+    const mesKey = hoyKey.slice(0, 7);
+    const esEsteMes = (fecha) => typeof fecha === 'string' && fecha.slice(0, 7) === mesKey;
+    const esHoy = (fecha) => fecha === hoyKey;
 
     const totalIngresos = transacciones.filter(t => t.tipo === 'ingreso').reduce((a, c) => a + (Number(c.monto) || 0), 0);
     const totalGastos = transacciones.filter(t => t.tipo === 'gasto').reduce((a, c) => a + (Number(c.monto) || 0), 0);
@@ -200,7 +199,11 @@ function buildContext(data) {
 
     const presTxt = presupuesto.map(i => `- ${i.concepto} (${i.categoria}): ${fmt(i.monto)}${i.lastPaid ? ' [pagado]' : ' [pendiente]'}${i.diaPago ? ` paga el ${i.diaPago}` : ''}`).join('\n');
 
-    const tareasTxt = tasks.filter(t => !t.completada).map(t => `- ${t.texto} (Prioridad ${t.prioridad})`).join('\n');
+    // Movimientos de hoy
+    const gastosHoy = transacciones.filter(t => t.tipo === 'gasto' && !t.esInversion && esHoy(t.fecha));
+    const totalGastoHoy = gastosHoy.reduce((a, t) => a + (Number(t.monto) || 0), 0);
+    const totalIngresoHoy = transacciones.filter(t => t.tipo === 'ingreso' && esHoy(t.fecha)).reduce((a, t) => a + (Number(t.monto) || 0), 0);
+    const gastosHoyTxt = gastosHoy.map(t => `- ${t.categoria}: ${fmt(t.monto)}${t.descripcion ? ` (${t.descripcion})` : ''}`).join('\n');
 
     const habitosTxt = habitos.map(h => {
         const streak = calcStreak(h.historial || []);
@@ -221,6 +224,11 @@ RESUMEN FINANCIERO GENERAL:
 - Gastos de este mes: ${fmt(gastosMes)}
 - Total de deudas pendientes: ${fmt(deudasPend)}
 
+MOVIMIENTOS DE HOY (${hoyKey}):
+- Total gastado hoy: ${fmt(totalGastoHoy)} (${gastosHoy.length} gasto(s))
+- Total ingresado hoy: ${fmt(totalIngresoHoy)}
+${gastosHoyTxt || '- Sin gastos registrados hoy.'}
+
 GASTOS DE ESTE MES POR CATEGORÍA:
 ${gastosCatTxt || 'Sin gastos este mes.'}
 
@@ -235,9 +243,6 @@ ${metasTxt || 'No hay metas.'}
 
 DEUDAS:
 ${deudasTxt || 'No hay deudas.'}
-
-TAREAS PENDIENTES:
-${tareasTxt || 'Ninguna.'}
 
 HÁBITOS Y RACHAS:
 ${habitosTxt || 'No hay hábitos.'}
@@ -279,19 +284,18 @@ export async function onRequestPost(context) {
         const accessToken = await getAccessToken(env);
         const projectId = env.FIREBASE_PROJECT_ID || 'appfinanzas-84626';
 
-        const [transacciones, deudas, metas, presupuesto, limites, tasks, habitos, diario, perfil] = await Promise.all([
+        const [transacciones, deudas, metas, presupuesto, limites, habitos, diario, perfil] = await Promise.all([
             fetchCollection(accessToken, projectId, userId, 'transacciones'),
             fetchCollection(accessToken, projectId, userId, 'deudas'),
             fetchCollection(accessToken, projectId, userId, 'metas'),
             fetchCollection(accessToken, projectId, userId, 'presupuesto'),
             fetchCollection(accessToken, projectId, userId, 'limites'),
-            fetchCollection(accessToken, projectId, userId, 'tasks'),
             fetchCollection(accessToken, projectId, userId, 'habitos'),
             fetchCollection(accessToken, projectId, userId, 'diario'),
             fetchCollection(accessToken, projectId, userId, 'coach_perfil'),
         ]);
 
-        const ctx = buildContext({ transacciones, deudas, metas, presupuesto, limites, tasks, habitos, diario, perfil });
+        const ctx = buildContext({ transacciones, deudas, metas, presupuesto, limites, habitos, diario, perfil });
 
         // 3) Llamar a Claude
         const userQ = (pregunta && String(pregunta).trim())
