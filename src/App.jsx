@@ -3029,6 +3029,12 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, habi
     const [perfilGuardado, setPerfilGuardado] = useState(false);
     const [isListening, setIsListening] = useState(false);
     const [vozError, setVozError] = useState('');
+    // Coach proactivo: aviso emergente al abrir la app.
+    const [showProactivo, setShowProactivo] = useState(false);
+    const [proactivoMensaje, setProactivoMensaje] = useState('');
+    const [proactivoCargando, setProactivoCargando] = useState(false);
+    const [alertasLocales, setAlertasLocales] = useState([]);
+    const proactivoHechoRef = useRef(false);
     const messagesEndRef = useRef(null);
     const recognitionRef = useRef(null);
 
@@ -3415,7 +3421,180 @@ ${diarioTxt || 'No hay entradas en el diario.'}`;
         }
     };
 
+    // --- COACH PROACTIVO ---
+    // Alertas locales (sin costo de IA): se calculan al instante con los datos ya cargados.
+    const calcularAlertas = () => {
+        const alertas = [];
+        const hoyKey = dateKey();
+        const mesKey = hoyKey.slice(0, 7);
+        const cicloActual = hoyKey.slice(0, 7);
+        const esEsteMes = (f) => typeof f === 'string' && f.slice(0, 7) === mesKey;
+        const esHoy = (f) => f === hoyKey;
+
+        // Gastos del mes por categoría (para límites)
+        const gastosPorCat = {};
+        transacciones
+            .filter(t => t.tipo === 'gasto' && !t.esInversion && esEsteMes(t.fecha))
+            .forEach(t => { gastosPorCat[t.categoria] = (gastosPorCat[t.categoria] || 0) + (Number(t.monto) || 0); });
+
+        // Límites excedidos
+        limites.forEach(l => {
+            const g = gastosPorCat[l.categoria] || 0;
+            if (Number(l.limite) > 0 && g > Number(l.limite)) {
+                alertas.push({ tipo: 'limite', texto: `Pasaste tu límite de ${l.categoria}: llevas ${formatCurrency(g)} de ${formatCurrency(l.limite)} este mes.` });
+            }
+        });
+
+        // Gastos del mes superan los ingresos del mes
+        const ingMes = transacciones.filter(t => t.tipo === 'ingreso' && esEsteMes(t.fecha)).reduce((a, c) => a + (Number(c.monto) || 0), 0);
+        const gasMes = transacciones.filter(t => t.tipo === 'gasto' && !t.esInversion && esEsteMes(t.fecha)).reduce((a, c) => a + (Number(c.monto) || 0), 0);
+        if (ingMes > 0 && gasMes > ingMes) {
+            alertas.push({ tipo: 'balance', texto: `Este mes has gastado más de lo que ingresaste: ${formatCurrency(gasMes)} vs ${formatCurrency(ingMes)}.` });
+        }
+
+        // Gasto hormiga de hoy
+        const hormigaHoy = transacciones
+            .filter(t => t.tipo === 'gasto' && esHoy(t.fecha) && t.categoria === 'Gastos Hormiga')
+            .reduce((a, c) => a + (Number(c.monto) || 0), 0);
+        if (hormigaHoy > 0) {
+            alertas.push({ tipo: 'hormiga', texto: `Hoy llevas ${formatCurrency(hormigaHoy)} en gastos hormiga. Los pequeños gastos suman al final del mes.` });
+        }
+
+        // Pagos próximos (≤3 días, no pagados este ciclo)
+        presupuestoItems.forEach(i => {
+            const prox = proximaFechaPago(i.diaPago);
+            if (prox && prox.dias <= 3 && i.lastPaid !== cicloActual) {
+                const cuando = prox.dias === 0 ? 'vence hoy' : prox.dias === 1 ? 'vence mañana' : `en ${prox.dias} días`;
+                alertas.push({ tipo: 'pago', texto: `Pago próximo: ${i.concepto} ${cuando} (${formatCurrency(i.monto)}).` });
+            }
+        });
+
+        return alertas;
+    };
+
+    const generarProactivo = async () => {
+        const alertas = calcularAlertas();
+        setAlertasLocales(alertas);
+
+        // Mensaje de IA: solo se genera UNA vez al día; el resto del día se reutiliza (sin costo).
+        let cache = null;
+        try { cache = JSON.parse(localStorage.getItem('coach_proactivo') || 'null'); } catch (e) { /* */ }
+        if (cache && cache.fecha === dateKey() && cache.mensaje) {
+            setProactivoMensaje(cache.mensaje);
+            setShowProactivo(true);
+            return;
+        }
+
+        setShowProactivo(true);
+        setProactivoCargando(true);
+        let mensaje = '';
+        try {
+            const context = await buildFinancialContext();
+            const instruccion = `[MENSAJE PROACTIVO AUTOMÁTICO — el usuario acaba de abrir la app; NO hizo ninguna pregunta]
+Actúa como su coach financiero personal y dale un mensaje breve y útil para HOY, basándote SOLO en sus datos reales. Incluye, únicamente si aplica:
+- La advertencia más importante (un gasto, límite, deuda o balance que requiera atención).
+- Un paso concreto y pequeño para avanzar HOY en una de sus metas de ahorro o personales (con cifras de sus datos).
+- Un reconocimiento si va bien en algo (una racha de hábito, una meta cerca, buen ahorro).
+Máximo 4 viñetas cortas. Empieza con una frase tipo titular de una línea. Tono cálido, directo y motivador. No saludes de forma larga.`;
+
+            const res = await fetch('/api/ai-coach', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ context, messages: [{ role: 'user', content: instruccion }] })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                mensaje = data.reply || '';
+                if (mensaje) {
+                    try { localStorage.setItem('coach_proactivo', JSON.stringify({ fecha: dateKey(), mensaje })); } catch (e) { /* */ }
+                }
+            }
+        } catch (e) {
+            console.error('Error generando mensaje proactivo:', e);
+        }
+        setProactivoMensaje(mensaje);
+        setProactivoCargando(false);
+
+        // Si no hay nada que decir (ni alertas ni mensaje), no molestamos.
+        if (!mensaje && alertas.length === 0) setShowProactivo(false);
+    };
+
+    // Dispara el coach proactivo una sola vez por sesión, cuando ya hay datos cargados.
+    useEffect(() => {
+        if (proactivoHechoRef.current) return;
+        if (transacciones.length === 0 && metas.length === 0) return; // espera a que carguen los datos
+        proactivoHechoRef.current = true;
+        generarProactivo();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [transacciones, metas]);
+
+    const estiloAlerta = (tipo) => {
+        switch (tipo) {
+            case 'limite': return { clase: 'bg-rose-50 text-rose-700 border border-rose-100', icono: '🚨' };
+            case 'balance': return { clase: 'bg-rose-50 text-rose-700 border border-rose-100', icono: '📉' };
+            case 'hormiga': return { clase: 'bg-amber-50 text-amber-700 border border-amber-100', icono: '🐜' };
+            case 'pago': return { clase: 'bg-indigo-50 text-indigo-700 border border-indigo-100', icono: '📅' };
+            default: return { clase: 'bg-slate-50 text-slate-700 border border-slate-100', icono: '💡' };
+        }
+    };
+
     return (
+      <>
+        {/* === AVISO EMERGENTE DEL COACH (al abrir la app) === */}
+        {showProactivo && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowProactivo(false)}>
+                <div onClick={e => e.stopPropagation()} className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[85vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+                    {/* Header */}
+                    <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-5 text-white flex items-center gap-3">
+                        <div className="w-11 h-11 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
+                            <Sparkles size={22} className="text-white" />
+                        </div>
+                        <div className="flex-1">
+                            <h3 className="font-bold text-lg leading-tight">Tu coach hoy</h3>
+                            <p className="text-[11px] text-indigo-100 font-medium">Un vistazo a tus finanzas al abrir la app</p>
+                        </div>
+                        <button onClick={() => setShowProactivo(false)} className="w-8 h-8 rounded-full hover:bg-white/20 flex items-center justify-center transition-colors">
+                            <X size={20} />
+                        </button>
+                    </div>
+                    {/* Body */}
+                    <div className="p-5 overflow-y-auto custom-scrollbar space-y-4">
+                        {alertasLocales.length > 0 && (
+                            <div className="space-y-2">
+                                {alertasLocales.map((a, i) => {
+                                    const est = estiloAlerta(a.tipo);
+                                    return (
+                                        <div key={i} className={`flex items-start gap-2.5 p-3 rounded-xl text-[13px] leading-snug font-medium ${est.clase}`}>
+                                            <span className="shrink-0 text-base leading-none">{est.icono}</span>
+                                            <span>{a.texto}</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                        {proactivoCargando ? (
+                            <div className="flex items-center gap-2 text-slate-500 text-sm py-6 justify-center">
+                                <span className="w-2 h-2 bg-indigo-400 rounded-full animate-pulse" style={{ animationDelay: '0ms' }}></span>
+                                <span className="w-2 h-2 bg-indigo-400 rounded-full animate-pulse" style={{ animationDelay: '150ms' }}></span>
+                                <span className="w-2 h-2 bg-indigo-400 rounded-full animate-pulse" style={{ animationDelay: '300ms' }}></span>
+                                <span className="ml-1">Analizando tus finanzas…</span>
+                            </div>
+                        ) : proactivoMensaje ? (
+                            <div className="prose prose-sm max-w-none text-slate-700 prose-p:my-1 prose-strong:text-indigo-700 marker:text-indigo-400"
+                                dangerouslySetInnerHTML={{ __html: proactivoMensaje.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br/>') }} />
+                        ) : null}
+                    </div>
+                    {/* Footer */}
+                    <div className="p-4 border-t border-slate-100 flex gap-2">
+                        <button onClick={() => setShowProactivo(false)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">Entendido</button>
+                        <button onClick={() => { setShowProactivo(false); setIsOpen(true); }} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors flex items-center justify-center gap-1.5">
+                            <Sparkles size={15} /> Hablar con el coach
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
         <div className="fixed bottom-40 right-4 md:bottom-6 md:right-6 z-50 flex flex-col items-end pointer-events-none">
             {/* Chat Panel */}
             <div className={`pointer-events-auto transition-all duration-300 transform origin-bottom-right ${isOpen ? 'scale-100 opacity-100 mb-4 visible' : 'scale-0 opacity-0 invisible'} bg-white rounded-3xl shadow-2xl border border-indigo-100 overflow-hidden flex flex-col w-[90vw] md:w-[400px] h-[600px] max-h-[75vh]`}>
@@ -3547,6 +3726,7 @@ ${diarioTxt || 'No hay entradas en el diario.'}`;
                 {isOpen ? <X size={24} /> : <Sparkles size={24} />}
             </button>
         </div>
+      </>
     );
 };
 
