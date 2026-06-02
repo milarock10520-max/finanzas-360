@@ -3473,18 +3473,24 @@ ${diarioTxt || 'No hay entradas en el diario.'}`;
     };
 
     const generarProactivo = async () => {
-        const alertas = calcularAlertas();
-        setAlertasLocales(alertas);
+        const hoy = dateKey();
 
-        // Mensaje de IA: solo se genera UNA vez al día; el resto del día se reutiliza (sin costo).
+        // El análisis del coach se genera y se muestra UNA SOLA VEZ AL DÍA.
+        // Si ya se generó hoy (en esta o en cualquier apertura anterior), no hacemos nada:
+        // ni se vuelve a llamar a la IA (ahorro de tokens) ni se vuelve a mostrar el aviso.
         let cache = null;
         try { cache = JSON.parse(localStorage.getItem('coach_proactivo') || 'null'); } catch (e) { /* */ }
-        if (cache && cache.fecha === dateKey() && cache.mensaje) {
-            setProactivoMensaje(cache.mensaje);
-            setShowProactivo(true);
+        if (cache && cache.fecha === hoy) {
             return;
         }
 
+        // Reclamamos el día de INMEDIATO (antes de llamar a la IA). Así, si abres la app
+        // otra vez mientras este análisis aún se está generando, la segunda apertura ve
+        // que el día ya está tomado y no dispara un segundo análisis.
+        try { localStorage.setItem('coach_proactivo', JSON.stringify({ fecha: hoy, mensaje: '' })); } catch (e) { /* */ }
+
+        const alertas = calcularAlertas();
+        setAlertasLocales(alertas);
         setShowProactivo(true);
         setProactivoCargando(true);
         let mensaje = '';
@@ -3505,13 +3511,12 @@ Máximo 4 viñetas cortas. Empieza con una frase tipo titular de una línea. Ton
             if (res.ok) {
                 const data = await res.json();
                 mensaje = data.reply || '';
-                if (mensaje) {
-                    try { localStorage.setItem('coach_proactivo', JSON.stringify({ fecha: dateKey(), mensaje })); } catch (e) { /* */ }
-                }
             }
         } catch (e) {
             console.error('Error generando mensaje proactivo:', e);
         }
+        // Guardamos el mensaje final manteniendo la fecha de hoy (sigue siendo 1 vez al día).
+        try { localStorage.setItem('coach_proactivo', JSON.stringify({ fecha: hoy, mensaje })); } catch (e) { /* */ }
         setProactivoMensaje(mensaje);
         setProactivoCargando(false);
 
