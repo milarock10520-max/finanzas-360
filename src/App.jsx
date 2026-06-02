@@ -1215,6 +1215,28 @@ const PriceChart = ({ data, ticker }) => {
     );
 };
 
+// Traduce lo que el usuario escribe (en Ticker o nombre) al símbolo real de Yahoo.
+// Ej: "syp500", "SP500", "S&P 500", "índice syp500", "SPX", "GSPC" → "SPY" (ETF con histórico fiable).
+// Para cripto añade el sufijo -USD si falta (BTC → BTC-USD).
+const normalizarTicker = (raw, subTipo) => {
+    const original = (raw || '').toUpperCase().trim();
+    if (!original) return null;
+    // Forma compacta: solo letras y números (sin espacios, &, guiones, ^).
+    const compact = original.replace(/[^A-Z0-9]/g, '');
+    // Variantes del S&P 500 (incluyendo errores comunes) → SPY
+    if (['SP500', 'SYP500', 'SANDP500', 'SPX', 'GSPC', 'SP', 'SYP', 'SANDP'].includes(compact)
+        || compact.includes('SP500') || compact.includes('SYP500')) return 'SPY';
+    // Otros índices comunes
+    if (['NASDAQ', 'NDX', 'NASDAQ100'].includes(compact)) return 'QQQ';
+    if (['DOWJONES', 'DOW', 'DJIA'].includes(compact)) return 'DIA';
+    // Símbolo normal: conservamos punto, guion y ^ (válidos en Yahoo).
+    const t = original.replace(/\s+/g, '').replace(/[^A-Z0-9.^\-]/g, '');
+    if (!t) return null;
+    // Cripto en Yahoo usa el formato MONEDA-USD
+    if (subTipo === 'Criptomonedas' && !t.includes('-')) return t + '-USD';
+    return t;
+};
+
 // --- Tarjeta individual de inversión ---
 const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, genericUpdate, totalGastosMensuales }) => {
     const [editingUtilidad, setEditingUtilidad] = useState(false);
@@ -1255,7 +1277,9 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
             // Detección amplia del S&P 500 por el nombre (S&P 500, SP500, SYP500, SPY, VOO, IVV…).
             const concUp = (inv.concepto || '').toUpperCase();
             const esSP500 = /S\s*&?\s*Y?\s*P\s*-?\s*500|SP\s*500|SYP\s*500|SPX|\bSPY\b|\bVOO\b|\bIVV\b/.test(concUp);
-            const tickerToUse = inv.ticker || (esSP500 ? 'SPY' : null);
+            // El ticker que escribió el usuario manda; si no hay, lo deducimos del nombre.
+            // En ambos casos lo normalizamos al símbolo real de Yahoo (p. ej. SYP500 → SPY).
+            const tickerToUse = normalizarTicker(inv.ticker || (esSP500 ? 'SPY' : null), inv.subTipo);
             if (tickerToUse) {
                 const fetchTickerData = async () => {
                     try {

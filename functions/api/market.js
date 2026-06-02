@@ -35,7 +35,8 @@ export async function onRequestGet(context) {
         const yUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=${range}&interval=${interval}`;
         const yres = await fetch(yUrl, {
             headers: { 'User-Agent': UA, 'Accept': 'application/json' },
-            cf: { cacheTtl: 3600, cacheEverything: true }
+            cf: { cacheTtl: 3600, cacheEverything: true },
+            signal: AbortSignal.timeout(8000)
         });
         if (yres.ok) {
             const data = await yres.json();
@@ -51,7 +52,7 @@ export async function onRequestGet(context) {
     // 2) Respaldo: Stooq (CSV abierto, sin clave). Tickers de EE. UU. usan sufijo .us
     try {
         const sUrl = `https://stooq.com/q/d/l/?s=${encodeURIComponent(ticker.toLowerCase())}.us&i=d`;
-        const sres = await fetch(sUrl, { headers: { 'User-Agent': UA } });
+        const sres = await fetch(sUrl, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(8000) });
         if (sres.ok) {
             const csv = await sres.text();
             const lines = csv.trim().split('\n');
