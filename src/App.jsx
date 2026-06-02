@@ -1252,22 +1252,22 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
             updateUtilidadIfChanged(nuevaUtilidad);
             
         } else if (inv.subTipo === 'Acciones / Bolsa' || inv.subTipo === 'Criptomonedas') {
-            const tickerToUse = inv.ticker || (inv.concepto?.toUpperCase().includes('S&P') || inv.concepto?.toUpperCase().includes('SPY') || inv.concepto?.toUpperCase().includes('VOO') ? 'SPY' : null);
+            // Detección amplia del S&P 500 por el nombre (S&P 500, SP500, SYP500, SPY, VOO, IVV…).
+            const concUp = (inv.concepto || '').toUpperCase();
+            const esSP500 = /S\s*&?\s*Y?\s*P\s*-?\s*500|SP\s*500|SYP\s*500|SPX|\bSPY\b|\bVOO\b|\bIVV\b/.test(concUp);
+            const tickerToUse = inv.ticker || (esSP500 ? 'SPY' : null);
             if (tickerToUse) {
                 const fetchTickerData = async () => {
                     try {
                         const montoInv = Number(inv.monto) || 0;
-                        const targetUrl = encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${tickerToUse}?range=5y&interval=1d`);
-                        const res = await fetch(`https://api.allorigins.win/raw?url=${targetUrl}`);
-                        
+                        // Datos de mercado a través de nuestro propio Worker (sin CORS ni proxies de terceros).
+                        const res = await fetch(`/api/market?ticker=${encodeURIComponent(tickerToUse)}&range=5y&interval=1d`);
+
                         if (!res.ok) throw new Error('Fetch failed');
                         const data = await res.json();
-                        
-                        const result = data.chart?.result?.[0];
-                        if (!result) return;
-                        
-                        const timestamps = result.timestamp;
-                        const closePrices = result.indicators.quote[0].close;
+
+                        const timestamps = data.timestamps;
+                        const closePrices = data.closes;
 
                         if (!timestamps || !closePrices || timestamps.length === 0) return;
 
