@@ -3081,24 +3081,73 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, habi
     const proactivoHechoRef = useRef(false);
     const messagesEndRef = useRef(null);
     const recognitionRef = useRef(null);
+    const nativeSRRef = useRef(null); // módulo del plugin nativo de voz (solo iOS)
 
     // ¿El navegador soporta reconocimiento de voz? (Safari iOS usa el prefijo webkit)
     const SpeechRecognition = typeof window !== 'undefined'
         ? (window.SpeechRecognition || window.webkitSpeechRecognition)
         : null;
-    const vozDisponible = !!SpeechRecognition;
+    // En la app nativa usamos el dictado de iOS (la Web Speech API no funciona en WKWebView).
+    const vozDisponible = Capacitor.isNativePlatform() || !!SpeechRecognition;
 
     const baseInputRef = useRef('');
 
-    const toggleVoz = () => {
-        setVozError('');
-        if (!vozDisponible) {
-            setVozError('Tu navegador no soporta dictado por voz.');
+    // Detiene el dictado (web o nativo).
+    const detenerVoz = async () => {
+        if (Capacitor.isNativePlatform()) {
+            try { await nativeSRRef.current?.stop(); } catch (_) {}
+            try { await nativeSRRef.current?.removeAllListeners(); } catch (_) {}
+            setIsListening(false);
             return;
         }
+        try { recognitionRef.current?.stop(); } catch (_) {}
+    };
+
+    // Dictado nativo de iOS mediante @capacitor-community/speech-recognition.
+    const iniciarVozNativa = async () => {
+        try {
+            const { SpeechRecognition: SR } = await import('@capacitor-community/speech-recognition');
+            nativeSRRef.current = SR;
+
+            const perm = await SR.requestPermissions();
+            if (perm?.speechRecognition !== 'granted') {
+                setVozError('Permiso de voz denegado. Actívalo en Ajustes → Finanzas 360 → Micrófono y Reconocimiento de voz.');
+                return;
+            }
+
+            baseInputRef.current = input ? input + ' ' : '';
+            await SR.removeAllListeners();
+            await SR.addListener('partialResults', (data) => {
+                const t = data?.matches?.[0];
+                if (typeof t === 'string') setInput(baseInputRef.current + t);
+            });
+            await SR.addListener('listeningState', (data) => {
+                if (data?.status === 'stopped') setIsListening(false);
+            });
+            await SR.start({ language: 'es-CO', partialResults: true, popup: false });
+            setIsListening(true);
+        } catch (e) {
+            console.error('Error al iniciar dictado nativo:', e);
+            setVozError('No se pudo iniciar el dictado de voz.');
+            setIsListening(false);
+        }
+    };
+
+    const toggleVoz = async () => {
+        setVozError('');
         // Si ya está escuchando, detener.
         if (isListening) {
-            try { recognitionRef.current?.stop(); } catch (_) {}
+            await detenerVoz();
+            return;
+        }
+        // App nativa: dictado de iOS.
+        if (Capacitor.isNativePlatform()) {
+            await iniciarVozNativa();
+            return;
+        }
+        // Web: Web Speech API del navegador.
+        if (!SpeechRecognition) {
+            setVozError('Tu navegador no soporta dictado por voz.');
             return;
         }
         try {
@@ -3138,7 +3187,7 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, habi
     // Detener el micrófono al cerrar el chat.
     useEffect(() => {
         if (!isOpen && isListening) {
-            try { recognitionRef.current?.stop(); } catch (_) {}
+            detenerVoz();
         }
     }, [isOpen, isListening]);
 

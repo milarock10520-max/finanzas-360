@@ -49,6 +49,10 @@
 	<true/>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Finanzas 360 usa Face ID para proteger el acceso a tus finanzas.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Finanzas 360 usa el micrófono para dictarle a tu coach financiero por voz.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Finanzas 360 usa el reconocimiento de voz para convertir tu dictado en texto.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
