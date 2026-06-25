@@ -1,0 +1,17 @@
+{
+  "appId": "com.finanzas360.app",
+  "appName": "Finanzas 360",
+  "webDir": "dist/client",
+  "ios": {
+    "contentInset": "always"
+  },
+  "server": {
+    "iosScheme": "capacitor"
+  },
+  "plugins": {
+    "FirebaseAuthentication": {
+      "skipNativeAuth": true,
+      "providers": ["google.com"]
+    }
+  }
+}

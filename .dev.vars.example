@@ -1,0 +1,3 @@
+# Copia este archivo a .dev.vars y rellena tu clave real de Anthropic.
+# Obtén la clave en: https://console.anthropic.com/settings/keys
+ANTHROPIC_API_KEY=sk-ant-...
