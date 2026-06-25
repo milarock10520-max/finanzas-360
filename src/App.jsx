@@ -3071,6 +3071,8 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, habi
     const [perfilGuardado, setPerfilGuardado] = useState(false);
     const [isListening, setIsListening] = useState(false);
     const [vozError, setVozError] = useState('');
+    // Acción agéntica pendiente de confirmar (la IA pidió ejecutar algo).
+    const [pendingConfirm, setPendingConfirm] = useState(null);
     // Coach proactivo: aviso emergente al abrir la app.
     const [showProactivo, setShowProactivo] = useState(false);
     const [proactivoMensaje, setProactivoMensaje] = useState('');
@@ -3167,7 +3169,7 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, habi
 
     useEffect(() => {
         scrollToBottom();
-    }, [messages, isTyping]);
+    }, [messages, isTyping, pendingConfirm]);
 
     // Cargar/sincronizar el historial guardado en Firestore (memoria del coach).
     // Mientras el coach está "escribiendo" no sobreescribimos para no pisar el
@@ -3406,18 +3408,226 @@ DIARIO / ESTADO DE ÁNIMO (últimas entradas)${promedioAnimo ? ` — promedio re
 ${diarioTxt || 'No hay entradas en el diario.'}`;
     };
 
+    // --- MODO AGÉNTICO: el coach puede EJECUTAR acciones ---
+
+    // Etiqueta legible para la tarjeta de confirmación de cada acción.
+    const describirAccion = (tu) => {
+        const i = tu.input || {};
+        switch (tu.name) {
+            case 'registrar_transaccion':
+                return {
+                    icon: i.tipo === 'ingreso' ? '💰' : '💸',
+                    titulo: i.tipo === 'ingreso' ? 'Registrar ingreso' : 'Registrar gasto',
+                    detalle: `${formatCurrency(Number(i.monto) || 0)} · ${i.categoria || ''}${i.concepto ? ` · ${i.concepto}` : ''}`
+                };
+            case 'crear_evento_calendar':
+                return { icon: '📅', titulo: 'Crear evento en Calendar', detalle: `${i.titulo} · ${i.fecha}${i.hora ? ` a las ${i.hora}` : ' (todo el día)'}` };
+            case 'crear_tarea':
+                return { icon: '✅', titulo: 'Crear tarea en Tasks', detalle: `${i.titulo}${i.fecha_limite ? ` · vence ${i.fecha_limite}` : ''}` };
+            case 'registrar_deuda':
+                return { icon: '🏦', titulo: 'Registrar deuda', detalle: `${i.nombre} · ${formatCurrency(Number(i.monto_total) || 0)}${i.cuotas ? ` · ${i.cuotas} cuotas` : ''}` };
+            case 'crear_meta':
+                return { icon: '🎯', titulo: 'Crear meta', detalle: `${i.nombre}${i.monto_objetivo ? ` · ${formatCurrency(Number(i.monto_objetivo))}` : ''}${i.plazo ? ` · ${i.plazo}` : ''}` };
+            default:
+                return { icon: '⚙️', titulo: tu.name, detalle: '' };
+        }
+    };
+
+    // Ejecuta UNA herramienta solicitada por el coach. Devuelve texto de resultado
+    // que se le reenvía a Claude como tool_result para que confirme en lenguaje natural.
+    const ejecutarHerramienta = async (tu) => {
+        const input = tu.input || {};
+        const fmtYmd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        try {
+            switch (tu.name) {
+                case 'registrar_transaccion': {
+                    const tipo = input.tipo === 'ingreso' ? 'ingreso' : 'gasto';
+                    const lista = tipo === 'ingreso' ? CATEGORIAS_INGRESOS : CATEGORIAS_GASTOS;
+                    const categoria = lista.includes(input.categoria) ? input.categoria : 'Otros';
+                    const monto = Number(input.monto);
+                    if (!monto || monto <= 0) return 'Error: el monto no es válido.';
+                    await genericAdd('transacciones', {
+                        tipo, monto,
+                        concepto: input.concepto || (tipo === 'ingreso' ? 'Ingreso' : 'Gasto'),
+                        categoria,
+                        fecha: input.fecha || dateKey(),
+                        createdAt: new Date().toISOString()
+                    });
+                    return `OK: ${tipo} de ${formatCurrency(monto)} registrado en "${categoria}".`;
+                }
+                case 'registrar_deuda': {
+                    const montoTotal = Number(input.monto_total);
+                    if (!montoTotal || montoTotal <= 0) return 'Error: el monto total no es válido.';
+                    await genericAdd('deudas', {
+                        nombre: input.nombre || 'Deuda',
+                        montoTotal,
+                        montoPagado: 0,
+                        cuotas: input.cuotas ? Number(input.cuotas) : null
+                    });
+                    return `OK: deuda "${input.nombre}" de ${formatCurrency(montoTotal)} registrada.`;
+                }
+                case 'crear_meta': {
+                    const esFin = input.tipo === 'financiera';
+                    await genericAdd('metas', {
+                        nombre: input.nombre || 'Meta',
+                        plazo: input.plazo || '',
+                        tipo: esFin ? 'financiera' : 'personal',
+                        montoObjetivo: esFin ? Number(input.monto_objetivo || 0) : 0,
+                        ahorroActual: 0,
+                        completada: false,
+                        checklist: [],
+                        metaFinancieraId: null
+                    });
+                    return `OK: meta "${input.nombre}" creada.`;
+                }
+                case 'crear_evento_calendar': {
+                    if (!googleToken) return 'Error: no hay conexión con Google. Pídele al usuario que conecte su cuenta en la sección Agenda.';
+                    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                    let evento;
+                    if (input.hora) {
+                        const start = new Date(`${input.fecha}T${input.hora}:00`);
+                        const dur = Number(input.duracion_min) || 60;
+                        const end = new Date(start.getTime() + dur * 60000);
+                        evento = { summary: input.titulo, start: { dateTime: start.toISOString(), timeZone: tz }, end: { dateTime: end.toISOString(), timeZone: tz } };
+                    } else {
+                        const end = new Date(`${input.fecha}T00:00:00`); end.setDate(end.getDate() + 1);
+                        evento = { summary: input.titulo, start: { date: input.fecha }, end: { date: fmtYmd(end) } };
+                    }
+                    const res = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+                        method: 'POST',
+                        headers: { Authorization: `Bearer ${googleToken}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify(evento)
+                    });
+                    if (!res.ok) {
+                        if (res.status === 401 || res.status === 403) return 'Error: el permiso de Google Calendar expiró. Pídele al usuario que reconecte su cuenta de Google.';
+                        return 'Error: no se pudo crear el evento en Calendar.';
+                    }
+                    return `OK: evento "${input.titulo}" creado en Google Calendar.`;
+                }
+                case 'crear_tarea': {
+                    if (!googleToken) return 'Error: no hay conexión con Google. Pídele al usuario que conecte su cuenta en la sección Agenda.';
+                    const tbody = { title: input.titulo };
+                    if (input.fecha_limite) tbody.due = new Date(`${input.fecha_limite}T00:00:00`).toISOString();
+                    const res = await fetch('https://tasks.googleapis.com/tasks/v1/lists/@default/tasks', {
+                        method: 'POST',
+                        headers: { Authorization: `Bearer ${googleToken}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify(tbody)
+                    });
+                    if (!res.ok) {
+                        if (res.status === 401 || res.status === 403) return 'Error: el permiso de Google Tasks expiró. Pídele al usuario que reconecte su cuenta de Google.';
+                        return 'Error: no se pudo crear la tarea.';
+                    }
+                    return `OK: tarea "${input.titulo}" creada en Google Tasks.`;
+                }
+                default:
+                    return 'Error: herramienta desconocida.';
+            }
+        } catch (e) {
+            console.error('Error ejecutando herramienta', tu.name, e);
+            return 'Error al ejecutar la acción: ' + (e?.message || 'desconocido');
+        }
+    };
+
+    // Llama al backend en modo agéntico. Devuelve { reply, content, stop_reason }.
+    const llamarCoach = async (msgs) => {
+        const baseCtx = await buildFinancialContext();
+        const ahora = new Date().toLocaleString('es-CO', { dateStyle: 'full', timeStyle: 'short' });
+        const context = `FECHA Y HORA ACTUAL: ${ahora} (hoy = ${dateKey()}).\n\n${baseCtx}`;
+        const res = await fetch(`${API_BASE}/api/ai-coach`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ context, messages: msgs, enableTools: true })
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || 'Error en la API del Coach');
+        }
+        return res.json();
+    };
+
+    // Un paso del agente: si Claude pide herramientas, muestra la confirmación;
+    // si responde texto, lo muestra y lo persiste.
+    const pasoAgente = async (msgs) => {
+        const data = await llamarCoach(msgs);
+        const content = Array.isArray(data.content) ? data.content : [];
+        const texto = content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim() || (data.reply || '');
+        const toolUses = content.filter(b => b.type === 'tool_use');
+
+        if (toolUses.length > 0) {
+            // Confirmar primero: guardamos el estado para reanudar al tocar Confirmar/Cancelar.
+            setIsTyping(false);
+            setPendingConfirm({ intro: texto, toolUses, assistantContent: content, baseMessages: msgs });
+            return;
+        }
+
+        const finalTxt = texto || 'No recibí respuesta. Intenta de nuevo.';
+        setMessages(prev => [...prev, { role: 'assistant', content: finalTxt }]);
+        setIsTyping(false);
+        if (genericAdd) {
+            genericAdd('coach_mensajes', { role: 'assistant', content: finalTxt, createdAt: new Date(Date.now() + 1).toISOString() })
+                .catch(e => console.error('No se pudo guardar la respuesta del coach:', e));
+        }
+    };
+
+    // El usuario aprobó la acción: ejecutar herramientas y dejar que Claude confirme.
+    const confirmarAccion = async () => {
+        const pc = pendingConfirm;
+        if (!pc) return;
+        setPendingConfirm(null);
+        setIsTyping(true);
+
+        const toolResults = [];
+        for (const tu of pc.toolUses) {
+            const resultado = await ejecutarHerramienta(tu);
+            toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: resultado });
+        }
+
+        const msgs = [
+            ...pc.baseMessages,
+            { role: 'assistant', content: pc.assistantContent },
+            { role: 'user', content: toolResults }
+        ];
+        try {
+            await pasoAgente(msgs);
+        } catch (e) {
+            console.error('Error tras ejecutar acción:', e);
+            const resumen = toolResults.map(r => '• ' + r.content).join('\n');
+            const txt = '✅ Hecho:\n' + resumen;
+            setMessages(prev => [...prev, { role: 'assistant', content: txt }]);
+            setIsTyping(false);
+            if (genericAdd) {
+                genericAdd('coach_mensajes', { role: 'assistant', content: txt, createdAt: new Date(Date.now() + 1).toISOString() }).catch(() => {});
+            }
+        }
+    };
+
+    // El usuario rechazó la acción: no se ejecuta nada.
+    const cancelarAccion = () => {
+        setPendingConfirm(null);
+        const txt = 'De acuerdo, no hice ningún cambio. ¿Quieres ajustar algo?';
+        setMessages(prev => [...prev, { role: 'assistant', content: txt }]);
+        if (genericAdd) {
+            genericAdd('coach_mensajes', { role: 'assistant', content: txt, createdAt: new Date(Date.now() + 1).toISOString() }).catch(() => {});
+        }
+    };
+
     const handleSend = async (e) => {
         e.preventDefault();
         if (!input.trim()) return;
+        if (pendingConfirm) return; // hay una acción esperando confirmación
 
         if (isListening) { try { recognitionRef.current?.stop(); } catch (_) {} }
         const userMsg = input.trim();
         setInput('');
-        const newMessages = [...messages, { role: 'user', content: userMsg }];
-        setMessages(newMessages); // feedback optimista inmediato
+
+        // Ventana corta de contexto (últimos 12 turnos de texto). La memoria de largo
+        // plazo vive en el PERFIL, así que basta para mantener bajo el costo de tokens.
+        const historreciente = messages.slice(-12).map(m => ({ role: m.role, content: m.content }));
+        const baseMessages = [...historreciente, { role: 'user', content: userMsg }];
+
+        setMessages(prev => [...prev, { role: 'user', content: userMsg }]); // feedback optimista
         setIsTyping(true);
 
-        // Guardar el mensaje del usuario en el historial (memoria persistente).
         const userTs = new Date().toISOString();
         if (genericAdd) {
             genericAdd('coach_mensajes', { role: 'user', content: userMsg, createdAt: userTs })
@@ -3425,40 +3635,10 @@ ${diarioTxt || 'No hay entradas en el diario.'}`;
         }
 
         try {
-            const context = await buildFinancialContext();
-
-            // Enviamos los últimos 12 mensajes como contexto de la conversación.
-            // La memoria de largo plazo vive en el PERFIL del contexto, así que
-            // una ventana corta basta y mantiene bajo el costo de tokens.
-            const historreciente = newMessages.slice(-12).map(m => ({ role: m.role, content: m.content }));
-
-            const res = await fetch(`${API_BASE}/api/ai-coach`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ context, messages: historreciente })
-            });
-
-            if (!res.ok) {
-                const errorData = await res.json().catch(() => ({}));
-                throw new Error(errorData.error || 'Error en la API del Coach');
-            }
-
-            const data = await res.json();
-            const botResponse = data.reply || 'No recibí respuesta. Intenta de nuevo.';
-
-            setMessages([...newMessages, { role: 'assistant', content: botResponse }]);
-            setIsTyping(false);
-
-            // Guardar la respuesta del coach. createdAt posterior al del usuario
-            // para conservar el orden cronológico.
-            if (genericAdd) {
-                genericAdd('coach_mensajes', { role: 'assistant', content: botResponse, createdAt: new Date(Date.now() + 1).toISOString() })
-                    .catch(e => console.error('No se pudo guardar la respuesta del coach:', e));
-            }
-
+            await pasoAgente(baseMessages);
         } catch (error) {
             console.error('Coach IA Error:', error);
-            setMessages([...newMessages, { role: 'assistant', content: '❌ Lo siento, hubo un error de conexión con el Coach IA. Intenta de nuevo en unos segundos.' }]);
+            setMessages(prev => [...prev, { role: 'assistant', content: '❌ Lo siento, hubo un error de conexión con el Coach IA. Intenta de nuevo en unos segundos.' }]);
             setIsTyping(false);
         }
     };
@@ -3704,8 +3884,8 @@ Máximo 4 viñetas cortas. Empieza con una frase tipo titular de una línea. Ton
                             <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mb-4">
                                 <Sparkles size={30} className="text-indigo-600" />
                             </div>
-                            <h4 className="font-bold text-slate-700 text-lg">Pregúntame lo que sea</h4>
-                            <p className="text-xs text-slate-500">¿Debería invertir este mes? ¿Cómo estructurar mis deudas? Analizo tus finanzas en tiempo real.</p>
+                            <h4 className="font-bold text-slate-700 text-lg">Pregúntame o pídeme algo</h4>
+                            <p className="text-xs text-slate-500">Analizo tus finanzas y también ejecuto acciones: "anota 50 mil de mercado", "agenda reunión mañana 3pm", "recuérdame pagar el arriendo el viernes".</p>
                         </div>
                     ) : (
                         messages.map((m, i) => (
@@ -3729,6 +3909,35 @@ Máximo 4 viñetas cortas. Empieza con una frase tipo titular de una línea. Ton
                             </div>
                         </div>
                     )}
+                    {pendingConfirm && (
+                        <div className="flex justify-start">
+                            <div className="w-full max-w-[92%] bg-white border border-indigo-200 rounded-2xl rounded-tl-sm p-3 shadow-sm">
+                                {pendingConfirm.intro && (
+                                    <p className="text-[13px] text-slate-700 mb-2 leading-relaxed">{pendingConfirm.intro}</p>
+                                )}
+                                <div className="space-y-2">
+                                    {pendingConfirm.toolUses.map((tu, idx) => {
+                                        const d = describirAccion(tu);
+                                        return (
+                                            <div key={idx} className="flex items-start gap-2 bg-indigo-50 rounded-xl p-2.5">
+                                                <span className="text-lg leading-none">{d.icon}</span>
+                                                <div className="min-w-0">
+                                                    <p className="text-[12px] font-bold text-indigo-800">{d.titulo}</p>
+                                                    <p className="text-[12px] text-slate-600 break-words">{d.detalle}</p>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                <div className="flex gap-2 mt-3">
+                                    <button onClick={cancelarAccion} className="flex-1 text-[13px] font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-xl py-2 transition-colors">Cancelar</button>
+                                    <button onClick={confirmarAccion} className="flex-1 text-[13px] font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl py-2 transition-colors flex items-center justify-center gap-1.5">
+                                        <CheckCircle2 size={15} /> Confirmar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                     <div ref={messagesEndRef} />
                 </div>
 
@@ -3746,7 +3955,7 @@ Máximo 4 viñetas cortas. Empieza con una frase tipo titular de una línea. Ton
                     <form onSubmit={handleSend} className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-full px-2 py-1 focus-within:border-indigo-400 focus-within:bg-white transition-all shadow-inner">
                         {vozDisponible && (
                             <button
-                                type="button" onClick={toggleVoz} disabled={isTyping}
+                                type="button" onClick={toggleVoz} disabled={isTyping || !!pendingConfirm}
                                 title={isListening ? 'Detener dictado' : 'Dictar por voz'}
                                 className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors shrink-0 ${isListening ? 'bg-rose-500 text-white animate-pulse' : 'bg-slate-200 hover:bg-slate-300 text-slate-600'}`}
                             >
@@ -3754,11 +3963,11 @@ Máximo 4 viñetas cortas. Empieza con una frase tipo titular de una línea. Ton
                             </button>
                         )}
                         <input
-                            value={input} onChange={e => setInput(e.target.value)} placeholder={isListening ? 'Habla ahora…' : 'Pide un consejo o usa el micrófono…'}
+                            value={input} onChange={e => setInput(e.target.value)} placeholder={pendingConfirm ? 'Confirma o cancela la acción de arriba…' : (isListening ? 'Habla ahora…' : 'Pide consejo o una acción…')}
                             className="flex-1 bg-transparent px-3 py-2 outline-none text-sm text-slate-700"
-                            disabled={isTyping}
+                            disabled={isTyping || !!pendingConfirm}
                         />
-                        <button type="submit" disabled={!input.trim() || isTyping} className="w-9 h-9 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-full flex items-center justify-center transition-colors shrink-0 shadow-md">
+                        <button type="submit" disabled={!input.trim() || isTyping || !!pendingConfirm} className="w-9 h-9 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-full flex items-center justify-center transition-colors shrink-0 shadow-md">
                             <ArrowRightCircle size={18} />
                         </button>
                     </form>
