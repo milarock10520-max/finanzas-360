@@ -75,6 +75,7 @@ import {
 } from 'firebase/auth';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { programarAgendaDiaria } from './native/notificaciones';
+import { conectarGoogle, obtenerTokenGoogle, desconectarGoogle } from './native/googleAuth';
 import {
     getFirestore,
     collection,
@@ -4046,27 +4047,15 @@ const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/calendar.events https://w
 // (prompt:'' reutiliza la sesión y el consentimiento ya dados, sin volver a pedir permisos).
 const GOOGLE_API_SCOPES = ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/tasks'];
 
-const requestGoogleToken = (interactive) => new Promise((resolve, reject) => {
-    // App nativa (iOS): la librería web GSI no funciona en WKWebView.
-    // Usamos Google Sign-In nativo pidiendo los permisos de Calendar/Tasks.
+const requestGoogleToken = (interactive) => {
+    // App nativa (iOS): flujo OAuth del lado del servidor (conexión permanente).
+    // interactive=true abre el navegador para autorizar una vez; interactive=false
+    // pide un token fresco al servidor en silencio (renovación sin UI).
     if (Capacitor.isNativePlatform()) {
-        // En nativo no hay renovación silenciosa sin UI: solo el flujo interactivo abre la hoja de Google.
-        if (!interactive) { reject(new Error('Renovación silenciosa no disponible en nativo.')); return; }
-        FirebaseAuthentication.signInWithGoogle({ scopes: GOOGLE_API_SCOPES })
-            .then((result) => {
-                const token = result?.credential?.accessToken;
-                if (!token) { reject(new Error('Google no devolvió un accessToken con permisos de Calendar/Tasks.')); return; }
-                const expiresAt = Date.now() + 55 * 60 * 1000; // ~1h
-                try {
-                    localStorage.setItem('google_calendar_token', JSON.stringify({ token, expiresAt }));
-                    localStorage.setItem('google_connected', '1');
-                } catch (e) { /* almacenamiento bloqueado */ }
-                resolve({ token, expiresAt });
-            })
-            .catch(reject);
-        return;
+        return interactive ? conectarGoogle() : obtenerTokenGoogle();
     }
 
+    return new Promise((resolve, reject) => {
     if (!window.google?.accounts?.oauth2) {
         reject(new Error('Google Identity Services no está cargado aún.'));
         return;
@@ -4086,10 +4075,16 @@ const requestGoogleToken = (interactive) => new Promise((resolve, reject) => {
         error_callback: (err) => reject(err),
     });
     client.requestAccessToken({ prompt: interactive ? '' : 'none' });
-});
+    });
+};
 
 // Borra el token y la marca de "conectado" (detiene la renovación silenciosa).
 const disconnectGoogle = () => {
+    if (Capacitor.isNativePlatform()) {
+        // En nativo también revoca el refresh token guardado en el servidor.
+        desconectarGoogle().catch(() => {});
+        return;
+    }
     try {
         localStorage.removeItem('google_calendar_token');
         localStorage.removeItem('google_connected');
@@ -4636,7 +4631,13 @@ export default function App() {
             timer = setTimeout(asegurarToken, espera);
         };
 
-        // Espera a que Google Identity Services cargue antes de renovar.
+        // En nativo la renovación es contra nuestro servidor: arranca de una.
+        if (Capacitor.isNativePlatform()) {
+            asegurarToken();
+            return () => { cancelado = true; clearTimeout(timer); };
+        }
+
+        // En web esperamos a que Google Identity Services cargue antes de renovar.
         let intentos = 0;
         const esperarGis = setInterval(() => {
             intentos++;

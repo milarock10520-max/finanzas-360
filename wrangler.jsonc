@@ -12,5 +12,11 @@
   },
   "compatibility_flags": [
     "nodejs_compat"
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "GOOGLE_TOKENS",
+      "id": "5b9dd6a91d2e4a049d3f6fb3f655249a"
+    }
   ]
 }
