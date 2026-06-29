@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "npm run build && wrangler dev",
     "deploy": "npm run build && wrangler deploy",
-    "postinstall": "node scripts/patch-speech-plugin.mjs"
+    "postinstall": "node scripts/patch-speech-plugin.mjs && node scripts/patch-firebase-google.mjs"
   },
   "dependencies": {
     "@aparajita/capacitor-biometric-auth": "^10.0.0",

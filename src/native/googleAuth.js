@@ -1,23 +1,21 @@
 // Conexión PERMANENTE con Google (Calendar/Tasks) para la app nativa.
 //
-// Usa el flujo "authorization code" del lado del servidor: la app abre el
-// navegador del sistema (Safari), el usuario autoriza UNA vez, y el servidor
-// (Cloudflare) guarda un refresh token. Desde ahí la app pide tokens de acceso
-// frescos sin volver a iniciar sesión.
+// Flujo: el login NATIVO de Google (hoja del sistema DENTRO de la app, sin
+// Safari) devuelve un `serverAuthCode`. Lo enviamos a nuestro servidor, que lo
+// canjea por un refresh token y lo guarda. Desde ahí la app pide tokens de
+// acceso frescos sin volver a iniciar sesión.
 //
 // El "linkToken" es un secreto aleatorio que genera la app y guarda localmente;
 // identifica de forma segura su refresh token en el servidor.
 
 import { Capacitor } from '@capacitor/core';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 
 const API_BASE = Capacitor.isNativePlatform()
     ? 'https://finanzas-360.milarock10520.workers.dev'
     : '';
 
-// ID de cliente OAuth tipo "Aplicación web" (público, no secreto).
-export const GOOGLE_OAUTH_WEB_CLIENT_ID = '163542408412-90a73np4ur8hr165f95ra3ba5p63sbql.apps.googleusercontent.com';
-
-const GOOGLE_OAUTH_SCOPES = 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks';
+const GOOGLE_OAUTH_SCOPES = ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/tasks'];
 
 function getLinkToken() {
     let t = null;
@@ -57,49 +55,51 @@ export async function obtenerTokenGoogle() {
     return data; // { token, expiresAt }
 }
 
-// Abre el navegador del sistema para autorizar Google. El token NO se recoge
-// aquí: al terminar, la página de éxito devuelve a la app por el deep link
-// finanzas360://google-connected, y App.jsx llama a finalizarConexionGoogle().
+// Conecta Google con el login NATIVO (in-app) y deja la conexión permanente.
 export async function conectarGoogle() {
-    const { Browser } = await import('@capacitor/browser');
+    // 1) Login nativo: hoja de Google dentro de la app (no Safari). Pide permisos
+    //    de Calendar/Tasks. Devuelve un serverAuthCode canjeable por refresh token.
+    const result = await FirebaseAuthentication.signInWithGoogle({ scopes: GOOGLE_OAUTH_SCOPES });
+    const cred = result?.credential || {};
+    const serverAuthCode = cred.serverAuthCode;
+    const accessTokenInmediato = cred.accessToken;
+
     const linkToken = getLinkToken();
-    try { localStorage.setItem('google_connecting', '1'); } catch (e) { /* */ }
-    const redirect = `${API_BASE}/api/google/callback`;
-    const params = new URLSearchParams({
-        client_id: GOOGLE_OAUTH_WEB_CLIENT_ID,
-        redirect_uri: redirect,
-        response_type: 'code',
-        scope: GOOGLE_OAUTH_SCOPES,
-        access_type: 'offline',
-        prompt: 'consent',
-        state: linkToken,
-        include_granted_scopes: 'true'
-    });
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
-    await Browser.open({ url: authUrl });
-}
 
-// Tras volver del navegador: cierra el navegador y pide el primer token (con
-// reintentos por si el callback del servidor tarda un instante). Devuelve el
-// token o null. Idempotente: si no estábamos conectando, no hace nada.
-export async function finalizarConexionGoogle() {
-    let conectando = false;
-    try { conectando = localStorage.getItem('google_connecting') === '1'; } catch (e) { /* */ }
-    if (!conectando) return null;
-
-    try { const { Browser } = await import('@capacitor/browser'); await Browser.close(); } catch (e) { /* */ }
-
-    for (let i = 0; i < 6; i++) {
+    // 2) Canje en el servidor (si hay serverAuthCode) -> guarda el refresh token.
+    if (serverAuthCode) {
         try {
-            const r = await obtenerTokenGoogle();
-            if (r && r.token) {
-                try { localStorage.removeItem('google_connecting'); } catch (e) { /* */ }
-                return r.token;
+            const res = await fetch(`${API_BASE}/api/google/connect`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ linkToken, serverAuthCode })
+            });
+            if (res.ok) {
+                try { localStorage.setItem('google_connected', '1'); } catch (e) { /* */ }
+                // 3) Primer token fresco desde el servidor (confirma que el refresh
+                //    token quedó bien guardado).
+                const r = await obtenerTokenGoogle().catch(() => null);
+                if (r && r.token) return r;
+            } else {
+                console.warn('Canje de serverAuthCode falló:', res.status);
             }
-        } catch (e) { /* aún no está listo */ }
-        await new Promise((res) => setTimeout(res, 900));
+        } catch (e) {
+            console.warn('Error en /api/google/connect:', e);
+        }
     }
-    return null;
+
+    // Respaldo: usa el access token inmediato del login nativo (~1h) si el canje
+    // permanente no estuvo disponible. La app seguirá funcionando hoy.
+    if (accessTokenInmediato) {
+        const expiresAt = Date.now() + 55 * 60 * 1000;
+        try {
+            localStorage.setItem('google_calendar_token', JSON.stringify({ token: accessTokenInmediato, expiresAt }));
+            if (serverAuthCode) localStorage.setItem('google_connected', '1');
+        } catch (e) { /* */ }
+        return { token: accessTokenInmediato, expiresAt };
+    }
+
+    throw new Error('Google no devolvió credenciales válidas.');
 }
 
 // Borra la conexión: en el servidor y localmente.
@@ -113,6 +113,7 @@ export async function desconectarGoogle() {
             body: JSON.stringify({ linkToken })
         });
     } catch (e) { /* */ }
+    try { await FirebaseAuthentication.signOut(); } catch (e) { /* */ }
     try {
         localStorage.removeItem('google_connected');
         localStorage.removeItem('google_calendar_token');

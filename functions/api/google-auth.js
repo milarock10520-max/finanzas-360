@@ -106,6 +106,58 @@ export async function callbackGet(context) {
     }
 }
 
+// POST /api/google/connect  { linkToken, serverAuthCode }
+// Canjea el serverAuthCode del login NATIVO de Google (in-app) por un refresh
+// token y lo guarda bajo el linkToken. Es el flujo preferido (sin navegador).
+export async function connectPost(context) {
+    const { request, env } = context;
+    try {
+        const { linkToken, serverAuthCode } = await request.json();
+        if (!linkToken || !serverAuthCode) {
+            return new Response(JSON.stringify({ error: 'faltan_datos' }), { status: 400, headers: cors });
+        }
+        const clientId = env.GOOGLE_OAUTH_CLIENT_ID;
+        const clientSecret = env.GOOGLE_OAUTH_CLIENT_SECRET;
+
+        const intercambiar = async (incluirRedirect) => {
+            const params = {
+                code: serverAuthCode,
+                client_id: clientId,
+                client_secret: clientSecret,
+                grant_type: 'authorization_code'
+            };
+            // El serverAuthCode de móvil suele canjearse SIN redirect_uri; algunos
+            // casos lo exigen vacío. Probamos ambas para ser robustos.
+            if (incluirRedirect) params.redirect_uri = '';
+            const res = await fetch(TOKEN_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams(params)
+            });
+            return { res, data: await res.json() };
+        };
+
+        let { res, data } = await intercambiar(false);
+        if ((!res.ok || !data.refresh_token) && /redirect_uri/i.test(JSON.stringify(data))) {
+            ({ res, data } = await intercambiar(true));
+        }
+
+        if (!res.ok || !data.refresh_token) {
+            console.error('connect exchange error:', res.status, JSON.stringify(data));
+            return new Response(JSON.stringify({ error: data.error_description || data.error || 'sin_refresh' }), { status: 502, headers: cors });
+        }
+
+        await env.GOOGLE_TOKENS.put(`gauth:${linkToken}`, JSON.stringify({
+            refresh_token: data.refresh_token,
+            createdAt: Date.now()
+        }));
+        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: cors });
+    } catch (e) {
+        console.error('connect error:', e);
+        return new Response(JSON.stringify({ error: 'interno' }), { status: 500, headers: cors });
+    }
+}
+
 // POST /api/google/token  { linkToken }
 // Devuelve un access token fresco usando el refresh token guardado.
 export async function tokenPost(context) {
