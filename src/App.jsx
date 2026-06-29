@@ -321,7 +321,7 @@ const DeudaItem = ({ deuda, onAbonar }) => {
     );
 };
 
-const MetaItem = ({ meta, metasFinancieras = [], onAhorrar, onToggleCompletada, onDelete, onAddNote, onDeleteNote, onAddChecklistItem, onToggleChecklistItem, onDeleteChecklistItem, onLinkMetaFinanciera, onToggleDia }) => {
+const MetaItem = ({ meta, metasFinancieras = [], onAhorrar, onToggleCompletada, onDelete, onAddNote, onDeleteNote, onAddChecklistItem, onToggleChecklistItem, onDeleteChecklistItem, onLinkMetaFinanciera, onToggleDia, onToggleSeguimiento }) => {
     const [aporte, setAporte] = useState('');
     const [showNotes, setShowNotes] = useState(false);
     const [newNote, setNewNote] = useState('');
@@ -336,6 +336,10 @@ const MetaItem = ({ meta, metasFinancieras = [], onAhorrar, onToggleCompletada, 
 
     // --- Registro diario (días en que se cumplió la meta) ---
     const registroDias = meta.registroDias || [];
+    // Activo solo si la meta lo habilitó. Las metas viejas con días ya marcados
+    // se muestran activas para no perder su historial.
+    const seguimientoActivo = meta.seguimientoDiario === true
+        || (meta.seguimientoDiario === undefined && registroDias.length > 0);
     const registroSet = new Set(registroDias);
     const hoyKey = dateKey();
     const mesActual = hoyKey.slice(0, 7);
@@ -555,41 +559,51 @@ const MetaItem = ({ meta, metasFinancieras = [], onAhorrar, onToggleCompletada, 
                         <button onClick={handleAddChecklist} className="bg-indigo-600 text-white px-2.5 rounded-lg hover:bg-indigo-700"><Plus size={16} /></button>
                     </div>
 
-                    {/* Registro diario (rachas) */}
-                    <div className="mt-4 pt-4 border-t border-slate-100">
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-bold text-slate-600 flex items-center gap-1"><CalendarClock size={14} /> Registro diario</span>
-                            <div className="flex items-center gap-2 text-[11px] font-bold">
-                                <span className="text-amber-600 flex items-center gap-0.5"><Flame size={12} /> {racha}</span>
-                                <span className="text-slate-400">·</span>
-                                <span className="text-indigo-600">{diasEsteMes} este mes</span>
+                    {/* Registro diario (rachas) — opcional por meta */}
+                    {seguimientoActivo ? (
+                        <div className="mt-4 pt-4 border-t border-slate-100">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs font-bold text-slate-600 flex items-center gap-1"><CalendarClock size={14} /> Registro diario</span>
+                                <div className="flex items-center gap-2 text-[11px] font-bold">
+                                    <span className="text-amber-600 flex items-center gap-0.5"><Flame size={12} /> {racha}</span>
+                                    <span className="text-slate-400">·</span>
+                                    <span className="text-indigo-600">{diasEsteMes} este mes</span>
+                                    <button onClick={() => onToggleSeguimiento(meta)} className="text-slate-300 hover:text-rose-500 ml-1" title="Desactivar registro diario"><X size={13} /></button>
+                                </div>
+                            </div>
+                            <div className="flex items-center justify-between mb-1.5">
+                                <button onClick={() => setWeekOffset(weekOffset - 1)} className="text-slate-400 hover:text-indigo-600 p-1" title="Semana anterior">‹</button>
+                                <span className="text-[11px] font-semibold text-slate-500">{etiquetaSemana}</span>
+                                <button onClick={() => setWeekOffset(Math.min(0, weekOffset + 1))} disabled={weekOffset >= 0} className="text-slate-400 hover:text-indigo-600 disabled:opacity-30 p-1" title="Semana siguiente">›</button>
+                            </div>
+                            <div className="flex justify-between gap-1">
+                                {semana.map((dia) => (
+                                    <button
+                                        key={dia.key}
+                                        onClick={() => !dia.isFuture && onToggleDia(meta, dia.key)}
+                                        disabled={dia.isFuture}
+                                        title={dia.key}
+                                        className={`flex-1 flex flex-col items-center gap-1 py-1.5 rounded-lg transition-all ${dia.isFuture ? 'opacity-30 cursor-default' : 'hover:bg-slate-50'}`}
+                                    >
+                                        <span className={`text-[10px] font-bold ${dia.isToday ? 'text-indigo-600' : 'text-slate-400'}`}>{dia.letra}</span>
+                                        <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all
+                                            ${dia.done
+                                                ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-200'
+                                                : dia.isToday ? 'bg-white text-indigo-600 ring-2 ring-indigo-400' : 'bg-slate-100 text-slate-500'}`}>
+                                            {dia.done ? <CheckCircle2 size={15} /> : dia.num}
+                                        </span>
+                                    </button>
+                                ))}
                             </div>
                         </div>
-                        <div className="flex items-center justify-between mb-1.5">
-                            <button onClick={() => setWeekOffset(weekOffset - 1)} className="text-slate-400 hover:text-indigo-600 p-1" title="Semana anterior">‹</button>
-                            <span className="text-[11px] font-semibold text-slate-500">{etiquetaSemana}</span>
-                            <button onClick={() => setWeekOffset(Math.min(0, weekOffset + 1))} disabled={weekOffset >= 0} className="text-slate-400 hover:text-indigo-600 disabled:opacity-30 p-1" title="Semana siguiente">›</button>
-                        </div>
-                        <div className="flex justify-between gap-1">
-                            {semana.map((dia) => (
-                                <button
-                                    key={dia.key}
-                                    onClick={() => !dia.isFuture && onToggleDia(meta, dia.key)}
-                                    disabled={dia.isFuture}
-                                    title={dia.key}
-                                    className={`flex-1 flex flex-col items-center gap-1 py-1.5 rounded-lg transition-all ${dia.isFuture ? 'opacity-30 cursor-default' : 'hover:bg-slate-50'}`}
-                                >
-                                    <span className={`text-[10px] font-bold ${dia.isToday ? 'text-indigo-600' : 'text-slate-400'}`}>{dia.letra}</span>
-                                    <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all
-                                        ${dia.done
-                                            ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-200'
-                                            : dia.isToday ? 'bg-white text-indigo-600 ring-2 ring-indigo-400' : 'bg-slate-100 text-slate-500'}`}>
-                                        {dia.done ? <CheckCircle2 size={15} /> : dia.num}
-                                    </span>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
+                    ) : (
+                        <button
+                            onClick={() => onToggleSeguimiento(meta)}
+                            className="mt-4 w-full py-2 rounded-lg border border-dashed border-slate-300 text-slate-400 hover:border-indigo-400 hover:text-indigo-600 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all"
+                        >
+                            <CalendarClock size={14} /> Activar registro diario
+                        </button>
+                    )}
                 </div>
 
                 {/* Notas (expandible) */}
@@ -2056,6 +2070,13 @@ const GoalTracker = ({ metas, genericAdd, genericUpdate, genericDelete }) => {
         await genericUpdate('metas', meta.id, { registroDias: nuevos });
     };
 
+    // Activa / desactiva el seguimiento diario para esa meta (no borra el historial).
+    const toggleSeguimientoDiario = async (meta) => {
+        const activo = meta.seguimientoDiario === true
+            || (meta.seguimientoDiario === undefined && (meta.registroDias || []).length > 0);
+        await genericUpdate('metas', meta.id, { seguimientoDiario: !activo });
+    };
+
     // Vincular / desvincular una meta financiera a una meta personal
     const linkMetaFinanciera = async (meta, id) => {
         await genericUpdate('metas', meta.id, { metaFinancieraId: id || null });
@@ -2176,6 +2197,7 @@ const GoalTracker = ({ metas, genericAdd, genericUpdate, genericDelete }) => {
                             onDeleteChecklistItem={deleteChecklistItem}
                             onLinkMetaFinanciera={linkMetaFinanciera}
                             onToggleDia={toggleDiaCumplido}
+                            onToggleSeguimiento={toggleSeguimientoDiario}
                         />
                     ))
                 )}
