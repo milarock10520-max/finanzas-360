@@ -65,6 +65,14 @@
 				<string>com.googleusercontent.apps.163542408412-7u3gqei4j31h1n4fp705ga5pemt0okg4</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.finanzas360.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>finanzas360</string>
+			</array>
+		</dict>
 	</array>
 </dict>
 </plist>

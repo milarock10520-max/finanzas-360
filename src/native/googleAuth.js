@@ -57,10 +57,13 @@ export async function obtenerTokenGoogle() {
     return data; // { token, expiresAt }
 }
 
-// Abre el navegador para autorizar Google y, al volver, obtiene el primer token.
+// Abre el navegador del sistema para autorizar Google. El token NO se recoge
+// aquí: al terminar, la página de éxito devuelve a la app por el deep link
+// finanzas360://google-connected, y App.jsx llama a finalizarConexionGoogle().
 export async function conectarGoogle() {
     const { Browser } = await import('@capacitor/browser');
     const linkToken = getLinkToken();
+    try { localStorage.setItem('google_connecting', '1'); } catch (e) { /* */ }
     const redirect = `${API_BASE}/api/google/callback`;
     const params = new URLSearchParams({
         client_id: GOOGLE_OAUTH_WEB_CLIENT_ID,
@@ -73,34 +76,30 @@ export async function conectarGoogle() {
         include_granted_scopes: 'true'
     });
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+    await Browser.open({ url: authUrl });
+}
 
-    return new Promise((resolve, reject) => {
-        let done = false;
-        let listener = null;
+// Tras volver del navegador: cierra el navegador y pide el primer token (con
+// reintentos por si el callback del servidor tarda un instante). Devuelve el
+// token o null. Idempotente: si no estábamos conectando, no hace nada.
+export async function finalizarConexionGoogle() {
+    let conectando = false;
+    try { conectando = localStorage.getItem('google_connecting') === '1'; } catch (e) { /* */ }
+    if (!conectando) return null;
 
-        const finish = async () => {
-            if (done) return;
-            done = true;
-            try { listener && listener.remove(); } catch (e) { /* */ }
-            try { await Browser.close(); } catch (e) { /* ya cerrado */ }
-            // Tras autorizar, el servidor ya guardó el refresh token. Pedimos el
-            // primer access token (con reintentos por si el callback tarda).
-            for (let i = 0; i < 5; i++) {
-                try {
-                    const r = await obtenerTokenGoogle();
-                    if (r && r.token) { resolve(r); return; }
-                } catch (e) { /* aún no está listo */ }
-                await new Promise((res) => setTimeout(res, 900));
+    try { const { Browser } = await import('@capacitor/browser'); await Browser.close(); } catch (e) { /* */ }
+
+    for (let i = 0; i < 6; i++) {
+        try {
+            const r = await obtenerTokenGoogle();
+            if (r && r.token) {
+                try { localStorage.removeItem('google_connecting'); } catch (e) { /* */ }
+                return r.token;
             }
-            reject(new Error('No se completó la conexión con Google. Intenta de nuevo.'));
-        };
-
-        Browser.addListener('browserFinished', finish)
-            .then((l) => { listener = l; })
-            .catch(() => { /* */ });
-
-        Browser.open({ url: authUrl, presentationStyle: 'popover' }).catch(reject);
-    });
+        } catch (e) { /* aún no está listo */ }
+        await new Promise((res) => setTimeout(res, 900));
+    }
+    return null;
 }
 
 // Borra la conexión: en el servidor y localmente.

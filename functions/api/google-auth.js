@@ -23,9 +23,16 @@ function redirectUri(request) {
 }
 
 // Página simple que se muestra dentro del navegador tras autorizar.
+// En éxito, devuelve al usuario a la app nativa mediante el esquema finanzas360://
 function paginaHTML(titulo, mensaje, ok) {
     const color = ok ? '#16a34a' : '#dc2626';
     const icono = ok ? '✅' : '⚠️';
+    const deepLink = 'finanzas360://google-connected';
+    const volver = ok
+        ? `<a class="btn" href="${deepLink}">Volver a Finanzas 360</a>
+           <p class="hint">Si no vuelve solo, toca el botón de arriba.</p>
+           <script>setTimeout(function(){ try{ window.location.href='${deepLink}'; }catch(e){} }, 600);</script>`
+        : `<p class="hint">Toca <b>Listo</b> (arriba a la izquierda) para volver a la app e intentar de nuevo.</p>`;
     return `<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Finanzas 360</title>
@@ -35,13 +42,14 @@ function paginaHTML(titulo, mensaje, ok) {
   .icon{font-size:56px;margin-bottom:12px}
   h1{font-size:22px;margin:0 0 8px;color:${color}}
   p{font-size:15px;line-height:1.5;color:#94a3b8;margin:0}
-  .hint{margin-top:20px;font-size:13px;color:#64748b}
+  .btn{display:inline-block;margin-top:20px;background:#4f46e5;color:#fff;text-decoration:none;font-weight:700;font-size:16px;padding:14px 24px;border-radius:14px}
+  .hint{margin-top:16px;font-size:13px;color:#64748b}
 </style></head><body>
 <div class="card">
   <div class="icon">${icono}</div>
   <h1>${titulo}</h1>
   <p>${mensaje}</p>
-  <p class="hint">Toca <b>Listo</b> (arriba a la izquierda) para volver a la app.</p>
+  ${volver}
 </div></body></html>`;
 }
 

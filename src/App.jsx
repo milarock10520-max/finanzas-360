@@ -75,7 +75,7 @@ import {
 } from 'firebase/auth';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { programarAgendaDiaria } from './native/notificaciones';
-import { conectarGoogle, obtenerTokenGoogle, desconectarGoogle } from './native/googleAuth';
+import { conectarGoogle, obtenerTokenGoogle, desconectarGoogle, finalizarConexionGoogle } from './native/googleAuth';
 import {
     getFirestore,
     collection,
@@ -4118,6 +4118,13 @@ const ProductivityHub = ({ genericAdd, genericUpdate, genericDelete, googleToken
     // Inicializar Google Client (conexión interactiva)
     const handleGoogleLogin = async () => {
         try {
+            // Nativo: abre el navegador para autorizar. El token llega después por
+            // el deep link finanzas360://google-connected (lo recoge App, que hace
+            // setGoogleToken global → este componente refresca solo).
+            if (Capacitor.isNativePlatform()) {
+                await conectarGoogle();
+                return;
+            }
             const { token } = await requestGoogleToken(true);
             setGoogleToken(token);
             fetchEvents(token);
@@ -4650,6 +4657,37 @@ export default function App() {
         }, 250);
 
         return () => { cancelado = true; clearInterval(esperarGis); clearTimeout(timer); };
+    }, []);
+
+    // Retorno del navegador tras conectar Google. Vía principal: el deep link
+    // finanzas360://google-connected. Respaldo: cuando la app vuelve a primer
+    // plano (por si el usuario regresa con el selector de apps). finalizarConexionGoogle
+    // es idempotente: solo actúa si había una conexión en curso.
+    useEffect(() => {
+        if (!Capacitor.isNativePlatform()) return;
+        let urlListener, stateListener, cancelado = false;
+
+        const finalizar = async () => {
+            try {
+                const token = await finalizarConexionGoogle();
+                if (token && !cancelado) setGoogleToken(token);
+            } catch (e) { /* */ }
+        };
+
+        import('@capacitor/app').then(({ App: CapApp }) => {
+            CapApp.addListener('appUrlOpen', (event) => {
+                if (event?.url && event.url.includes('google-connected')) finalizar();
+            }).then((l) => { urlListener = l; }).catch(() => {});
+            CapApp.addListener('appStateChange', (state) => {
+                if (state?.isActive) finalizar();
+            }).then((l) => { stateListener = l; }).catch(() => {});
+        });
+
+        return () => {
+            cancelado = true;
+            try { urlListener && urlListener.remove(); } catch (e) { /* */ }
+            try { stateListener && stateListener.remove(); } catch (e) { /* */ }
+        };
     }, []);
 
     // Notificación diaria de agenda (app nativa): reprograma los próximos días a las 6 AM
