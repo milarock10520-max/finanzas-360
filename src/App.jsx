@@ -321,17 +321,54 @@ const DeudaItem = ({ deuda, onAbonar }) => {
     );
 };
 
-const MetaItem = ({ meta, metasFinancieras = [], onAhorrar, onToggleCompletada, onDelete, onAddNote, onDeleteNote, onAddChecklistItem, onToggleChecklistItem, onDeleteChecklistItem, onLinkMetaFinanciera }) => {
+const MetaItem = ({ meta, metasFinancieras = [], onAhorrar, onToggleCompletada, onDelete, onAddNote, onDeleteNote, onAddChecklistItem, onToggleChecklistItem, onDeleteChecklistItem, onLinkMetaFinanciera, onToggleDia }) => {
     const [aporte, setAporte] = useState('');
     const [showNotes, setShowNotes] = useState(false);
     const [newNote, setNewNote] = useState('');
     const [newChecklistItem, setNewChecklistItem] = useState('');
     const [showLinkSelect, setShowLinkSelect] = useState(false);
+    const [weekOffset, setWeekOffset] = useState(0); // 0 = semana actual; -1 = anterior...
 
     const notas = meta.notas || [];
     const checklist = meta.checklist || [];
     const checklistDone = checklist.filter(c => c.completado).length;
     const checklistPct = checklist.length > 0 ? Math.round((checklistDone / checklist.length) * 100) : 0;
+
+    // --- Registro diario (días en que se cumplió la meta) ---
+    const registroDias = meta.registroDias || [];
+    const registroSet = new Set(registroDias);
+    const hoyKey = dateKey();
+    const mesActual = hoyKey.slice(0, 7);
+    const diasEsteMes = registroDias.filter(d => typeof d === 'string' && d.slice(0, 7) === mesActual).length;
+
+    // Racha actual: días consecutivos cumplidos hasta hoy (o ayer si hoy aún no).
+    const calcularRacha = () => {
+        let racha = 0;
+        const d = new Date();
+        if (!registroSet.has(dateKey(d))) d.setDate(d.getDate() - 1); // permite contar aunque hoy no esté marcado
+        while (registroSet.has(dateKey(d))) { racha++; d.setDate(d.getDate() - 1); }
+        return racha;
+    };
+    const racha = calcularRacha();
+
+    // Días de la semana visible (lunes a domingo) según weekOffset.
+    const DIAS_LETRA = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+    const baseLunes = (() => {
+        const d = new Date();
+        const dow = (d.getDay() + 6) % 7; // 0 = lunes
+        d.setDate(d.getDate() - dow + weekOffset * 7);
+        d.setHours(0, 0, 0, 0);
+        return d;
+    })();
+    const semana = DIAS_LETRA.map((letra, i) => {
+        const d = new Date(baseLunes);
+        d.setDate(baseLunes.getDate() + i);
+        const key = dateKey(d);
+        return { letra, num: d.getDate(), key, done: registroSet.has(key), isToday: key === hoyKey, isFuture: key > hoyKey };
+    });
+    const etiquetaSemana = weekOffset === 0 ? 'Esta semana'
+        : weekOffset === -1 ? 'Semana pasada'
+        : `${baseLunes.toLocaleDateString('es', { day: 'numeric', month: 'short' })}`;
 
     // Meta financiera vinculada (si existe)
     const metaVinculada = meta.metaFinancieraId
@@ -516,6 +553,42 @@ const MetaItem = ({ meta, metasFinancieras = [], onAhorrar, onToggleCompletada, 
                             className="flex-1 px-3 py-1.5 border border-slate-200 rounded-lg text-sm outline-none focus:border-indigo-500"
                         />
                         <button onClick={handleAddChecklist} className="bg-indigo-600 text-white px-2.5 rounded-lg hover:bg-indigo-700"><Plus size={16} /></button>
+                    </div>
+
+                    {/* Registro diario (rachas) */}
+                    <div className="mt-4 pt-4 border-t border-slate-100">
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-bold text-slate-600 flex items-center gap-1"><CalendarClock size={14} /> Registro diario</span>
+                            <div className="flex items-center gap-2 text-[11px] font-bold">
+                                <span className="text-amber-600 flex items-center gap-0.5"><Flame size={12} /> {racha}</span>
+                                <span className="text-slate-400">·</span>
+                                <span className="text-indigo-600">{diasEsteMes} este mes</span>
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-between mb-1.5">
+                            <button onClick={() => setWeekOffset(weekOffset - 1)} className="text-slate-400 hover:text-indigo-600 p-1" title="Semana anterior">‹</button>
+                            <span className="text-[11px] font-semibold text-slate-500">{etiquetaSemana}</span>
+                            <button onClick={() => setWeekOffset(Math.min(0, weekOffset + 1))} disabled={weekOffset >= 0} className="text-slate-400 hover:text-indigo-600 disabled:opacity-30 p-1" title="Semana siguiente">›</button>
+                        </div>
+                        <div className="flex justify-between gap-1">
+                            {semana.map((dia) => (
+                                <button
+                                    key={dia.key}
+                                    onClick={() => !dia.isFuture && onToggleDia(meta, dia.key)}
+                                    disabled={dia.isFuture}
+                                    title={dia.key}
+                                    className={`flex-1 flex flex-col items-center gap-1 py-1.5 rounded-lg transition-all ${dia.isFuture ? 'opacity-30 cursor-default' : 'hover:bg-slate-50'}`}
+                                >
+                                    <span className={`text-[10px] font-bold ${dia.isToday ? 'text-indigo-600' : 'text-slate-400'}`}>{dia.letra}</span>
+                                    <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all
+                                        ${dia.done
+                                            ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-200'
+                                            : dia.isToday ? 'bg-white text-indigo-600 ring-2 ring-indigo-400' : 'bg-slate-100 text-slate-500'}`}>
+                                        {dia.done ? <CheckCircle2 size={15} /> : dia.num}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 </div>
 
@@ -1974,6 +2047,15 @@ const GoalTracker = ({ metas, genericAdd, genericUpdate, genericDelete }) => {
         await genericUpdate('metas', meta.id, { checklist: lista });
     };
 
+    // Marca / desmarca un día como cumplido en el registro diario de la meta.
+    const toggleDiaCumplido = async (meta, fechaKey) => {
+        const dias = meta.registroDias || [];
+        const nuevos = dias.includes(fechaKey)
+            ? dias.filter(d => d !== fechaKey)
+            : [...dias, fechaKey].sort();
+        await genericUpdate('metas', meta.id, { registroDias: nuevos });
+    };
+
     // Vincular / desvincular una meta financiera a una meta personal
     const linkMetaFinanciera = async (meta, id) => {
         await genericUpdate('metas', meta.id, { metaFinancieraId: id || null });
@@ -2093,6 +2175,7 @@ const GoalTracker = ({ metas, genericAdd, genericUpdate, genericDelete }) => {
                             onToggleChecklistItem={toggleChecklistItem}
                             onDeleteChecklistItem={deleteChecklistItem}
                             onLinkMetaFinanciera={linkMetaFinanciera}
+                            onToggleDia={toggleDiaCumplido}
                         />
                     ))
                 )}
