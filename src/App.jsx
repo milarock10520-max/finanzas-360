@@ -1349,6 +1349,8 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
     const [utilidadInput, setUtilidadInput] = useState('');
     const [editingMonto, setEditingMonto] = useState(false);
     const [montoEditInput, setMontoEditInput] = useState('');
+    const [editingValor, setEditingValor] = useState(false);
+    const [valorEditInput, setValorEditInput] = useState('');
     const [historyData, setHistoryData] = useState([]);
     const [currentTickerPrice, setCurrentTickerPrice] = useState(null);
 
@@ -1469,6 +1471,15 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
         await genericUpdate('transacciones', inv.id, { monto: parseFloat(montoEditInput) });
         setEditingMonto(false);
         setMontoEditInput('');
+    };
+
+    // Editar el valor actual directamente: la utilidad se recalcula como (nuevo valor - invertido)
+    const handleEditValor = async () => {
+        const nuevoValor = parseFloat(valorEditInput);
+        if (valorEditInput === '' || isNaN(nuevoValor)) return;
+        await genericUpdate('transacciones', inv.id, { utilidad: nuevoValor - montoInv });
+        setEditingValor(false);
+        setValorEditInput('');
     };
 
     // Cálculo dinámico de renta fija (Fondo de Emergencia / CDT)
@@ -1620,7 +1631,24 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
                 </div>
                 <div className="text-right">
                     <p className="text-white/60 text-xs uppercase tracking-wider">Valor Actual</p>
-                    <p className="font-bold text-xl text-white">{formatMoney(valorActual, inv.moneda)}</p>
+                    {editingValor ? (
+                        <div className="flex items-center gap-1 mt-1 justify-end">
+                            <input
+                                type="number" value={valorEditInput}
+                                onChange={e => setValorEditInput(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter') handleEditValor(); if (e.key === 'Escape') { setEditingValor(false); setValorEditInput(''); } }}
+                                className="w-28 px-2 py-1 rounded-lg text-sm text-right font-bold bg-white/90 text-slate-800 outline-none border-2 border-white/50 focus:border-white" autoFocus
+                            />
+                            <button onClick={handleEditValor} className="bg-white/25 hover:bg-white/40 text-white p-1 rounded-lg transition-all"><CheckCircle2 size={14} /></button>
+                            <button onClick={() => { setEditingValor(false); setValorEditInput(''); }} className="bg-white/15 hover:bg-white/30 text-white p-1 rounded-lg transition-all"><X size={14} /></button>
+                        </div>
+                    ) : (
+                        <p className="font-bold text-xl text-white cursor-pointer hover:text-white/80 flex items-center justify-end gap-1.5 group"
+                            onClick={() => { setEditingValor(true); setValorEditInput(valorActual.toFixed(2)); }}
+                            title="Toca para editar el valor actual">
+                            {formatMoney(valorActual, inv.moneda)} <Edit2 size={12} className="text-white/50 group-hover:text-white/90" />
+                        </p>
+                    )}
                 </div>
             </div>
 
