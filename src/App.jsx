@@ -1361,6 +1361,8 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
         let isMounted = true;
         
         const updateUtilidadIfChanged = (nuevaUtilidad) => {
+            // Si el usuario fijó el valor a mano, el auto-sync no lo sobrescribe
+            if (inv.valorManual) return;
             const currentUtilidad = prevUtilidadRef.current;
             if (isMounted && Math.abs(nuevaUtilidad - currentUtilidad) > 0.01) {
                 setTimeout(() => {
@@ -1449,7 +1451,7 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
         }
         
         return () => { isMounted = false; };
-    }, [inv.subTipo, inv.fecha, inv.monto, inv.concepto, inv.ticker, inv.tasaInteres, inv.id, genericUpdate]);
+    }, [inv.subTipo, inv.fecha, inv.monto, inv.concepto, inv.ticker, inv.tasaInteres, inv.id, inv.valorManual, genericUpdate]);
 
     const utilidad = Number(inv.utilidad) || 0;
     const montoInv = Number(inv.monto) || 0;
@@ -1474,12 +1476,17 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
     };
 
     // Editar el valor actual directamente: la utilidad se recalcula como (nuevo valor - invertido)
+    // y se marca valorManual para que el auto-sync (tasa E.A. / mercado) no lo sobrescriba.
     const handleEditValor = async () => {
         const nuevoValor = parseFloat(valorEditInput);
         if (valorEditInput === '' || isNaN(nuevoValor)) return;
-        await genericUpdate('transacciones', inv.id, { utilidad: nuevoValor - montoInv });
+        await genericUpdate('transacciones', inv.id, { utilidad: nuevoValor - montoInv, valorManual: true });
         setEditingValor(false);
         setValorEditInput('');
+    };
+
+    const handleReactivarAuto = async () => {
+        await genericUpdate('transacciones', inv.id, { valorManual: false });
     };
 
     // Cálculo dinámico de renta fija (Fondo de Emergencia / CDT)
@@ -1643,11 +1650,20 @@ const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, g
                             <button onClick={() => { setEditingValor(false); setValorEditInput(''); }} className="bg-white/15 hover:bg-white/30 text-white p-1 rounded-lg transition-all"><X size={14} /></button>
                         </div>
                     ) : (
-                        <p className="font-bold text-xl text-white cursor-pointer hover:text-white/80 flex items-center justify-end gap-1.5 group"
-                            onClick={() => { setEditingValor(true); setValorEditInput(valorActual.toFixed(2)); }}
-                            title="Toca para editar el valor actual">
-                            {formatMoney(valorActual, inv.moneda)} <Edit2 size={12} className="text-white/50 group-hover:text-white/90" />
-                        </p>
+                        <>
+                            <p className="font-bold text-xl text-white cursor-pointer hover:text-white/80 flex items-center justify-end gap-1.5 group"
+                                onClick={() => { setEditingValor(true); setValorEditInput(valorActual.toFixed(2)); }}
+                                title="Toca para editar el valor actual">
+                                {formatMoney(valorActual, inv.moneda)} <Edit2 size={12} className="text-white/50 group-hover:text-white/90" />
+                            </p>
+                            {inv.valorManual && (
+                                <button onClick={handleReactivarAuto}
+                                    className="mt-0.5 text-[10px] font-semibold text-white/70 hover:text-white bg-white/15 hover:bg-white/25 px-2 py-0.5 rounded-full transition-all"
+                                    title="El valor fue fijado manualmente. Toca para volver al cálculo automático.">
+                                    ✎ Manual · reactivar auto
+                                </button>
+                            )}
+                        </>
                     )}
                 </div>
             </div>
