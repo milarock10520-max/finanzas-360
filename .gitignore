@@ -33,3 +33,7 @@ dist-ssr
 # iOS - Xcode user data (específico de la máquina, no del proyecto)
 ios/**/*.xcuserdata/
 ios/**/.DS_Store
+
+# Electron (escritorio)
+/release
+electron/oauth.local.json

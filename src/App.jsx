@@ -91,7 +91,7 @@ import { Capacitor } from '@capacitor/core';
 // En web (Cloudflare) las llamadas /api/* son relativas y las sirve el mismo Worker.
 // En la app nativa (iOS) la UI corre desde capacitor://localhost, así que apuntamos
 // las llamadas /api/* al Worker desplegado en Cloudflare.
-const API_BASE = Capacitor.isNativePlatform()
+const API_BASE = (Capacitor.isNativePlatform() || window.desktop?.isElectron)
     ? 'https://finanzas-360.milarock10520.workers.dev'
     : '';
 
@@ -4899,6 +4899,12 @@ export default function App() {
                 const result = await FirebaseAuthentication.signInWithGoogle();
                 const idToken = result.credential?.idToken;
                 const accessToken = result.credential?.accessToken;
+                const credential = GoogleAuthProvider.credential(idToken, accessToken);
+                await signInWithCredential(auth, credential);
+            } else if (window.desktop?.isElectron) {
+                // Escritorio (Electron): el popup web tampoco funciona (Google bloquea
+                // OAuth embebido), así que el login se hace en el navegador del sistema.
+                const { idToken, accessToken } = await window.desktop.signInWithGoogle();
                 const credential = GoogleAuthProvider.credential(idToken, accessToken);
                 await signInWithCredential(auth, credential);
             } else {
