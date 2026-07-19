@@ -77,7 +77,9 @@ const TOOLS = [
                 nombre: { type: 'string', description: 'Nombre de la meta (ej: "Fondo de emergencia", "Viaje a Europa")' },
                 tipo: { type: 'string', enum: ['financiera', 'personal'], description: 'financiera si tiene monto objetivo de ahorro; personal si es un objetivo sin dinero.' },
                 monto_objetivo: { type: 'number', description: 'Monto a ahorrar (solo para metas financieras), solo el número.' },
-                plazo: { type: 'string', description: 'Plazo o fecha objetivo en texto libre (ej: "Diciembre 2026"). Omítelo si no se menciona.' }
+                plazo: { type: 'string', description: 'Plazo o fecha objetivo en texto libre (ej: "Diciembre 2026"). Omítelo si no se menciona.' },
+                fecha_objetivo: { type: 'string', description: 'Fecha objetivo en formato YYYY-MM-DD (solo financieras). Si el usuario da un mes/época, usa el último día de ese mes. Con esto la app calcula el aporte sugerido.' },
+                frecuencia: { type: 'string', enum: ['quincenal', 'mensual'], description: 'Frecuencia del aporte sugerido (solo financieras). Por defecto quincenal.' }
             },
             required: ['nombre', 'tipo']
         }

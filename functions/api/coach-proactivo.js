@@ -201,11 +201,11 @@ function buildContexto(data) {
     const totalGastos = transacciones.filter(t => t.tipo === 'gasto').reduce((a, c) => a + (Number(c.monto) || 0), 0);
     const saldo = totalIngresos - totalGastos;
     const ingresosMes = transacciones.filter(t => t.tipo === 'ingreso' && esEsteMes(t.fecha)).reduce((a, t) => a + (Number(t.monto) || 0), 0);
-    const gastosMes = transacciones.filter(t => t.tipo === 'gasto' && !t.esInversion && esEsteMes(t.fecha)).reduce((a, t) => a + (Number(t.monto) || 0), 0);
+    const gastosMes = transacciones.filter(t => t.tipo === 'gasto' && !t.esInversion && !t.esAhorro && esEsteMes(t.fecha)).reduce((a, t) => a + (Number(t.monto) || 0), 0);
     const deudasPend = deudas.reduce((a, d) => a + (Number(d.montoTotal || 0) - Number(d.montoPagado || 0)), 0);
 
     const gastosPorCat = {};
-    transacciones.filter(t => t.tipo === 'gasto' && !t.esInversion && esEsteMes(t.fecha))
+    transacciones.filter(t => t.tipo === 'gasto' && !t.esInversion && !t.esAhorro && esEsteMes(t.fecha))
         .forEach(t => { gastosPorCat[t.categoria] = (gastosPorCat[t.categoria] || 0) + (Number(t.monto) || 0); });
 
     const limitesTxt = limites.map(l => {
@@ -214,7 +214,7 @@ function buildContexto(data) {
         return `- ${l.categoria}: ${fmt(g)} de ${fmt(l.limite)} (${pct}%)${g > l.limite ? ' ⚠️ EXCEDIDO' : ''}`;
     }).join('\n');
 
-    const gastosHoy = transacciones.filter(t => t.tipo === 'gasto' && !t.esInversion && esHoy(t.fecha));
+    const gastosHoy = transacciones.filter(t => t.tipo === 'gasto' && !t.esInversion && !t.esAhorro && esHoy(t.fecha));
     const totalGastoHoy = gastosHoy.reduce((a, t) => a + (Number(t.monto) || 0), 0);
     const gastosHoyTxt = gastosHoy.map(t => `- ${t.categoria}: ${fmt(t.monto)}${t.descripcion ? ` (${t.descripcion})` : ''}`).join('\n');
 
@@ -228,7 +228,8 @@ function buildContexto(data) {
         }
         const a = Number(m.ahorroActual) || 0;
         const o = Number(m.montoObjetivo) || 0;
-        return `- ${m.nombre} (financiera): ${fmt(a)} de ${fmt(o)} (${o > 0 ? Math.round(a / o * 100) : 0}%)`;
+        const plan = m.fechaObjetivo ? `, fecha objetivo ${m.fechaObjetivo}` : '';
+        return `- ${m.nombre} (financiera${plan}): ${fmt(a)} de ${fmt(o)} (${o > 0 ? Math.round(a / o * 100) : 0}%)`;
     }).join('\n');
 
     const habitosTxt = habitos.map(h => {

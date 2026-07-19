@@ -326,8 +326,12 @@ const DeudaItem = ({ deuda, onAbonar }) => {
     );
 };
 
-const MetaItem = ({ meta, metasFinancieras = [], onAhorrar, onToggleCompletada, onDelete, onAddNote, onDeleteNote, onAddChecklistItem, onToggleChecklistItem, onDeleteChecklistItem, onLinkMetaFinanciera, onToggleDia, onToggleSeguimiento }) => {
+const MetaItem = ({ meta, metasFinancieras = [], onAhorrar, onEditarPlan, onToggleCompletada, onDelete, onAddNote, onDeleteNote, onAddChecklistItem, onToggleChecklistItem, onDeleteChecklistItem, onLinkMetaFinanciera, onToggleDia, onToggleSeguimiento }) => {
     const [aporte, setAporte] = useState('');
+    const [descontarSaldo, setDescontarSaldo] = useState(true);
+    const [editandoPlan, setEditandoPlan] = useState(false);
+    const [planFecha, setPlanFecha] = useState(meta.fechaObjetivo || '');
+    const [planFrecuencia, setPlanFrecuencia] = useState(meta.frecuencia || 'quincenal');
     const [showNotes, setShowNotes] = useState(false);
     const [newNote, setNewNote] = useState('');
     const [newChecklistItem, setNewChecklistItem] = useState('');
@@ -636,17 +640,41 @@ const MetaItem = ({ meta, metasFinancieras = [], onAhorrar, onToggleCompletada, 
     const actual = Number(meta.ahorroActual) || 0;
     const objetivo = Number(meta.montoObjetivo) || 1;
     const porcentaje = Math.min((actual / objetivo) * 100, 100);
+    const estado = estadoMeta(meta);
+    const tienePlan = !!meta.fechaObjetivo;
+    const sugerido = tienePlan ? aporteSugeridoMeta(meta) : 0;
+    const periodos = tienePlan ? periodosRestantesMeta(meta) : 0;
+    const nombrePeriodo = (meta.frecuencia === 'mensual') ? 'mes' : 'quincena';
+    const ultimosAportes = (meta.aportes || []).slice(-3).reverse();
+
+    const CHIP_ESTADO = {
+        completada: { txt: '🎉 Completada', cls: 'bg-emerald-100 text-emerald-700' },
+        adelantada: { txt: '🚀 Adelantada', cls: 'bg-sky-100 text-sky-700' },
+        aldia: { txt: '🟢 Al día', cls: 'bg-emerald-50 text-emerald-600' },
+        atrasada: { txt: `🟡 Atrasada · aporta ${formatCurrency(estado.atraso || 0)} para nivelarte`, cls: 'bg-amber-100 text-amber-700' },
+        sinplan: { txt: '⚪ Sin plan', cls: 'bg-slate-100 text-slate-500' },
+    };
+    const chip = CHIP_ESTADO[estado.id];
+
+    const guardarPlan = () => {
+        if (!planFecha) return;
+        onEditarPlan(meta, planFecha, planFrecuencia);
+        setEditandoPlan(false);
+    };
 
     return (
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between h-full">
             <div>
-                <div className="flex justify-between items-start mb-2">
-                    <span className={`px-2 py-1 text-xs rounded-md font-bold uppercase tracking-wider
-            ${meta.plazo === 'corto' ? 'bg-emerald-100 text-emerald-700' :
-                            meta.plazo === 'mediano' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
-                        {meta.plazo}
-                    </span>
-                    <div className="flex items-center gap-2">
+                <div className="flex justify-between items-start mb-2 gap-2">
+                    <span className={`px-2 py-1 text-[11px] rounded-md font-bold ${chip.cls}`}>{chip.txt}</span>
+                    <div className="flex items-center gap-1 shrink-0">
+                        <button
+                            onClick={() => { setPlanFecha(meta.fechaObjetivo || ''); setPlanFrecuencia(meta.frecuencia || 'quincenal'); setEditandoPlan(!editandoPlan); }}
+                            className={`p-1.5 rounded-full transition-all ${editandoPlan ? 'bg-blue-100 text-blue-600' : 'text-slate-300 hover:text-blue-500 hover:bg-slate-50'}`}
+                            title="Editar plan (fecha y frecuencia)"
+                        >
+                            <Edit2 size={14} />
+                        </button>
                         <button
                             onClick={() => setShowNotes(!showNotes)}
                             className={`p-1.5 rounded-full transition-all relative ${showNotes ? 'bg-blue-100 text-blue-600' : 'text-slate-300 hover:text-blue-500 hover:bg-slate-50'}`}
@@ -657,34 +685,89 @@ const MetaItem = ({ meta, metasFinancieras = [], onAhorrar, onToggleCompletada, 
                                 <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center">{notas.length}</span>
                             )}
                         </button>
-                        <button onClick={() => onDelete(meta.id)} className="text-slate-300 hover:text-rose-500"><Trash2 size={16} /></button>
+                        <button onClick={() => onDelete(meta.id)} className="text-slate-300 hover:text-rose-500 p-1.5"><Trash2 size={16} /></button>
                     </div>
                 </div>
                 <h3 className="text-xl font-bold text-slate-800 mb-1">{meta.nombre}</h3>
-                <div className="flex justify-between text-sm mb-4">
+                <div className="flex justify-between text-sm mb-3">
                     <span className="text-slate-500">Actual: <span className="font-bold text-slate-800">{formatCurrency(actual)}</span></span>
                     <span className="text-slate-500">Meta: {formatCurrency(objetivo)}</span>
                 </div>
-                <div className="w-full bg-slate-100 rounded-full h-3 mb-4">
-                    <div className={`h-3 rounded-full transition-all duration-1000 ${porcentaje >= 100 ? 'bg-emerald-500' : 'bg-blue-600'}`} style={{ width: `${porcentaje}%` }}></div>
+
+                {/* Barra con hitos 25/50/75 y % */}
+                <div className="flex items-center gap-2 mb-2">
+                    <div className="relative flex-1 bg-slate-100 rounded-full h-3">
+                        <div className={`h-3 rounded-full transition-all duration-1000 ${porcentaje >= 100 ? 'bg-emerald-500' : 'bg-blue-600'}`} style={{ width: `${porcentaje}%` }}></div>
+                        {[25, 50, 75].map(h => (
+                            <span
+                                key={h}
+                                className={`absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full ${porcentaje >= h ? 'bg-white' : 'bg-slate-300'}`}
+                                style={{ left: `calc(${h}% - 3px)` }}
+                            />
+                        ))}
+                    </div>
+                    <span className="text-xs font-black text-slate-600 w-9 text-right">{Math.round((actual / objetivo) * 100)}%</span>
                 </div>
+
+                {estado.id === 'completada' && (
+                    <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-bold text-center rounded-xl py-2 mb-3 animate-in zoom-in-95 duration-500">
+                        🎉 ¡Meta cumplida! Date un gusto (con moderación 😄)
+                    </div>
+                )}
+
+                {editandoPlan ? (
+                    <div className="bg-slate-50 rounded-xl p-3 mb-3 space-y-2 animate-in fade-in duration-300">
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{tienePlan ? 'Editar plan' : 'Ponle fecha a tu meta'}</p>
+                        <input type="date" min={dateKey()} value={planFecha} onChange={e => setPlanFecha(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-blue-500" />
+                        <div className="flex gap-1.5">
+                            {['quincenal', 'mensual'].map(f => (
+                                <button key={f} type="button" onClick={() => setPlanFrecuencia(f)} className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors ${planFrecuencia === f ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-500'}`}>
+                                    {f === 'quincenal' ? 'Quincenal' : 'Mensual'}
+                                </button>
+                            ))}
+                        </div>
+                        <button onClick={guardarPlan} disabled={!planFecha} className="w-full bg-blue-600 text-white text-sm font-bold py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50">Guardar plan</button>
+                    </div>
+                ) : tienePlan && estado.id !== 'completada' ? (
+                    <p className="text-xs text-slate-500 mb-3">
+                        Sugerido: <span className="font-bold text-slate-700">{formatCurrency(sugerido)}</span>/{nombrePeriodo} · quedan {periodos} {nombrePeriodo}{periodos !== 1 ? (nombrePeriodo === 'mes' ? 'es' : 's') : ''} · meta: {meta.fechaObjetivo}
+                    </p>
+                ) : !tienePlan ? (
+                    <button onClick={() => setEditandoPlan(true)} className="w-full text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-xl py-2 mb-3 transition-colors">
+                        📅 Ponle fecha a tu meta y te digo cuánto ahorrar
+                    </button>
+                ) : null}
+
+                {ultimosAportes.length > 0 && !editandoPlan && (
+                    <div className="text-[11px] text-slate-400 space-y-0.5 mb-1">
+                        {ultimosAportes.map((a, i) => (
+                            <p key={i}>+ {formatCurrency(a.monto)} <span className="opacity-70">· {a.fecha}</span></p>
+                        ))}
+                    </div>
+                )}
             </div>
 
             {showNotes ? (
                 notesPanel
-            ) : (
-                <div className="flex gap-2 mt-4 pt-4 border-t border-slate-50">
-                    <input
-                        type="number" placeholder="+ Ahorro"
-                        value={aporte} onChange={e => setAporte(e.target.value)}
-                        className="w-full border border-slate-200 rounded-lg px-3 py-1 text-sm outline-none focus:border-blue-500"
-                    />
-                    <button
-                        onClick={() => { onAhorrar(meta, aporte); setAporte(''); }}
-                        className="bg-slate-800 text-white p-2 rounded-lg hover:bg-slate-700"
-                    >
-                        <Save size={18} />
-                    </button>
+            ) : estado.id !== 'completada' && (
+                <div className="mt-4 pt-4 border-t border-slate-50 space-y-2">
+                    <div className="flex gap-2">
+                        <input
+                            type="number" placeholder="+ Ahorro"
+                            value={aporte} onChange={e => setAporte(e.target.value)}
+                            className="w-full border border-slate-200 rounded-lg px-3 py-1 text-sm outline-none focus:border-blue-500"
+                        />
+                        <button
+                            onClick={() => { onAhorrar(meta, aporte, descontarSaldo); setAporte(''); }}
+                            className="bg-slate-800 text-white p-2 rounded-lg hover:bg-slate-700"
+                        >
+                            <Save size={18} />
+                        </button>
+                    </div>
+                    <label className="flex items-center gap-2 text-xs text-slate-500 cursor-pointer select-none">
+                        <input type="checkbox" checked={descontarSaldo} onChange={e => setDescontarSaldo(e.target.checked)} className="rounded accent-blue-600" />
+                        Descontar de mi saldo (queda como transacción "Ahorro → {meta.nombre}")
+                    </label>
                 </div>
             )}
         </div>
@@ -770,11 +853,11 @@ const FinancialAnalysis = ({ transacciones }) => {
 
     const ingresosMes = transaccionesMes.filter(t => t.tipo === 'ingreso').reduce((acc, curr) => acc + (Number(curr.monto) || 0), 0);
     // Los aportes a inversión NO cuentan como gasto real (no es consumo, es mover dinero a tu patrimonio)
-    const gastosMes = transaccionesMes.filter(t => t.tipo === 'gasto' && !t.esInversion).reduce((acc, curr) => acc + (Number(curr.monto) || 0), 0);
+    const gastosMes = transaccionesMes.filter(t => t.tipo === 'gasto' && !t.esInversion && !t.esAhorro).reduce((acc, curr) => acc + (Number(curr.monto) || 0), 0);
     const balanceMes = ingresosMes - gastosMes;
 
     const gastosPorCategoria = transaccionesMes
-        .filter(t => t.tipo === 'gasto' && !t.esInversion)
+        .filter(t => t.tipo === 'gasto' && !t.esInversion && !t.esAhorro)
         .reduce((acc, curr) => {
             acc[curr.categoria] = (acc[curr.categoria] || 0) + (Number(curr.monto) || 0);
             return acc;
@@ -1831,7 +1914,7 @@ const InvestmentPortfolio = ({ transacciones, totalInvertido, genericAdd, generi
     // Calcular gastos mensuales promedio (para fondo de emergencia)
     const currentMonth = new Date().toISOString().slice(0, 7);
     const gastosDelMes = transacciones
-        .filter(t => t.tipo === 'gasto' && !t.esInversion && t.fecha && t.fecha.startsWith(currentMonth))
+        .filter(t => t.tipo === 'gasto' && !t.esInversion && !t.esAhorro && t.fecha && t.fecha.startsWith(currentMonth))
         .reduce((a, c) => a + (Number(c.monto) || 0), 0);
     const totalGastosMensuales = gastosDelMes || 0;
 
@@ -2056,7 +2139,63 @@ const DebtManager = ({ deudas, genericAdd, genericUpdate }) => {
     );
 };
 
-const GoalTracker = ({ metas, genericAdd, genericUpdate, genericDelete }) => {
+// =============================================
+// === HELPERS: PLAN DE AHORRO (metas financieras) ===
+// =============================================
+// Las metas nuevas llevan fechaObjetivo + frecuencia; con eso se calcula el
+// aporte sugerido y el estado (al día / atrasada / adelantada). Las legacy
+// (sin fechaObjetivo) muestran la tarjeta clásica con CTA para ponerle fecha.
+
+const diasHasta = (fechaYmd) => Math.ceil((new Date(fechaYmd + 'T23:59:59') - new Date()) / 86400000);
+
+const periodosRestantesMeta = (meta) => {
+    if (!meta.fechaObjetivo) return 0;
+    const dias = Math.max(diasHasta(meta.fechaObjetivo), 0);
+    return Math.max(1, Math.ceil(dias / (meta.frecuencia === 'mensual' ? 30 : 15)));
+};
+
+const aporteSugeridoMeta = (meta) => {
+    const faltante = Math.max((Number(meta.montoObjetivo) || 0) - (Number(meta.ahorroActual) || 0), 0);
+    return faltante / periodosRestantesMeta(meta);
+};
+
+// Estado del plan: compara lo ahorrado contra el ritmo esperado según el tiempo
+// transcurrido entre el inicio del plan y la fecha objetivo.
+const estadoMeta = (meta) => {
+    const actual = Number(meta.ahorroActual) || 0;
+    const objetivo = Number(meta.montoObjetivo) || 0;
+    if (objetivo > 0 && actual >= objetivo) return { id: 'completada' };
+    if (!meta.fechaObjetivo || !objetivo) return { id: 'sinplan' };
+
+    const inicio = meta.createdAt ? new Date(meta.createdAt) : new Date();
+    const fin = new Date(meta.fechaObjetivo + 'T23:59:59');
+    const total = Math.max(fin - inicio, 1);
+    const transcurrido = Math.min(Math.max(Date.now() - inicio.getTime(), 0), total);
+    const esperado = objetivo * (transcurrido / total);
+
+    if (actual >= esperado * 1.1) return { id: 'adelantada' };
+    if (actual >= esperado * 0.9) return { id: 'aldia' };
+    return { id: 'atrasada', atraso: Math.max(esperado - actual, 0) };
+};
+
+// Capacidad de ahorro: promedio de lo que quedó libre (ingresos - gastos de
+// consumo) en los últimos 3 meses calendario CERRADOS con movimientos.
+const capacidadAhorroMensual = (transacciones) => {
+    const mesActual = dateKey().slice(0, 7);
+    const porMes = {};
+    transacciones.forEach(t => {
+        const mes = (t.fecha || '').slice(0, 7);
+        if (!mes || mes >= mesActual) return;
+        porMes[mes] = porMes[mes] || { ing: 0, gas: 0 };
+        if (t.tipo === 'ingreso') porMes[mes].ing += Number(t.monto) || 0;
+        else if (t.tipo === 'gasto' && !t.esInversion && !t.esAhorro && !t.esAhorro) porMes[mes].gas += Number(t.monto) || 0;
+    });
+    const meses = Object.keys(porMes).sort().slice(-3);
+    if (!meses.length) return null;
+    return meses.reduce((a, m) => a + (porMes[m].ing - porMes[m].gas), 0) / meses.length;
+};
+
+const GoalTracker = ({ metas, transacciones = [], genericAdd, genericUpdate, genericDelete }) => {
     const [viewMode, setViewMode] = useState('financieras'); // 'financieras' | 'personales'
 
     // Estados Financieras
@@ -2064,11 +2203,19 @@ const GoalTracker = ({ metas, genericAdd, genericUpdate, genericDelete }) => {
     const [montoObjetivo, setMontoObjetivo] = useState('');
     const [plazo, setPlazo] = useState('corto');
     const [ahorroActual, setAhorroActual] = useState('');
+    const [fechaObjetivo, setFechaObjetivo] = useState('');
+    const [frecuencia, setFrecuencia] = useState('quincenal');
     // Vincular meta personal a una meta financiera (opcional)
     const [metaFinancieraId, setMetaFinancieraId] = useState('');
 
     // Lista de metas financieras (para el selector de vínculo)
     const metasFinancieras = metas.filter(m => m.tipo === 'financiera' || !m.tipo);
+
+    // Deriva el plazo legacy a partir de la fecha (para el badge y el coach).
+    const plazoDesdeFecha = (ymd) => {
+        const meses = Math.max(diasHasta(ymd), 0) / 30;
+        return meses < 12 ? 'corto' : meses < 60 ? 'mediano' : 'largo';
+    };
 
     const agregarMetaHandler = async (e) => {
         e.preventDefault();
@@ -2077,18 +2224,24 @@ const GoalTracker = ({ metas, genericAdd, genericUpdate, genericDelete }) => {
 
         await genericAdd('metas', {
             nombre,
-            plazo,
+            plazo: isPersonal ? plazo : plazoDesdeFecha(fechaObjetivo),
             tipo: isPersonal ? 'personal' : 'financiera',
             // Campos exclusivos financieras
             montoObjetivo: isPersonal ? 0 : parseFloat(montoObjetivo),
             ahorroActual: isPersonal ? 0 : parseFloat(ahorroActual || 0),
+            ...(isPersonal ? {} : {
+                fechaObjetivo,
+                frecuencia,
+                aportes: [],
+                createdAt: new Date().toISOString(),
+            }),
             // Campos exclusivos personales
             completada: false,
             checklist: [],
             metaFinancieraId: isPersonal ? (metaFinancieraId || null) : null
         });
 
-        setNombre(''); setMontoObjetivo(''); setAhorroActual(''); setMetaFinancieraId('');
+        setNombre(''); setMontoObjetivo(''); setAhorroActual(''); setMetaFinancieraId(''); setFechaObjetivo('');
     };
 
     // --- Checklist (avances) de una meta ---
@@ -2131,10 +2284,45 @@ const GoalTracker = ({ metas, genericAdd, genericUpdate, genericDelete }) => {
         await genericUpdate('metas', meta.id, { metaFinancieraId: id || null });
     };
 
-    const actualizarAhorro = async (meta, monto) => {
-        if (!monto) return;
+    const actualizarAhorro = async (meta, monto, descontar = false) => {
+        const valor = parseFloat(monto);
+        if (!valor || valor <= 0) return;
         const actual = Number(meta.ahorroActual) || 0;
-        await genericUpdate('metas', meta.id, { ahorroActual: actual + parseFloat(monto) });
+        const nuevoTotal = actual + valor;
+        const objetivo = Number(meta.montoObjetivo) || 0;
+
+        await genericUpdate('metas', meta.id, {
+            ahorroActual: nuevoTotal,
+            aportes: [...(meta.aportes || []), { monto: valor, fecha: dateKey() }],
+            ...(objetivo > 0 && nuevoTotal >= objetivo ? { completada: true } : {}),
+        });
+
+        // "Descontar de mi saldo": la plata apartada deja de estar disponible.
+        // esAhorro la excluye de las estadísticas de consumo (como esInversion),
+        // pero SÍ resta del saldo total.
+        if (descontar) {
+            await genericAdd('transacciones', {
+                tipo: 'gasto',
+                monto: valor,
+                concepto: `Ahorro → ${meta.nombre}`,
+                categoria: 'Ahorro Metas',
+                fecha: dateKey(),
+                esAhorro: true,
+                createdAt: new Date().toISOString(),
+            });
+        }
+    };
+
+    // Pone o cambia el plan (fecha + frecuencia) de una meta; sirve para migrar
+    // metas legacy. Fija createdAt si no existía (ancla del cálculo de ritmo).
+    const editarPlanMeta = async (meta, nuevaFecha, nuevaFrecuencia) => {
+        await genericUpdate('metas', meta.id, {
+            fechaObjetivo: nuevaFecha,
+            frecuencia: nuevaFrecuencia,
+            plazo: plazoDesdeFecha(nuevaFecha),
+            ...(meta.createdAt ? {} : { createdAt: new Date().toISOString() }),
+            ...(meta.aportes ? {} : { aportes: [] }),
+        });
     };
 
     const toggleCompletada = async (meta) => {
@@ -2213,9 +2401,38 @@ const GoalTracker = ({ metas, genericAdd, genericUpdate, genericDelete }) => {
                                 </select>
                             )}
 
-                            <select value={plazo} onChange={e => setPlazo(e.target.value)} className="w-full bg-black/20 border-0 rounded-lg px-3 py-2 text-white">
-                                {PLAZOS_METAS.map(p => <option key={p.value} value={p.value} className="text-slate-800">{p.label}</option>)}
-                            </select>
+                            {viewMode === 'personales' && (
+                                <select value={plazo} onChange={e => setPlazo(e.target.value)} className="w-full bg-black/20 border-0 rounded-lg px-3 py-2 text-white">
+                                    {PLAZOS_METAS.map(p => <option key={p.value} value={p.value} className="text-slate-800">{p.label}</option>)}
+                                </select>
+                            )}
+
+                            {viewMode === 'financieras' && (
+                                <>
+                                    <div className="flex gap-2 items-center">
+                                        <input required type="date" min={dateKey()} value={fechaObjetivo} onChange={e => setFechaObjetivo(e.target.value)} className="flex-1 bg-black/20 border-0 rounded-lg px-3 py-2 text-white [color-scheme:dark]" />
+                                        <div className="flex rounded-lg overflow-hidden border border-white/20">
+                                            <button type="button" onClick={() => setFrecuencia('quincenal')} className={`px-2.5 py-2 text-xs font-bold transition-colors ${frecuencia === 'quincenal' ? 'bg-white text-emerald-800' : 'bg-black/20 text-blue-100'}`}>Quincenal</button>
+                                            <button type="button" onClick={() => setFrecuencia('mensual')} className={`px-2.5 py-2 text-xs font-bold transition-colors ${frecuencia === 'mensual' ? 'bg-white text-emerald-800' : 'bg-black/20 text-blue-100'}`}>Mensual</button>
+                                        </div>
+                                    </div>
+                                    {fechaObjetivo && parseFloat(montoObjetivo) > 0 && (() => {
+                                        const preview = { montoObjetivo: parseFloat(montoObjetivo), ahorroActual: parseFloat(ahorroActual || 0), fechaObjetivo, frecuencia };
+                                        const sugerido = aporteSugeridoMeta(preview);
+                                        const periodos = periodosRestantesMeta(preview);
+                                        const capacidad = capacidadAhorroMensual(transacciones);
+                                        const sugeridoMensual = frecuencia === 'quincenal' ? sugerido * 2 : sugerido;
+                                        return (
+                                            <div className="text-xs bg-black/20 rounded-lg px-3 py-2 space-y-1">
+                                                <p className="text-blue-100">Necesitarás ~<span className="font-bold text-white">{formatCurrency(sugerido)}</span> por {frecuencia === 'quincenal' ? 'quincena' : 'mes'} ({periodos} {frecuencia === 'quincenal' ? 'quincenas' : 'meses'}).</p>
+                                                {capacidad !== null && sugeridoMensual > capacidad && (
+                                                    <p className="text-amber-200 font-semibold">⚠️ Supera tu capacidad de ahorro promedio (~{formatCurrency(capacidad)}/mes). Considera una fecha más lejana.</p>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
+                                </>
+                            )}
 
                             <button type="submit" className="w-full bg-white text-blue-900 font-bold py-2 rounded-lg hover:bg-blue-50 transition-colors">
                                 {viewMode === 'financieras' ? 'Crear Plan de Ahorro' : 'Guardar Propósito'}
@@ -2237,6 +2454,7 @@ const GoalTracker = ({ metas, genericAdd, genericUpdate, genericDelete }) => {
                             meta={meta}
                             metasFinancieras={metasFinancieras}
                             onAhorrar={actualizarAhorro}
+                            onEditarPlan={editarPlanMeta}
                             onToggleCompletada={toggleCompletada}
                             onDelete={(id) => genericDelete('metas', id)}
                             onAddNote={addNote}
@@ -2502,7 +2720,7 @@ const MiDia = ({ user, habitos, diario, transacciones, presupuestoItems, saldoAc
 
     // Finanzas de hoy
     const gastoHoy = transacciones
-        .filter(t => t.tipo === 'gasto' && !t.esInversion && t.fecha === hoy)
+        .filter(t => t.tipo === 'gasto' && !t.esInversion && !t.esAhorro && t.fecha === hoy)
         .reduce((a, c) => a + (Number(c.monto) || 0), 0);
 
     // Hábitos de hoy
@@ -4382,7 +4600,7 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, habi
         const totalGastosAll = transacciones.filter(t => t.tipo === 'gasto').reduce((a, c) => a + (Number(c.monto) || 0), 0);
         const saldo = totalIngresosAll - totalGastosAll;
         const ingresosMes = transacciones.filter(t => t.tipo === 'ingreso' && esEsteMes(t.fecha)).reduce((acc, t) => acc + t.monto, 0);
-        const gastosMes = transacciones.filter(t => t.tipo === 'gasto' && !t.esInversion && esEsteMes(t.fecha)).reduce((acc, t) => acc + t.monto, 0);
+        const gastosMes = transacciones.filter(t => t.tipo === 'gasto' && !t.esInversion && !t.esAhorro && esEsteMes(t.fecha)).reduce((acc, t) => acc + t.monto, 0);
         const deudasPendientes = deudas.reduce((acc, d) => acc + (Number(d.montoTotal || 0) - Number(d.montoPagado || 0)), 0);
         const inversiones = transacciones.filter(t => t.esInversion || t.categoria === 'Aporte Inversión');
         const inversionesTotales = inversiones.reduce((acc, t) => acc + (Number(t.monto) || 0), 0);
@@ -4390,7 +4608,7 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, habi
         // --- Gastos del mes por categoría ---
         const gastosPorCat = {};
         transacciones
-            .filter(t => t.tipo === 'gasto' && !t.esInversion && esEsteMes(t.fecha))
+            .filter(t => t.tipo === 'gasto' && !t.esInversion && !t.esAhorro && esEsteMes(t.fecha))
             .forEach(t => { gastosPorCat[t.categoria] = (gastosPorCat[t.categoria] || 0) + (Number(t.monto) || 0); });
         const gastosCatTxt = Object.entries(gastosPorCat)
             .sort((a, b) => b[1] - a[1])
@@ -4398,7 +4616,7 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, habi
             .join('\n');
 
         // --- Movimientos de HOY (clave para preguntas tipo "gastos de hoy") ---
-        const gastosHoy = transacciones.filter(t => t.tipo === 'gasto' && !t.esInversion && esHoy(t.fecha));
+        const gastosHoy = transacciones.filter(t => t.tipo === 'gasto' && !t.esInversion && !t.esAhorro && esHoy(t.fecha));
         const ingresosHoyArr = transacciones.filter(t => t.tipo === 'ingreso' && esHoy(t.fecha));
         const totalGastoHoy = gastosHoy.reduce((a, c) => a + (Number(c.monto) || 0), 0);
         const totalIngresoHoy = ingresosHoyArr.reduce((a, c) => a + (Number(c.monto) || 0), 0);
@@ -4455,7 +4673,8 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, habi
             const actual = Number(m.ahorroActual) || 0;
             const objetivo = Number(m.montoObjetivo) || 0;
             const pct = objetivo > 0 ? Math.round((actual / objetivo) * 100) : 0;
-            return `- ${m.nombre} (financiera, plazo: ${m.plazo || 'sin definir'}): ${fmt(actual)} de ${fmt(objetivo)} (${pct}%)`;
+            const plan = m.fechaObjetivo ? `, fecha objetivo ${m.fechaObjetivo} (${m.frecuencia || 'quincenal'})` : '';
+            return `- ${m.nombre} (financiera, plazo: ${m.plazo || 'sin definir'}${plan}): ${fmt(actual)} de ${fmt(objetivo)} (${pct}%)`;
         }).join('\n');
 
         // --- Deudas detalladas ---
@@ -4648,11 +4867,17 @@ ${diarioTxt || 'No hay entradas en el diario.'}`;
                         tipo: esFin ? 'financiera' : 'personal',
                         montoObjetivo: esFin ? Number(input.monto_objetivo || 0) : 0,
                         ahorroActual: 0,
+                        ...(esFin ? {
+                            fechaObjetivo: input.fecha_objetivo || null,
+                            frecuencia: input.frecuencia || 'quincenal',
+                            aportes: [],
+                            createdAt: new Date().toISOString(),
+                        } : {}),
                         completada: false,
                         checklist: [],
                         metaFinancieraId: null
                     });
-                    return `OK: meta "${input.nombre}" creada.`;
+                    return `OK: meta "${input.nombre}" creada${esFin && input.fecha_objetivo ? ` con fecha objetivo ${input.fecha_objetivo}` : ''}.`;
                 }
                 case 'crear_evento_calendar': {
                     if (!googleToken) return 'Error: no hay conexión con Google. Pídele al usuario que conecte su cuenta en la sección Agenda.';
@@ -4830,7 +5055,7 @@ ${diarioTxt || 'No hay entradas en el diario.'}`;
         // Gastos del mes por categoría (para límites)
         const gastosPorCat = {};
         transacciones
-            .filter(t => t.tipo === 'gasto' && !t.esInversion && esEsteMes(t.fecha))
+            .filter(t => t.tipo === 'gasto' && !t.esInversion && !t.esAhorro && esEsteMes(t.fecha))
             .forEach(t => { gastosPorCat[t.categoria] = (gastosPorCat[t.categoria] || 0) + (Number(t.monto) || 0); });
 
         // Límites excedidos
@@ -4843,7 +5068,7 @@ ${diarioTxt || 'No hay entradas en el diario.'}`;
 
         // Gastos del mes superan los ingresos del mes
         const ingMes = transacciones.filter(t => t.tipo === 'ingreso' && esEsteMes(t.fecha)).reduce((a, c) => a + (Number(c.monto) || 0), 0);
-        const gasMes = transacciones.filter(t => t.tipo === 'gasto' && !t.esInversion && esEsteMes(t.fecha)).reduce((a, c) => a + (Number(c.monto) || 0), 0);
+        const gasMes = transacciones.filter(t => t.tipo === 'gasto' && !t.esInversion && !t.esAhorro && esEsteMes(t.fecha)).reduce((a, c) => a + (Number(c.monto) || 0), 0);
         if (ingMes > 0 && gasMes > ingMes) {
             alertas.push({ tipo: 'balance', texto: `Este mes has gastado más de lo que ingresaste: ${formatCurrency(gasMes)} vs ${formatCurrency(ingMes)}.` });
         }
@@ -5881,7 +6106,7 @@ export default function App() {
         const mesKey = `${anioActual}-${mesActual}`;
 
         const gastosPorCat = transacciones
-            .filter(t => t.tipo === 'gasto' && !t.esInversion && t.fecha
+            .filter(t => t.tipo === 'gasto' && !t.esInversion && !t.esAhorro && t.fecha
                 && new Date(t.fecha).getMonth() === mesActual
                 && new Date(t.fecha).getFullYear() === anioActual)
             .reduce((acc, t) => {
@@ -6288,7 +6513,7 @@ export default function App() {
                     {activeTab === 'ingresos' && <TransactionManager tipo="ingreso" transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} prefillData={prefillData} setPrefillData={setPrefillData} activeTab={activeTab} pendingBudgetId={pendingBudgetId} setPendingBudgetId={setPendingBudgetId} setActiveTab={setActiveTab} />}
                     {activeTab === 'gastos' && <TransactionManager tipo="gasto" transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} prefillData={prefillData} setPrefillData={setPrefillData} activeTab={activeTab} pendingBudgetId={pendingBudgetId} setPendingBudgetId={setPendingBudgetId} setActiveTab={setActiveTab} />}
                     {activeTab === 'deudas' && <DebtManager deudas={deudas} genericAdd={genericAdd} genericUpdate={genericUpdate} />}
-                    {activeTab === 'metas' && <GoalTracker metas={metas} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} />}
+                    {activeTab === 'metas' && <GoalTracker metas={metas} transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} />}
                     {activeTab === 'passwords' && <PasswordVault passwords={passwords} vaultConfig={vaultConfig} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} user={user} db={db} activeTab={activeTab} />}
                     {activeTab === 'agenda' && <ProductivityHub genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} googleToken={googleToken} setGoogleToken={setGoogleToken} />}
                 </div>
