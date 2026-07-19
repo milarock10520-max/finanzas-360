@@ -60,7 +60,10 @@ import {
     CalendarClock,
     LogOut,
     UserCog,
-    Mic
+    Mic,
+    ArrowLeft,
+    Archive,
+    FolderKanban
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import {
@@ -3129,6 +3132,484 @@ const RutinaSemanal = ({ rutina, genericAdd, genericUpdate, genericDelete, googl
 };
 
 // =============================================
+// === PROYECTOS (trabajo laboral por proyectos) ===
+// =============================================
+
+const PROYECTO_EMOJIS = ['💼', '📊', '🚀', '💡', '🔧', '🖥️', '📱', '🌐', '📈', '🤝', '✍️', '🎯', '🧪', '🎨', '📦', '🔐'];
+
+const KANBAN_COLS = [
+    { id: 'pendiente', label: 'Pendiente', dot: 'bg-slate-400', chip: 'bg-slate-100 text-slate-600' },
+    { id: 'en_curso', label: 'En curso', dot: 'bg-sky-400', chip: 'bg-sky-100 text-sky-700' },
+    { id: 'hecha', label: 'Hecho', dot: 'bg-emerald-400', chip: 'bg-emerald-100 text-emerald-700' },
+];
+
+const PRIORIDAD_DOT = { alta: 'bg-rose-500', media: 'bg-amber-400', baja: 'bg-slate-300' };
+
+const tiempoRelativo = (iso) => {
+    if (!iso) return '';
+    const dias = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+    if (dias <= 0) return 'hoy';
+    if (dias === 1) return 'ayer';
+    if (dias < 30) return `hace ${dias} días`;
+    return `hace ${Math.floor(dias / 30)} mes${dias >= 60 ? 'es' : ''}`;
+};
+
+const ProyectoEditorModal = ({ proyecto, onClose, onSave }) => {
+    const esNuevo = !proyecto?.id;
+    const [nombre, setNombre] = useState(proyecto?.nombre || '');
+    const [emoji, setEmoji] = useState(proyecto?.emoji || '💼');
+    const [color, setColor] = useState(proyecto?.color || 'azul');
+    const [descripcion, setDescripcion] = useState(proyecto?.descripcion || '');
+    const [saving, setSaving] = useState(false);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!nombre.trim()) return;
+        setSaving(true);
+        await onSave({ nombre: nombre.trim(), emoji, color, descripcion: descripcion.trim() });
+        setSaving(false);
+        onClose();
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-4" onClick={onClose}>
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+            <div
+                className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 animate-in slide-in-from-bottom duration-300 max-h-[90vh] overflow-y-auto no-scrollbar"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                        <FolderKanban className="text-slate-700" size={20} />
+                        {esNuevo ? 'Nuevo proyecto' : 'Editar proyecto'}
+                    </h3>
+                    <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                        <X size={20} className="text-slate-400" />
+                    </button>
+                </div>
+
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <input
+                        type="text"
+                        placeholder="Nombre del proyecto"
+                        value={nombre}
+                        onChange={(e) => setNombre(e.target.value)}
+                        className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl outline-none focus:border-slate-500 transition-colors"
+                        autoFocus
+                        required
+                    />
+                    <div>
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Emoji</p>
+                        <div className="grid grid-cols-8 gap-1">
+                            {PROYECTO_EMOJIS.map(em => (
+                                <button type="button" key={em} onClick={() => setEmoji(em)}
+                                    className={`text-xl p-1.5 rounded-lg transition-all ${emoji === em ? 'bg-slate-200 ring-2 ring-slate-500 scale-110' : 'hover:bg-slate-100'}`}
+                                >{em}</button>
+                            ))}
+                        </div>
+                    </div>
+                    <div>
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Color</p>
+                        <div className="flex gap-2">
+                            {Object.entries(RUTINA_COLORS).map(([key, c]) => (
+                                <button type="button" key={key} onClick={() => setColor(key)}
+                                    className={`w-8 h-8 rounded-full ${c.dot} transition-all ${color === key ? 'ring-2 ring-offset-2 ring-slate-500 scale-110' : 'hover:scale-105'}`}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                    <textarea
+                        placeholder="Descripción (opcional)"
+                        value={descripcion}
+                        onChange={(e) => setDescripcion(e.target.value)}
+                        rows={2}
+                        className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl outline-none focus:border-slate-500 transition-colors resize-none"
+                    />
+                    <button type="submit" disabled={saving} className="w-full bg-slate-800 text-white font-bold py-3 rounded-xl hover:bg-slate-900 transition-colors shadow-lg shadow-slate-300 disabled:opacity-50">
+                        {saving ? 'Guardando...' : 'Guardar'}
+                    </button>
+                </form>
+            </div>
+        </div>
+    );
+};
+
+const ProyectoDetail = ({ proyecto, items, onBack, onEdit, genericAdd, genericUpdate, genericDelete }) => {
+    const [vista, setVista] = useState('tareas');
+    const [nuevaTarea, setNuevaTarea] = useState('');
+    const [nuevaPrioridad, setNuevaPrioridad] = useState('media');
+    const [nuevoAvance, setNuevoAvance] = useState('');
+    const [nuevaNota, setNuevaNota] = useState('');
+    const [nuevaMeta, setNuevaMeta] = useState('');
+    const [nuevaMetaFecha, setNuevaMetaFecha] = useState('');
+
+    const c = RUTINA_COLORS[proyecto.color] || RUTINA_COLORS.gris;
+    const tareas = items.filter(i => i.tipo === 'tarea');
+    const avances = items.filter(i => i.tipo === 'avance').sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '') || (b.createdAt || '').localeCompare(a.createdAt || ''));
+    const notas = items.filter(i => i.tipo === 'nota').sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    const metas = items.filter(i => i.tipo === 'meta').sort((a, b) => (a.completada ? 1 : 0) - (b.completada ? 1 : 0));
+    const hechas = tareas.filter(t => t.estado === 'hecha').length;
+    const pct = tareas.length ? Math.round((hechas / tareas.length) * 100) : 0;
+
+    const addItem = (datos) => genericAdd('proyecto_items', { proyectoId: proyecto.id, createdAt: new Date().toISOString(), ...datos });
+
+    const moverTarea = (tarea, dir) => {
+        const orden = ['pendiente', 'en_curso', 'hecha'];
+        const idx = orden.indexOf(tarea.estado) + dir;
+        if (idx < 0 || idx >= orden.length) return;
+        genericUpdate('proyecto_items', tarea.id, { estado: orden[idx], movedAt: new Date().toISOString() });
+    };
+
+    const TABS = [
+        { id: 'tareas', label: `Tareas${tareas.length ? ` (${tareas.length})` : ''}` },
+        { id: 'avances', label: `Avances${avances.length ? ` (${avances.length})` : ''}` },
+        { id: 'notas', label: `Notas${notas.length ? ` (${notas.length})` : ''}` },
+        { id: 'metas', label: `Metas${metas.length ? ` (${metas.length})` : ''}` },
+    ];
+
+    const NOTA_COLORES = ['amarillo', 'verde', 'azul', 'rosa', 'naranja'];
+
+    return (
+        <div className="space-y-5 animate-in fade-in duration-300">
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                <div className="flex items-start gap-3">
+                    <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-full transition-colors shrink-0 mt-1">
+                        <ArrowLeft size={20} className="text-slate-500" />
+                    </button>
+                    <span className={`w-12 h-12 flex items-center justify-center rounded-2xl text-2xl shrink-0 ${c.bg}`}>{proyecto.emoji}</span>
+                    <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <h2 className="text-xl font-bold text-slate-800 truncate">{proyecto.nombre}</h2>
+                            {proyecto.estado === 'archivado' && <span className="text-[10px] font-bold uppercase bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">Archivado</span>}
+                        </div>
+                        {proyecto.descripcion && <p className="text-sm text-slate-500 mt-0.5">{proyecto.descripcion}</p>}
+                        {tareas.length > 0 && (
+                            <div className="flex items-center gap-2 mt-2">
+                                <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                    <div className="h-full bg-emerald-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                                </div>
+                                <span className="text-xs font-bold text-slate-500">{hechas}/{tareas.length}</span>
+                            </div>
+                        )}
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                        <button onClick={onEdit} className="p-2 hover:bg-slate-100 rounded-full transition-colors" title="Editar">
+                            <Edit2 size={17} className="text-slate-400" />
+                        </button>
+                        <button
+                            onClick={() => genericUpdate('proyectos', proyecto.id, { estado: proyecto.estado === 'archivado' ? 'activo' : 'archivado' })}
+                            className="p-2 hover:bg-slate-100 rounded-full transition-colors"
+                            title={proyecto.estado === 'archivado' ? 'Desarchivar' : 'Archivar'}
+                        >
+                            <Archive size={17} className="text-slate-400" />
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
+                {TABS.map(t => (
+                    <button key={t.id} onClick={() => setVista(t.id)}
+                        className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all ${vista === t.id ? 'bg-slate-800 text-white shadow-lg shadow-slate-300' : 'bg-white text-slate-500 border border-slate-100 hover:bg-slate-50'}`}
+                    >{t.label}</button>
+                ))}
+            </div>
+
+            {vista === 'tareas' && (
+                <div className="space-y-4">
+                    <form
+                        onSubmit={(e) => { e.preventDefault(); if (!nuevaTarea.trim()) return; addItem({ tipo: 'tarea', titulo: nuevaTarea.trim(), estado: 'pendiente', prioridad: nuevaPrioridad, movedAt: new Date().toISOString() }); setNuevaTarea(''); }}
+                        className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex gap-2 items-center"
+                    >
+                        <input type="text" placeholder="Nueva tarea..." value={nuevaTarea} onChange={(e) => setNuevaTarea(e.target.value)}
+                            className="flex-1 px-3 py-2 border-2 border-slate-200 rounded-xl outline-none focus:border-slate-500 transition-colors text-sm min-w-0" />
+                        <div className="flex gap-1 shrink-0">
+                            {['alta', 'media', 'baja'].map(p => (
+                                <button type="button" key={p} onClick={() => setNuevaPrioridad(p)} title={`Prioridad ${p}`}
+                                    className={`w-6 h-6 rounded-full ${PRIORIDAD_DOT[p]} transition-all ${nuevaPrioridad === p ? 'ring-2 ring-offset-1 ring-slate-400 scale-110' : 'opacity-40 hover:opacity-70'}`} />
+                            ))}
+                        </div>
+                        <button type="submit" className="bg-slate-800 text-white p-2 rounded-xl hover:bg-slate-900 transition-colors shrink-0"><Plus size={18} /></button>
+                    </form>
+
+                    <div className="flex overflow-x-auto snap-x snap-mandatory no-scrollbar gap-3 md:grid md:grid-cols-3 md:overflow-visible">
+                        {KANBAN_COLS.map(col => {
+                            const colTareas = tareas.filter(t => t.estado === col.id).sort((a, b) => ({ alta: 0, media: 1, baja: 2 }[a.prioridad] ?? 1) - ({ alta: 0, media: 1, baja: 2 }[b.prioridad] ?? 1));
+                            return (
+                                <div key={col.id} className="min-w-[85%] snap-center md:min-w-0 bg-slate-50 rounded-2xl p-3 border border-slate-100">
+                                    <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold mb-3 ${col.chip}`}>
+                                        <span className={`w-2 h-2 rounded-full ${col.dot}`} />
+                                        {col.label} · {colTareas.length}
+                                    </div>
+                                    <div className="space-y-2 min-h-[3rem]">
+                                        {colTareas.length === 0 && <p className="text-xs text-slate-300 text-center py-4">Vacío</p>}
+                                        {colTareas.map((t, i) => (
+                                            <div key={t.id} style={{ animationDelay: `${i * 30}ms` }} className="bg-white p-3 rounded-xl shadow-sm border border-slate-100 animate-in zoom-in-95 duration-300">
+                                                <div className="flex items-start gap-2">
+                                                    <span className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${PRIORIDAD_DOT[t.prioridad] || PRIORIDAD_DOT.media}`} />
+                                                    <p className={`flex-1 text-sm font-medium leading-snug ${t.estado === 'hecha' ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{t.titulo}</p>
+                                                </div>
+                                                <div className="flex justify-end gap-1 mt-2">
+                                                    {col.id !== 'pendiente' && (
+                                                        <button onClick={() => moverTarea(t, -1)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition-colors" title="Retroceder">
+                                                            <RotateCcw size={15} />
+                                                        </button>
+                                                    )}
+                                                    <button onClick={() => { if (window.confirm('¿Eliminar tarea?')) genericDelete('proyecto_items', t.id); }} className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-300 hover:text-rose-500 transition-colors">
+                                                        <Trash2 size={15} />
+                                                    </button>
+                                                    {col.id !== 'hecha' && (
+                                                        <button onClick={() => moverTarea(t, 1)} className="p-1.5 rounded-lg bg-slate-800 text-white hover:bg-slate-900 transition-colors" title="Avanzar">
+                                                            <ArrowRightCircle size={15} />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
+            {vista === 'avances' && (
+                <div className="space-y-4">
+                    <form
+                        onSubmit={(e) => { e.preventDefault(); if (!nuevoAvance.trim()) return; addItem({ tipo: 'avance', texto: nuevoAvance.trim(), fecha: dateKey() }); setNuevoAvance(''); }}
+                        className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex gap-2"
+                    >
+                        <input type="text" placeholder="Hoy logré..." value={nuevoAvance} onChange={(e) => setNuevoAvance(e.target.value)}
+                            className="flex-1 px-3 py-2 border-2 border-slate-200 rounded-xl outline-none focus:border-slate-500 transition-colors text-sm min-w-0" />
+                        <button type="submit" className="bg-slate-800 text-white p-2 rounded-xl hover:bg-slate-900 transition-colors shrink-0"><Plus size={18} /></button>
+                    </form>
+                    {avances.length === 0 && (
+                        <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 text-center text-slate-400 text-sm">
+                            Registra tu primer avance: pequeños logros diarios cuentan la historia del proyecto.
+                        </div>
+                    )}
+                    <div className="space-y-2">
+                        {avances.map((a, i) => (
+                            <div key={a.id} style={{ animationDelay: `${i * 25}ms` }} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 border-l-4 border-l-emerald-300 flex items-start gap-3 animate-in slide-in-from-bottom duration-300 group">
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm text-slate-700">{a.texto}</p>
+                                    <p className="text-xs text-slate-400 mt-1">{a.fecha} · {tiempoRelativo(a.createdAt)}</p>
+                                </div>
+                                <button onClick={() => { if (window.confirm('¿Eliminar avance?')) genericDelete('proyecto_items', a.id); }} className="p-1.5 rounded-lg text-slate-200 hover:text-rose-500 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100">
+                                    <Trash2 size={15} />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {vista === 'notas' && (
+                <div className="space-y-4">
+                    <form
+                        onSubmit={(e) => { e.preventDefault(); if (!nuevaNota.trim()) return; addItem({ tipo: 'nota', texto: nuevaNota.trim(), color: NOTA_COLORES[notas.length % NOTA_COLORES.length] }); setNuevaNota(''); }}
+                        className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex gap-2"
+                    >
+                        <textarea placeholder="Idea, enlace, decisión, apunte..." value={nuevaNota} onChange={(e) => setNuevaNota(e.target.value)} rows={2}
+                            className="flex-1 px-3 py-2 border-2 border-slate-200 rounded-xl outline-none focus:border-slate-500 transition-colors text-sm resize-none min-w-0" />
+                        <button type="submit" className="bg-slate-800 text-white p-2 rounded-xl hover:bg-slate-900 transition-colors shrink-0 self-end"><Plus size={18} /></button>
+                    </form>
+                    {notas.length === 0 && (
+                        <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 text-center text-slate-400 text-sm">
+                            Sin notas aún. Guarda aquí ideas, enlaces y decisiones del proyecto.
+                        </div>
+                    )}
+                    <div className="columns-2 gap-3 [column-fill:_balance]">
+                        {notas.map((n, i) => {
+                            const nc = RUTINA_COLORS[n.color] || RUTINA_COLORS.amarillo;
+                            return (
+                                <div key={n.id} style={{ animationDelay: `${i * 30}ms` }} className={`break-inside-avoid mb-3 p-4 rounded-2xl border ${nc.bg} ${nc.border} ${nc.text} animate-in zoom-in-95 duration-300 group relative`}>
+                                    <p className="text-sm whitespace-pre-wrap break-words">{n.texto}</p>
+                                    <p className="text-[10px] opacity-60 mt-2">{tiempoRelativo(n.createdAt)}</p>
+                                    <button onClick={() => { if (window.confirm('¿Eliminar nota?')) genericDelete('proyecto_items', n.id); }} className="absolute top-2 right-2 p-1 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-white/50 transition-all">
+                                        <Trash2 size={13} />
+                                    </button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
+            {vista === 'metas' && (
+                <div className="space-y-4">
+                    <form
+                        onSubmit={(e) => { e.preventDefault(); if (!nuevaMeta.trim()) return; addItem({ tipo: 'meta', titulo: nuevaMeta.trim(), fechaLimite: nuevaMetaFecha || null, completada: false }); setNuevaMeta(''); setNuevaMetaFecha(''); }}
+                        className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-wrap gap-2"
+                    >
+                        <input type="text" placeholder="Objetivo del proyecto..." value={nuevaMeta} onChange={(e) => setNuevaMeta(e.target.value)}
+                            className="flex-1 px-3 py-2 border-2 border-slate-200 rounded-xl outline-none focus:border-slate-500 transition-colors text-sm min-w-[10rem]" />
+                        <input type="date" value={nuevaMetaFecha} onChange={(e) => setNuevaMetaFecha(e.target.value)}
+                            className="px-3 py-2 border-2 border-slate-200 rounded-xl outline-none focus:border-slate-500 transition-colors text-sm text-slate-500" />
+                        <button type="submit" className="bg-slate-800 text-white p-2 rounded-xl hover:bg-slate-900 transition-colors shrink-0"><Plus size={18} /></button>
+                    </form>
+                    {metas.length === 0 && (
+                        <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 text-center text-slate-400 text-sm">
+                            Define los objetivos grandes del proyecto, separados del día a día.
+                        </div>
+                    )}
+                    <div className="space-y-2">
+                        {metas.map((m, i) => {
+                            const vencida = m.fechaLimite && !m.completada && m.fechaLimite < dateKey();
+                            return (
+                                <div key={m.id} style={{ animationDelay: `${i * 25}ms` }} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-3 animate-in slide-in-from-bottom duration-300 group">
+                                    <button onClick={() => genericUpdate('proyecto_items', m.id, { completada: !m.completada })} className="shrink-0">
+                                        {m.completada
+                                            ? <CheckCircle2 size={22} className="text-emerald-500" />
+                                            : <Circle size={22} className="text-slate-300 hover:text-slate-400 transition-colors" />}
+                                    </button>
+                                    <div className="flex-1 min-w-0">
+                                        <p className={`text-sm font-medium ${m.completada ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{m.titulo}</p>
+                                        {m.fechaLimite && (
+                                            <span className={`inline-block text-[11px] font-bold px-2 py-0.5 rounded-full mt-1 ${vencida ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-500'}`}>
+                                                {vencida ? '⚠ ' : '📅 '}{m.fechaLimite}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <button onClick={() => { if (window.confirm('¿Eliminar meta?')) genericDelete('proyecto_items', m.id); }} className="p-1.5 rounded-lg text-slate-200 hover:text-rose-500 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100">
+                                        <Trash2 size={15} />
+                                    </button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+const ProyectosSection = ({ proyectos, proyectoItems, genericAdd, genericUpdate, genericDelete }) => {
+    const [selectedProjectId, setSelectedProjectId] = useState(null);
+    const [editorProyecto, setEditorProyecto] = useState(null); // null | 'nuevo' | proyecto
+    const [showArchived, setShowArchived] = useState(false);
+
+    const activos = proyectos.filter(p => p.estado !== 'archivado');
+    const archivados = proyectos.filter(p => p.estado === 'archivado');
+    const proyectoActual = proyectos.find(p => p.id === selectedProjectId);
+
+    const handleSaveProyecto = async (datos) => {
+        if (editorProyecto && editorProyecto !== 'nuevo') {
+            await genericUpdate('proyectos', editorProyecto.id, datos);
+        } else {
+            await genericAdd('proyectos', { ...datos, estado: 'activo', createdAt: new Date().toISOString() });
+        }
+    };
+
+    if (proyectoActual) {
+        return (
+            <>
+                <ProyectoDetail
+                    proyecto={proyectoActual}
+                    items={proyectoItems.filter(i => i.proyectoId === proyectoActual.id)}
+                    onBack={() => setSelectedProjectId(null)}
+                    onEdit={() => setEditorProyecto(proyectoActual)}
+                    genericAdd={genericAdd}
+                    genericUpdate={genericUpdate}
+                    genericDelete={genericDelete}
+                />
+                {editorProyecto && (
+                    <ProyectoEditorModal
+                        proyecto={editorProyecto === 'nuevo' ? null : editorProyecto}
+                        onClose={() => setEditorProyecto(null)}
+                        onSave={handleSaveProyecto}
+                    />
+                )}
+            </>
+        );
+    }
+
+    const CardProyecto = ({ p, index }) => {
+        const c = RUTINA_COLORS[p.color] || RUTINA_COLORS.gris;
+        const items = proyectoItems.filter(i => i.proyectoId === p.id);
+        const tareas = items.filter(i => i.tipo === 'tarea');
+        const hechas = tareas.filter(t => t.estado === 'hecha').length;
+        const pct = tareas.length ? Math.round((hechas / tareas.length) * 100) : 0;
+        const ultima = items.reduce((max, i) => {
+            const t = i.movedAt || i.createdAt || '';
+            return t > max ? t : max;
+        }, p.createdAt || '');
+        return (
+            <button
+                onClick={() => setSelectedProjectId(p.id)}
+                style={{ animationDelay: `${index * 40}ms` }}
+                className="text-left bg-white p-5 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md hover:-translate-y-0.5 transition-all animate-in zoom-in-95 duration-500"
+            >
+                <div className="flex items-center gap-3">
+                    <span className={`w-11 h-11 flex items-center justify-center rounded-2xl text-xl shrink-0 ${c.bg}`}>{p.emoji}</span>
+                    <div className="flex-1 min-w-0">
+                        <h3 className="font-bold text-slate-800 truncate">{p.nombre}</h3>
+                        <p className="text-xs text-slate-400">Actividad: {tiempoRelativo(ultima)}</p>
+                    </div>
+                </div>
+                {p.descripcion && <p className="text-xs text-slate-500 mt-3 line-clamp-2">{p.descripcion}</p>}
+                <div className="flex items-center gap-2 mt-4">
+                    <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-emerald-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="text-xs font-bold text-slate-500">{tareas.length ? `${hechas}/${tareas.length}` : 'Sin tareas'}</span>
+                </div>
+            </button>
+        );
+    };
+
+    return (
+        <div className="space-y-6 animate-in fade-in duration-500">
+            <div className="bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900 text-white p-8 rounded-3xl shadow-lg animate-in slide-in-from-bottom duration-500">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                        <h2 className="text-2xl font-bold flex items-center gap-3"><FolderKanban size={28} /> Proyectos</h2>
+                        <p className="text-slate-300 mt-1 text-sm">{activos.length === 0 ? 'Organiza tu trabajo por proyectos.' : `${activos.length} proyecto${activos.length !== 1 ? 's' : ''} activo${activos.length !== 1 ? 's' : ''}`}</p>
+                    </div>
+                    <button onClick={() => setEditorProyecto('nuevo')} className="bg-white text-slate-900 font-bold px-4 py-2.5 rounded-xl hover:bg-slate-100 transition-colors">
+                        + Proyecto
+                    </button>
+                </div>
+            </div>
+
+            {activos.length === 0 && (
+                <div className="bg-white p-10 rounded-2xl shadow-sm border border-slate-100 text-center animate-in zoom-in-95 duration-500">
+                    <p className="text-5xl mb-3">🗂️</p>
+                    <h3 className="text-lg font-bold text-slate-800">Aún no tienes proyectos</h3>
+                    <p className="text-slate-500 text-sm mt-1 max-w-sm mx-auto">Crea tu primer proyecto laboral: tendrá su propio tablero de tareas, bitácora de avances, notas y metas.</p>
+                </div>
+            )}
+
+            <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {activos.map((p, i) => <CardProyecto key={p.id} p={p} index={i} />)}
+            </div>
+
+            {archivados.length > 0 && (
+                <div>
+                    <button onClick={() => setShowArchived(!showArchived)} className="text-sm font-semibold text-slate-400 hover:text-slate-600 transition-colors">
+                        {showArchived ? '▾' : '▸'} Ver archivados ({archivados.length})
+                    </button>
+                    {showArchived && (
+                        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4 mt-3 opacity-70">
+                            {archivados.map((p, i) => <CardProyecto key={p.id} p={p} index={i} />)}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {editorProyecto && (
+                <ProyectoEditorModal
+                    proyecto={editorProyecto === 'nuevo' ? null : editorProyecto}
+                    onClose={() => setEditorProyecto(null)}
+                    onSave={handleSaveProyecto}
+                />
+            )}
+        </div>
+    );
+};
+
+// =============================================
 // === CRYPTO HELPERS (AES-256-GCM + PBKDF2) ===
 // =============================================
 
@@ -5206,6 +5687,8 @@ export default function App() {
     const [habitos, setHabitos] = useState([]);
     const [diario, setDiario] = useState([]);
     const [rutina, setRutina] = useState([]);
+    const [proyectos, setProyectos] = useState([]);
+    const [proyectoItems, setProyectoItems] = useState([]);
     const [coachMensajes, setCoachMensajes] = useState([]);
     const [coachPerfil, setCoachPerfil] = useState([]);
     // Token de Google Calendar persistido: sobrevive recargas mientras no caduque (~1h).
@@ -5437,13 +5920,19 @@ export default function App() {
         const unsubRutina = onSnapshot(collection(db, `${basePath}/rutina`), (snap) =>
             setRutina(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
+        const unsubProyectos = onSnapshot(collection(db, `${basePath}/proyectos`), (snap) =>
+            setProyectos(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+
+        const unsubProyectoItems = onSnapshot(collection(db, `${basePath}/proyecto_items`), (snap) =>
+            setProyectoItems(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+
         const unsubCoach = onSnapshot(collection(db, `${basePath}/coach_mensajes`), (snap) =>
             setCoachMensajes(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
         const unsubCoachPerfil = onSnapshot(collection(db, `${basePath}/coach_perfil`), (snap) =>
             setCoachPerfil(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
-        return () => { unsubTrans(); unsubDeudas(); unsubMetas(); unsubPresupuesto(); unsubLimites(); unsubPasswords(); unsubVaultConfig(); unsubHabitos(); unsubDiario(); unsubRutina(); unsubCoach(); unsubCoachPerfil(); };
+        return () => { unsubTrans(); unsubDeudas(); unsubMetas(); unsubPresupuesto(); unsubLimites(); unsubPasswords(); unsubVaultConfig(); unsubHabitos(); unsubDiario(); unsubRutina(); unsubProyectos(); unsubProyectoItems(); unsubCoach(); unsubCoachPerfil(); };
     }, [user]);
 
     // --- ACTIONS FIREBASE ---
@@ -5541,7 +6030,7 @@ export default function App() {
 
         try {
             setLoading(true);
-            const collections = ['transacciones', 'deudas', 'metas', 'presupuesto', 'limites', 'passwords', 'vault_config', 'habitos', 'diario', 'rutina', 'coach_mensajes', 'coach_perfil'];
+            const collections = ['transacciones', 'deudas', 'metas', 'presupuesto', 'limites', 'passwords', 'vault_config', 'habitos', 'diario', 'rutina', 'proyectos', 'proyecto_items', 'coach_mensajes', 'coach_perfil'];
             const { getDocs, setDoc, doc } = await import('firebase/firestore');
 
             let totalMigrated = 0;
@@ -5619,6 +6108,7 @@ export default function App() {
 
                     <div className="text-xs font-bold text-slate-400 uppercase tracking-widest px-4 mb-2 mt-8">Herramientas</div>
                     <NavItem id="agenda" icon={ListTodo} label="Agenda & Tareas" />
+                    <NavItem id="proyectos" icon={FolderKanban} label="Proyectos" />
                     <NavItem id="passwords" icon={Lock} label="Contraseñas" />
                 </nav>
                 <div className="border-t border-slate-100 pt-4 mt-4">
@@ -5654,7 +6144,7 @@ export default function App() {
                     <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold shadow-md shadow-blue-200">F</div>
                     <span className="font-bold text-lg text-slate-800 tracking-tight hidden min-[430px]:inline">Finanzas 360</span>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-1 shrink-0">
                     <button
                         onClick={() => setActiveTab('ingresos')}
                         className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${activeTab === 'ingresos' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200' : 'bg-slate-100 text-slate-600'}`}
@@ -5686,6 +6176,12 @@ export default function App() {
                         <CalendarClock size={20} />
                     </button>
                     <button
+                        onClick={() => setActiveTab('proyectos')}
+                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${activeTab === 'proyectos' ? 'bg-slate-700 text-white shadow-lg shadow-slate-300' : 'bg-slate-100 text-slate-600'}`}
+                    >
+                        <FolderKanban size={20} />
+                    </button>
+                    <button
                         onClick={() => setActiveTab('passwords')}
                         className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${activeTab === 'passwords' ? 'bg-slate-800 text-white shadow-lg shadow-slate-300' : 'bg-slate-100 text-slate-600'}`}
                     >
@@ -5706,6 +6202,7 @@ export default function App() {
                     {activeTab === 'midia' && <MiDia user={user} habitos={habitos} diario={diario} transacciones={transacciones} presupuestoItems={presupuestoItems} saldoActual={saldoActual} googleToken={googleToken} genericAdd={genericAdd} genericUpdate={genericUpdate} setActiveTab={setActiveTab} />}
                     {activeTab === 'habitos' && <HabitTracker habitos={habitos} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} />}
                     {activeTab === 'rutina' && <RutinaSemanal rutina={rutina} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} googleToken={googleToken} />}
+                    {activeTab === 'proyectos' && <ProyectosSection proyectos={proyectos} proyectoItems={proyectoItems} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} />}
                     {activeTab === 'dashboard' && <DashboardView saldoActual={saldoActual} totalIngresos={totalIngresos} totalGastos={totalGastos} totalDeudaPendiente={totalDeudaPendiente} transacciones={transacciones} />}
                     {activeTab === 'analisis' && <FinancialAnalysis transacciones={transacciones} />}
                     {activeTab === 'presupuesto' && <BudgetPlanner presupuestoItems={presupuestoItems} limites={limites} transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} onEjecutarPago={handleEjecutarPago} notifPermiso={notifPermiso} onActivarNotif={activarNotificaciones} />}
