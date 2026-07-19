@@ -4344,9 +4344,17 @@ const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, habi
         if (isTyping) return;
         const ordenados = [...coachMensajes]
             .sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''))
-            .map(m => ({ id: m.id, role: m.role, content: m.content }));
+            .map(m => ({ id: m.id, role: m.role, content: m.content, origin: m.origin }));
         setMessages(ordenados);
     }, [coachMensajes, isTyping]);
+
+    // Los mensajes proactivos (del agente programado de Claude) llegan como no
+    // leídos; al estar el chat abierto se marcan leídos (apaga el toast pendiente).
+    useEffect(() => {
+        coachMensajes
+            .filter(m => m.origin === 'proactivo' && m.read === false)
+            .forEach(m => genericUpdate('coach_mensajes', m.id, { read: true }));
+    }, [coachMensajes]);
 
     const handleNuevaConversacion = async () => {
         if (!coachMensajes.length) { setMessages([]); return; }
@@ -5055,7 +5063,10 @@ Máximo 4 viñetas cortas. Empieza con una frase tipo titular de una línea. Ton
                         </div>
                     ) : (
                         messages.map((m, i) => (
-                            <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                            <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
+                                {m.origin === 'proactivo' && (
+                                    <span className="text-[10px] font-bold text-indigo-400 mb-0.5 flex items-center gap-1"><Sparkles size={10} /> Mensaje proactivo</span>
+                                )}
                                 <div className={`max-w-[85%] rounded-2xl p-3 text-[13px] leading-relaxed shadow-sm ${m.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-sm' : 'bg-white text-slate-700 border border-slate-100 rounded-tl-sm'}`}>
                                     {m.role === 'assistant' ? (
                                         <div className="prose prose-sm max-w-none prose-p:my-1 prose-headings:my-2 prose-headings:text-indigo-700 marker:text-indigo-400" dangerouslySetInnerHTML={{__html: m.content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br/>')}} />
@@ -5813,6 +5824,26 @@ export default function App() {
             .then((n) => { if (n) console.log(`[rutina] ${n} recordatorios programados`); })
             .catch((e) => console.warn('No se pudieron programar recordatorios de rutina:', e));
     }, [user, rutina, recordatoriosOn]);
+
+    // Toast de mensajes proactivos del coach (escritorio): cuando el agente
+    // programado de Claude escribe en coach_mensajes, la app en la bandeja avisa.
+    // Solo mensajes creados DESPUÉS de abrir la app (evita re-avisar el historial)
+    // y solo una vez por mensaje en esta sesión.
+    const proactivosNotificados = useRef(new Set());
+    const inicioSesionApp = useRef(new Date().toISOString());
+    useEffect(() => {
+        if (!window.desktop?.isElectron) return;
+        coachMensajes
+            .filter(m => m.origin === 'proactivo' && m.read === false
+                && (m.createdAt || '') > inicioSesionApp.current
+                && !proactivosNotificados.current.has(m.id))
+            .forEach(m => {
+                proactivosNotificados.current.add(m.id);
+                const textoPlano = String(m.content || '').replace(/\*\*/g, '').replace(/\n+/g, ' ').slice(0, 120);
+                const n = new Notification('🧠 Tu coach — Finanzas 360', { body: textoPlano });
+                n.onclick = () => { window.focus(); window.desktop?.showWindow?.(); };
+            });
+    }, [coachMensajes]);
 
     // Notificaciones (avisos de límite de gastos)
     const [notifPermiso, setNotifPermiso] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'denied');
