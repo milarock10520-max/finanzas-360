@@ -4784,8 +4784,9 @@ export default function App() {
             timer = setTimeout(asegurarToken, espera);
         };
 
-        // En nativo la renovación es contra nuestro servidor: arranca de una.
-        if (Capacitor.isNativePlatform()) {
+        // En nativo y en escritorio (Electron) la renovación es contra nuestro
+        // servidor: arranca de una.
+        if (Capacitor.isNativePlatform() || window.desktop?.isElectron) {
             asegurarToken();
             return () => { cancelado = true; clearTimeout(timer); };
         }
