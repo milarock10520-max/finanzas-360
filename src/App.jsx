@@ -2661,6 +2661,474 @@ const MiDia = ({ user, habitos, diario, transacciones, presupuestoItems, saldoAc
 };
 
 // =============================================
+// === RUTINA SEMANAL (calendario de rutinas) ===
+// =============================================
+
+// Días en orden visual Lun→Dom; id sigue la convención de Date.getDay() (0=Dom).
+const DIAS_SEMANA = [
+    { id: 1, label: 'Lunes', corto: 'L' },
+    { id: 2, label: 'Martes', corto: 'M' },
+    { id: 3, label: 'Miércoles', corto: 'X' },
+    { id: 4, label: 'Jueves', corto: 'J' },
+    { id: 5, label: 'Viernes', corto: 'V' },
+    { id: 6, label: 'Sábado', corto: 'S' },
+    { id: 0, label: 'Domingo', corto: 'D' },
+];
+
+// Clases completas (no interpolar: el JIT de Tailwind necesita verlas literales).
+const RUTINA_COLORS = {
+    amarillo: { bg: 'bg-amber-100', border: 'border-amber-200', text: 'text-amber-800', dot: 'bg-amber-400' },
+    verde: { bg: 'bg-emerald-100', border: 'border-emerald-200', text: 'text-emerald-800', dot: 'bg-emerald-400' },
+    azul: { bg: 'bg-sky-100', border: 'border-sky-200', text: 'text-sky-800', dot: 'bg-sky-400' },
+    morado: { bg: 'bg-violet-100', border: 'border-violet-200', text: 'text-violet-800', dot: 'bg-violet-400' },
+    rosa: { bg: 'bg-pink-100', border: 'border-pink-200', text: 'text-pink-800', dot: 'bg-pink-400' },
+    naranja: { bg: 'bg-orange-100', border: 'border-orange-200', text: 'text-orange-800', dot: 'bg-orange-400' },
+    gris: { bg: 'bg-slate-100', border: 'border-slate-200', text: 'text-slate-700', dot: 'bg-slate-400' },
+};
+
+const RUTINA_EMOJIS = ['🌅', '💧', '🏋️', '🧘', '🏃', '🍳', '💻', '🥗', '🚶', '📊', '📚', '🎓', '🎸', '☕', '💪', '🍽️', '📝', '📖', '✅', '🌙', '😴', '📌'];
+
+const horaToMin = (hhmm) => {
+    const [h, m] = hhmm.split(':').map(Number);
+    return h * 60 + m;
+};
+
+// La grilla cubre 05:00–23:00 en pasos de 30 min: fila 1 = header, filas 2..37 = slots.
+const RUTINA_MIN_INICIO = 5 * 60;
+const RUTINA_MIN_FIN = 23 * 60;
+const rowFromHora = (hhmm) => {
+    const min = Math.min(Math.max(horaToMin(hhmm), RUTINA_MIN_INICIO), RUTINA_MIN_FIN);
+    return (min - RUTINA_MIN_INICIO) / 30 + 2;
+};
+
+// Opciones de hora en pasos de 30 min para los selects del editor.
+const HORAS_RUTINA = [];
+for (let m = RUTINA_MIN_INICIO; m <= RUTINA_MIN_FIN; m += 30) {
+    HORAS_RUTINA.push(`${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`);
+}
+
+// Plantilla inicial basada en el "Plan Semanal de Alto Rendimiento" del usuario.
+const PLANTILLA_RUTINA = [
+    { titulo: 'Levantarse + Agua', emoji: '🌅', color: 'amarillo', dias: [1, 2, 3, 4, 5], horaInicio: '05:30', horaFin: '06:30' },
+    { titulo: 'Gimnasio (Fuerza)', emoji: '🏋️', color: 'verde', dias: [1, 3, 5], horaInicio: '06:30', horaFin: '07:30' },
+    { titulo: 'Movilidad + Caminata', emoji: '🧘', color: 'verde', dias: [2], horaInicio: '06:30', horaFin: '07:30' },
+    { titulo: 'Cardio (Correr/Bici)', emoji: '🏃', color: 'verde', dias: [4], horaInicio: '06:30', horaFin: '07:30' },
+    { titulo: 'Desayuno saludable', emoji: '🍳', color: 'naranja', dias: [1, 2, 3, 4, 5], horaInicio: '07:30', horaFin: '08:00' },
+    { titulo: 'Trabajo Profundo', emoji: '💻', color: 'azul', dias: [1, 2, 3, 4, 5], horaInicio: '08:00', horaFin: '12:00' },
+    { titulo: 'Almuerzo + Caminata', emoji: '🥗', color: 'naranja', dias: [1, 2, 3, 4, 5], horaInicio: '12:00', horaFin: '13:00' },
+    { titulo: 'Trabajo / Reuniones', emoji: '📊', color: 'azul', dias: [1, 2, 3, 4, 5], horaInicio: '13:00', horaFin: '17:30' },
+    { titulo: 'Lectura Técnica', emoji: '📚', color: 'morado', dias: [1, 3, 5], horaInicio: '17:30', horaFin: '18:30' },
+    { titulo: 'Estudio / Aprender', emoji: '🎓', color: 'morado', dias: [2, 4], horaInicio: '17:30', horaFin: '18:30' },
+    { titulo: 'Instrumento musical', emoji: '🎸', color: 'rosa', dias: [1, 4], horaInicio: '18:30', horaFin: '20:00' },
+    { titulo: 'Tiempo personal', emoji: '☕', color: 'rosa', dias: [2, 5], horaInicio: '18:30', horaFin: '20:00' },
+    { titulo: 'Gimnasio ligero', emoji: '💪', color: 'rosa', dias: [3], horaInicio: '18:30', horaFin: '20:00' },
+    { titulo: 'Cena + Desconectar', emoji: '🍽️', color: 'naranja', dias: [1, 2, 3, 4, 5], horaInicio: '20:00', horaFin: '21:00' },
+    { titulo: 'Planificación + Notas', emoji: '📝', color: 'gris', dias: [1], horaInicio: '21:00', horaFin: '22:00' },
+    { titulo: 'Lectura personal', emoji: '📖', color: 'gris', dias: [2], horaInicio: '21:00', horaFin: '22:00' },
+    { titulo: 'Revisión de lo aprendido', emoji: '✅', color: 'gris', dias: [3], horaInicio: '21:00', horaFin: '22:00' },
+    { titulo: 'Meditación + Relajación', emoji: '🧘', color: 'gris', dias: [4], horaInicio: '21:00', horaFin: '22:00' },
+    { titulo: 'Revisión semanal', emoji: '✅', color: 'gris', dias: [5], horaInicio: '21:00', horaFin: '22:00' },
+    { titulo: 'Rutina de sueño', emoji: '🌙', color: 'gris', dias: [1, 2, 3, 4, 5], horaInicio: '22:00', horaFin: '22:30' },
+    { titulo: 'Dormir', emoji: '😴', color: 'gris', dias: [1, 2, 3, 4, 5], horaInicio: '22:30', horaFin: '23:00' },
+];
+
+const BloqueEditorModal = ({ editor, onClose, onSave, onDelete, googleToken, onCalendar, onTask, gFeedback }) => {
+    const esNuevo = editor.mode === 'new';
+    const base = esNuevo ? editor.defaults : editor.bloque;
+    const [titulo, setTitulo] = useState(base.titulo || '');
+    const [emoji, setEmoji] = useState(base.emoji || '📌');
+    const [color, setColor] = useState(base.color || 'azul');
+    const [dias, setDias] = useState([base.dia ?? 1]);
+    const [horaInicio, setHoraInicio] = useState(base.horaInicio || '08:00');
+    const [horaFin, setHoraFin] = useState(base.horaFin || '09:00');
+    const [notas, setNotas] = useState(base.notas || '');
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState('');
+
+    const toggleDia = (id) => {
+        setDias(prev => prev.includes(id) ? prev.filter(d => d !== id) : [...prev, id]);
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setError('');
+        if (!titulo.trim()) { setError('Ponle un nombre a la actividad.'); return; }
+        if (horaToMin(horaFin) <= horaToMin(horaInicio)) { setError('La hora de fin debe ser mayor que la de inicio.'); return; }
+        if (esNuevo && dias.length === 0) { setError('Elige al menos un día.'); return; }
+        setSaving(true);
+        await onSave({ titulo: titulo.trim(), emoji, color, horaInicio, horaFin, notas }, esNuevo ? dias : [dias[0]]);
+        setSaving(false);
+        onClose();
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-4" onClick={onClose}>
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+            <div
+                className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 animate-in slide-in-from-bottom duration-300 max-h-[90vh] overflow-y-auto no-scrollbar"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                        <CalendarClock className="text-blue-600" size={20} />
+                        {esNuevo ? 'Nuevo bloque' : 'Editar bloque'}
+                    </h3>
+                    <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                        <X size={20} className="text-slate-400" />
+                    </button>
+                </div>
+
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <input
+                        type="text"
+                        placeholder="Actividad (Ej: Gimnasio, Lectura...)"
+                        value={titulo}
+                        onChange={(e) => setTitulo(e.target.value)}
+                        className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors"
+                        autoFocus
+                    />
+
+                    <div>
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Emoji</p>
+                        <div className="grid grid-cols-8 gap-1">
+                            {RUTINA_EMOJIS.map(em => (
+                                <button
+                                    type="button"
+                                    key={em}
+                                    onClick={() => setEmoji(em)}
+                                    className={`text-xl p-1.5 rounded-lg transition-all ${emoji === em ? 'bg-blue-100 ring-2 ring-blue-400 scale-110' : 'hover:bg-slate-100'}`}
+                                >{em}</button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div>
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Color</p>
+                        <div className="flex gap-2">
+                            {Object.entries(RUTINA_COLORS).map(([key, c]) => (
+                                <button
+                                    type="button"
+                                    key={key}
+                                    onClick={() => setColor(key)}
+                                    className={`w-8 h-8 rounded-full ${c.dot} transition-all ${color === key ? 'ring-2 ring-offset-2 ring-slate-500 scale-110' : 'hover:scale-105'}`}
+                                />
+                            ))}
+                        </div>
+                    </div>
+
+                    <div>
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">{esNuevo ? 'Días (elige varios)' : 'Día'}</p>
+                        <div className="flex gap-1.5">
+                            {DIAS_SEMANA.map(d => (
+                                <button
+                                    type="button"
+                                    key={d.id}
+                                    onClick={() => esNuevo ? toggleDia(d.id) : setDias([d.id])}
+                                    className={`w-9 h-9 rounded-full text-sm font-bold transition-all ${dias.includes(d.id) ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 scale-105' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                                >{d.corto}</button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Inicio</p>
+                            <select value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} className="w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-500 bg-white">
+                                {HORAS_RUTINA.slice(0, -1).map(h => <option key={h} value={h}>{h}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Fin</p>
+                            <select value={horaFin} onChange={(e) => setHoraFin(e.target.value)} className="w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-500 bg-white">
+                                {HORAS_RUTINA.slice(1).map(h => <option key={h} value={h}>{h}</option>)}
+                            </select>
+                        </div>
+                    </div>
+
+                    <textarea
+                        placeholder="Notas (opcional)"
+                        value={notas}
+                        onChange={(e) => setNotas(e.target.value)}
+                        rows={2}
+                        className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors resize-none"
+                    />
+
+                    {error && <p className="text-sm text-rose-600 font-medium">{error}</p>}
+
+                    <div className="flex gap-2">
+                        <button type="submit" disabled={saving} className="flex-1 bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200 disabled:opacity-50">
+                            {saving ? 'Guardando...' : 'Guardar'}
+                        </button>
+                        {!esNuevo && (
+                            <button type="button" onClick={() => { if (window.confirm('¿Eliminar este bloque?')) { onDelete(editor.bloque); onClose(); } }} className="px-4 py-3 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-100 transition-colors">
+                                <Trash2 size={18} />
+                            </button>
+                        )}
+                    </div>
+
+                    {!esNuevo && (
+                        <div className="pt-3 border-t border-slate-100 space-y-2">
+                            {!googleToken ? (
+                                <p className="text-xs text-slate-400 text-center">Conecta Google en la pestaña Agenda para enviar este bloque a Calendar o Tasks.</p>
+                            ) : (
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button type="button" onClick={() => onCalendar(editor.bloque)} disabled={gFeedback.calendar === 'loading'} className="text-sm font-semibold py-2.5 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors disabled:opacity-50">
+                                        {gFeedback.calendar === 'ok' ? '✓ Enviado' : gFeedback.calendar === 'loading' ? 'Enviando...' : '📅 A Calendar'}
+                                    </button>
+                                    <button type="button" onClick={() => onTask(editor.bloque)} disabled={gFeedback.task === 'loading'} className="text-sm font-semibold py-2.5 rounded-xl bg-cyan-50 text-cyan-700 hover:bg-cyan-100 transition-colors disabled:opacity-50">
+                                        {gFeedback.task === 'ok' ? '✓ Creada' : gFeedback.task === 'loading' ? 'Creando...' : '✔️ A Tasks'}
+                                    </button>
+                                </div>
+                            )}
+                            {gFeedback.error && <p className="text-xs text-rose-600 text-center">{gFeedback.error}</p>}
+                        </div>
+                    )}
+                </form>
+            </div>
+        </div>
+    );
+};
+
+const RutinaSemanal = ({ rutina, genericAdd, genericUpdate, genericDelete, googleToken }) => {
+    const [editorState, setEditorState] = useState(null);
+    const [seeding, setSeeding] = useState(false);
+    const [diaMovil, setDiaMovil] = useState(new Date().getDay());
+    const [gFeedback, setGFeedback] = useState({});
+    const hoy = new Date().getDay();
+
+    const colDeDia = (dia) => DIAS_SEMANA.findIndex(d => d.id === dia) + 2;
+
+    // Orden estable para la cascada de entrada (por columna y hora).
+    const bloquesOrdenados = [...rutina].sort((a, b) =>
+        (colDeDia(a.dia) - colDeDia(b.dia)) || (horaToMin(a.horaInicio) - horaToMin(b.horaInicio))
+    );
+
+    const handleSave = async (datos, dias) => {
+        if (editorState?.mode === 'edit') {
+            await genericUpdate('rutina', editorState.bloque.id, { ...datos, dia: dias[0] });
+        } else {
+            for (const dia of dias) {
+                await genericAdd('rutina', { ...datos, dia, createdAt: new Date().toISOString() });
+            }
+        }
+    };
+
+    const handleDelete = (bloque) => genericDelete('rutina', bloque.id);
+
+    const usarPlantilla = async () => {
+        setSeeding(true);
+        try {
+            for (const b of PLANTILLA_RUTINA) {
+                for (const dia of b.dias) {
+                    await genericAdd('rutina', {
+                        titulo: b.titulo, emoji: b.emoji, color: b.color, dia,
+                        horaInicio: b.horaInicio, horaFin: b.horaFin, notas: '',
+                        createdAt: new Date().toISOString()
+                    });
+                }
+            }
+        } finally {
+            setSeeding(false);
+        }
+    };
+
+    // Próxima fecha real en la que cae este día/hora (si ya pasó, la semana que viene).
+    const proximaOcurrencia = (dia, hhmm) => {
+        const [h, m] = hhmm.split(':').map(Number);
+        const d = new Date();
+        d.setDate(d.getDate() + ((dia - d.getDay() + 7) % 7));
+        d.setHours(h, m, 0, 0);
+        if (d <= new Date()) d.setDate(d.getDate() + 7);
+        return d;
+    };
+
+    const enviarACalendar = async (bloque) => {
+        setGFeedback({ calendar: 'loading' });
+        try {
+            const inicio = proximaOcurrencia(bloque.dia, bloque.horaInicio);
+            const fin = new Date(inicio.getTime() + (horaToMin(bloque.horaFin) - horaToMin(bloque.horaInicio)) * 60000);
+            const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            const res = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${googleToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    summary: `${bloque.emoji} ${bloque.titulo}`,
+                    description: bloque.notas || 'Bloque de mi rutina semanal (Finanzas 360)',
+                    start: { dateTime: inicio.toISOString(), timeZone },
+                    end: { dateTime: fin.toISOString(), timeZone },
+                })
+            });
+            if (!res.ok) throw new Error(res.status === 401 ? 'Reconecta Google en la pestaña Agenda.' : 'Google rechazó el evento.');
+            setGFeedback({ calendar: 'ok' });
+        } catch (e) {
+            setGFeedback({ error: e.message });
+        }
+    };
+
+    const crearGoogleTask = async (bloque) => {
+        setGFeedback({ task: 'loading' });
+        try {
+            const res = await fetch('https://tasks.googleapis.com/tasks/v1/lists/@default/tasks', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${googleToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: `${bloque.emoji} ${bloque.titulo}`,
+                    notes: bloque.notas || 'Bloque de mi rutina semanal',
+                    due: proximaOcurrencia(bloque.dia, bloque.horaInicio).toISOString(),
+                })
+            });
+            if (!res.ok) throw new Error(res.status === 401 ? 'Reconecta Google en la pestaña Agenda.' : 'Google rechazó la tarea.');
+            setGFeedback({ task: 'ok' });
+        } catch (e) {
+            setGFeedback({ error: e.message });
+        }
+    };
+
+    const abrirNuevo = (defaults = {}) => {
+        setGFeedback({});
+        setEditorState({ mode: 'new', defaults: { dia: hoy, horaInicio: '08:00', horaFin: '09:00', ...defaults } });
+    };
+    const abrirEdicion = (bloque) => {
+        setGFeedback({});
+        setEditorState({ mode: 'edit', bloque });
+    };
+
+    const bloquesDelDia = (dia) => rutina.filter(b => b.dia === dia).sort((a, b) => horaToMin(a.horaInicio) - horaToMin(b.horaInicio));
+
+    return (
+        <div className="space-y-6 animate-in fade-in duration-500">
+            <div className="bg-gradient-to-br from-indigo-600 via-blue-600 to-cyan-600 text-white p-8 rounded-3xl shadow-lg animate-in slide-in-from-bottom duration-500">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                        <h2 className="text-2xl font-bold flex items-center gap-3"><CalendarClock size={28} /> Mi Rutina Semanal</h2>
+                        <p className="text-blue-100 mt-1 text-sm">Diseña tu semana ideal. Toca cualquier bloque para editarlo.</p>
+                    </div>
+                    <div className="flex gap-2">
+                        {rutina.length === 0 && (
+                            <button onClick={usarPlantilla} disabled={seeding} className="bg-white/20 backdrop-blur text-white font-bold px-4 py-2.5 rounded-xl hover:bg-white/30 transition-colors disabled:opacity-60">
+                                {seeding ? 'Creando rutina...' : '✨ Usar plantilla'}
+                            </button>
+                        )}
+                        <button onClick={() => abrirNuevo()} className="bg-white text-blue-900 font-bold px-4 py-2.5 rounded-xl hover:bg-blue-50 transition-colors">
+                            + Bloque
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {rutina.length === 0 && !seeding && (
+                <div className="bg-white p-10 rounded-2xl shadow-sm border border-slate-100 text-center animate-in zoom-in-95 duration-500">
+                    <p className="text-5xl mb-3">🗓️</p>
+                    <h3 className="text-lg font-bold text-slate-800">Tu semana está en blanco</h3>
+                    <p className="text-slate-500 text-sm mt-1 max-w-sm mx-auto">Empieza con la plantilla de alto rendimiento (gimnasio, trabajo profundo, lectura, sueño...) o crea tus propios bloques desde cero.</p>
+                </div>
+            )}
+
+            {rutina.length > 0 && (
+                <>
+                    {/* ===== Grilla semanal (desktop) ===== */}
+                    <div className="hidden md:block bg-white p-5 rounded-2xl shadow-sm border border-slate-100 overflow-x-auto">
+                        <div className="min-w-[860px]" style={{ display: 'grid', gridTemplateColumns: '3.5rem repeat(7, minmax(0, 1fr))', gridTemplateRows: 'auto repeat(36, 1.35rem)', gap: '2px' }}>
+                            <div style={{ gridColumn: 1, gridRow: 1 }} />
+                            {DIAS_SEMANA.map(d => (
+                                <div key={d.id} style={{ gridColumn: colDeDia(d.id), gridRow: 1 }} className={`text-center text-xs font-bold uppercase tracking-wider pb-2 ${d.id === hoy ? 'text-blue-600' : 'text-slate-400'}`}>
+                                    {d.label}
+                                </div>
+                            ))}
+
+                            {HORAS_RUTINA.filter(h => h.endsWith(':00')).map(h => (
+                                <div key={`t-${h}`} style={{ gridColumn: 1, gridRow: `${rowFromHora(h)} / span 2` }} className="text-[10px] text-slate-400 font-medium text-right pr-2 border-t border-slate-100">
+                                    {h}
+                                </div>
+                            ))}
+
+                            {DIAS_SEMANA.map(d => HORAS_RUTINA.filter(h => h.endsWith(':00')).map(h => (
+                                <button
+                                    key={`empty-${d.id}-${h}`}
+                                    onClick={() => abrirNuevo({ dia: d.id, horaInicio: h, horaFin: HORAS_RUTINA[HORAS_RUTINA.indexOf(h) + 2] || '23:00' })}
+                                    style={{ gridColumn: colDeDia(d.id), gridRow: `${rowFromHora(h)} / span 2`, zIndex: 0 }}
+                                    className={`rounded-lg border-t border-slate-50 transition-colors hover:bg-blue-50/60 ${d.id === hoy ? 'bg-blue-50/40' : ''}`}
+                                />
+                            )))}
+
+                            {bloquesOrdenados.map((b, i) => {
+                                const c = RUTINA_COLORS[b.color] || RUTINA_COLORS.gris;
+                                const filas = rowFromHora(b.horaFin) - rowFromHora(b.horaInicio);
+                                return (
+                                    <button
+                                        key={b.id}
+                                        onClick={() => abrirEdicion(b)}
+                                        style={{ gridColumn: colDeDia(b.dia), gridRow: `${rowFromHora(b.horaInicio)} / ${rowFromHora(b.horaFin)}`, zIndex: 10, animationDelay: `${i * 20}ms` }}
+                                        className={`rounded-xl border ${c.bg} ${c.border} ${c.text} px-1.5 py-1 text-left overflow-hidden hover:scale-[1.03] hover:shadow-md transition-all animate-in zoom-in-95 duration-500`}
+                                    >
+                                        <span className="block text-[11px] font-bold leading-tight truncate">{b.emoji} {b.titulo}</span>
+                                        {filas >= 3 && <span className="block text-[10px] opacity-70 mt-0.5">{b.horaInicio} – {b.horaFin}</span>}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* ===== Vista por día (móvil) ===== */}
+                    <div className="md:hidden space-y-4">
+                        <div className="flex gap-1.5 justify-between">
+                            {DIAS_SEMANA.map(d => (
+                                <button
+                                    key={d.id}
+                                    onClick={() => setDiaMovil(d.id)}
+                                    className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${diaMovil === d.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : d.id === hoy ? 'bg-blue-50 text-blue-600' : 'bg-white text-slate-400 border border-slate-100'}`}
+                                >{d.corto}</button>
+                            ))}
+                        </div>
+                        <div className="space-y-2">
+                            {bloquesDelDia(diaMovil).length === 0 && (
+                                <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 text-center text-slate-400 text-sm">
+                                    Sin bloques este día. ¡Añade uno!
+                                </div>
+                            )}
+                            {bloquesDelDia(diaMovil).map((b, i) => {
+                                const c = RUTINA_COLORS[b.color] || RUTINA_COLORS.gris;
+                                return (
+                                    <button
+                                        key={b.id}
+                                        onClick={() => abrirEdicion(b)}
+                                        style={{ animationDelay: `${i * 40}ms` }}
+                                        className={`w-full flex items-center gap-3 bg-white p-4 rounded-2xl shadow-sm border border-slate-100 border-l-4 text-left hover:shadow-md transition-all animate-in slide-in-from-bottom duration-300 ${c.border.replace('border-', 'border-l-')}`}
+                                    >
+                                        <span className={`w-10 h-10 flex items-center justify-center rounded-xl text-xl ${c.bg}`}>{b.emoji}</span>
+                                        <span className="flex-1 min-w-0">
+                                            <span className="block font-bold text-slate-800 text-sm truncate">{b.titulo}</span>
+                                            <span className="block text-xs text-slate-400">{b.horaInicio} – {b.horaFin}</span>
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                            <button onClick={() => abrirNuevo({ dia: diaMovil })} className="w-full py-3 rounded-2xl border-2 border-dashed border-slate-200 text-slate-400 text-sm font-semibold hover:border-blue-300 hover:text-blue-500 transition-colors">
+                                + Añadir bloque
+                            </button>
+                        </div>
+                    </div>
+                </>
+            )}
+
+            {editorState && (
+                <BloqueEditorModal
+                    key={editorState.mode === 'edit' ? editorState.bloque.id : 'nuevo'}
+                    editor={editorState}
+                    onClose={() => setEditorState(null)}
+                    onSave={handleSave}
+                    onDelete={handleDelete}
+                    googleToken={googleToken}
+                    onCalendar={enviarACalendar}
+                    onTask={crearGoogleTask}
+                    gFeedback={gFeedback}
+                />
+            )}
+        </div>
+    );
+};
+
+// =============================================
 // === CRYPTO HELPERS (AES-256-GCM + PBKDF2) ===
 // =============================================
 
@@ -4737,6 +5205,7 @@ export default function App() {
     // Hábitos & Settings
     const [habitos, setHabitos] = useState([]);
     const [diario, setDiario] = useState([]);
+    const [rutina, setRutina] = useState([]);
     const [coachMensajes, setCoachMensajes] = useState([]);
     const [coachPerfil, setCoachPerfil] = useState([]);
     // Token de Google Calendar persistido: sobrevive recargas mientras no caduque (~1h).
@@ -4965,13 +5434,16 @@ export default function App() {
         const unsubDiario = onSnapshot(collection(db, `${basePath}/diario`), (snap) =>
             setDiario(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
+        const unsubRutina = onSnapshot(collection(db, `${basePath}/rutina`), (snap) =>
+            setRutina(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+
         const unsubCoach = onSnapshot(collection(db, `${basePath}/coach_mensajes`), (snap) =>
             setCoachMensajes(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
         const unsubCoachPerfil = onSnapshot(collection(db, `${basePath}/coach_perfil`), (snap) =>
             setCoachPerfil(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
-        return () => { unsubTrans(); unsubDeudas(); unsubMetas(); unsubPresupuesto(); unsubLimites(); unsubPasswords(); unsubVaultConfig(); unsubHabitos(); unsubDiario(); unsubCoach(); unsubCoachPerfil(); };
+        return () => { unsubTrans(); unsubDeudas(); unsubMetas(); unsubPresupuesto(); unsubLimites(); unsubPasswords(); unsubVaultConfig(); unsubHabitos(); unsubDiario(); unsubRutina(); unsubCoach(); unsubCoachPerfil(); };
     }, [user]);
 
     // --- ACTIONS FIREBASE ---
@@ -5069,7 +5541,7 @@ export default function App() {
 
         try {
             setLoading(true);
-            const collections = ['transacciones', 'deudas', 'metas', 'presupuesto', 'limites', 'passwords', 'vault_config', 'habitos', 'diario', 'coach_mensajes', 'coach_perfil'];
+            const collections = ['transacciones', 'deudas', 'metas', 'presupuesto', 'limites', 'passwords', 'vault_config', 'habitos', 'diario', 'rutina', 'coach_mensajes', 'coach_perfil'];
             const { getDocs, setDoc, doc } = await import('firebase/firestore');
 
             let totalMigrated = 0;
@@ -5131,6 +5603,7 @@ export default function App() {
                     <div className="text-xs font-bold text-slate-400 uppercase tracking-widest px-4 mb-2 mt-2">Mi Vida</div>
                     <NavItem id="midia" icon={Sun} label="Mi Día" />
                     <NavItem id="habitos" icon={Flame} label="Hábitos" />
+                    <NavItem id="rutina" icon={CalendarClock} label="Rutina" />
 
                     <div className="text-xs font-bold text-slate-400 uppercase tracking-widest px-4 mb-2 mt-8">Principal</div>
                     <NavItem id="dashboard" icon={LayoutDashboard} label="Resumen" />
@@ -5207,6 +5680,12 @@ export default function App() {
                         <ListTodo size={20} />
                     </button>
                     <button
+                        onClick={() => setActiveTab('rutina')}
+                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${activeTab === 'rutina' ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-300' : 'bg-slate-100 text-slate-600'}`}
+                    >
+                        <CalendarClock size={20} />
+                    </button>
+                    <button
                         onClick={() => setActiveTab('passwords')}
                         className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${activeTab === 'passwords' ? 'bg-slate-800 text-white shadow-lg shadow-slate-300' : 'bg-slate-100 text-slate-600'}`}
                     >
@@ -5226,6 +5705,7 @@ export default function App() {
                 <div className="max-w-7xl mx-auto space-y-8">
                     {activeTab === 'midia' && <MiDia user={user} habitos={habitos} diario={diario} transacciones={transacciones} presupuestoItems={presupuestoItems} saldoActual={saldoActual} googleToken={googleToken} genericAdd={genericAdd} genericUpdate={genericUpdate} setActiveTab={setActiveTab} />}
                     {activeTab === 'habitos' && <HabitTracker habitos={habitos} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} />}
+                    {activeTab === 'rutina' && <RutinaSemanal rutina={rutina} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} googleToken={googleToken} />}
                     {activeTab === 'dashboard' && <DashboardView saldoActual={saldoActual} totalIngresos={totalIngresos} totalGastos={totalGastos} totalDeudaPendiente={totalDeudaPendiente} transacciones={transacciones} />}
                     {activeTab === 'analisis' && <FinancialAnalysis transacciones={transacciones} />}
                     {activeTab === 'presupuesto' && <BudgetPlanner presupuestoItems={presupuestoItems} limites={limites} transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} onEjecutarPago={handleEjecutarPago} notifPermiso={notifPermiso} onActivarNotif={activarNotificaciones} />}
