@@ -123,3 +123,55 @@ export async function programarAgendaDiaria(googleToken) {
     if (notifs.length) await LocalNotifications.schedule({ notifications: notifs });
     return notifs.length;
 }
+
+// =============================================
+// === Recordatorios de RUTINA (iOS) ===========
+// =============================================
+// Notificaciones locales semanales REPETITIVAS, una por bloque de rutina.
+// iOS permite máx. 64 pendientes: 7 son de la agenda diaria (ids 1000-1006),
+// así que la rutina usa ids 2000+ con tope de 57.
+
+const RUTINA_ID_BASE = 2000;
+const RUTINA_MAX = 57;
+
+export async function programarRecordatoriosRutina(rutina, activos) {
+    if (!Capacitor.isNativePlatform()) return 0;
+    let LocalNotifications;
+    try {
+        ({ LocalNotifications } = await import('@capacitor/local-notifications'));
+    } catch (e) {
+        return 0;
+    }
+
+    // Cancela SIEMPRE el rango completo antes de reprogramar (idempotente:
+    // sirve igual para apagar recordatorios que para reflejar ediciones).
+    const previas = Array.from({ length: RUTINA_MAX }, (_, i) => ({ id: RUTINA_ID_BASE + i }));
+    try { await LocalNotifications.cancel({ notifications: previas }); } catch (e) { /* */ }
+
+    if (!activos || !rutina.length) return 0;
+
+    const permiso = await LocalNotifications.requestPermissions();
+    if (permiso.display !== 'granted') return 0;
+
+    // Orden estable (día, hora); si excede el tope, se truncan los últimos.
+    const bloques = [...rutina]
+        .filter(b => b.horaInicio)
+        .sort((a, b) => (a.dia - b.dia) || a.horaInicio.localeCompare(b.horaInicio));
+    if (bloques.length > RUTINA_MAX) {
+        console.warn(`[rutina] ${bloques.length} bloques superan el tope de ${RUTINA_MAX} notificaciones; se truncan los últimos.`);
+    }
+
+    const notifs = bloques.slice(0, RUTINA_MAX).map((b, i) => {
+        const [hour, minute] = b.horaInicio.split(':').map(Number);
+        return {
+            id: RUTINA_ID_BASE + i,
+            title: `${b.emoji || '⏰'} ${b.titulo}`,
+            body: `${b.horaInicio} – ${b.horaFin}${b.notas ? ` · ${b.notas}` : ''}`,
+            // Weekday de Capacitor: 1=Domingo..7=Sábado; la app usa getDay (0=Dom).
+            schedule: { on: { weekday: b.dia + 1, hour, minute }, allowWhileIdle: true },
+        };
+    });
+
+    if (notifs.length) await LocalNotifications.schedule({ notifications: notifs });
+    return notifs.length;
+}

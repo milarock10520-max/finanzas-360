@@ -23,6 +23,7 @@ import {
     SlidersHorizontal,
     Sparkles,
     Bell,
+    BellOff,
     Coins,
     Calculator,
     Zap,
@@ -77,7 +78,8 @@ import {
     signOut
 } from 'firebase/auth';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
-import { programarAgendaDiaria } from './native/notificaciones';
+import { programarAgendaDiaria, programarRecordatoriosRutina } from './native/notificaciones';
+import { iniciarRecordatoriosRutina, recordatoriosActivos, setRecordatoriosActivos } from './native/recordatoriosRutina';
 import { conectarGoogle, obtenerTokenGoogle, desconectarGoogle } from './native/googleAuth';
 import {
     getFirestore,
@@ -2899,6 +2901,15 @@ const RutinaSemanal = ({ rutina, genericAdd, genericUpdate, genericDelete, googl
     const [gFeedback, setGFeedback] = useState({});
     const hoy = new Date().getDay();
 
+    // Campana de recordatorios: espejo del ajuste por dispositivo (sin props nuevas;
+    // el módulo de recordatorios emite un CustomEvent al cambiar desde aquí o el tray).
+    const [notifOn, setNotifOn] = useState(recordatoriosActivos());
+    useEffect(() => {
+        const h = (e) => setNotifOn(e.detail);
+        window.addEventListener('recordatorios:changed', h);
+        return () => window.removeEventListener('recordatorios:changed', h);
+    }, []);
+
     const colDeDia = (dia) => DIAS_SEMANA.findIndex(d => d.id === dia) + 2;
 
     // Orden estable para la cascada de entrada (por columna y hora).
@@ -3007,6 +3018,13 @@ const RutinaSemanal = ({ rutina, genericAdd, genericUpdate, genericDelete, googl
                         <p className="text-blue-100 mt-1 text-sm">Diseña tu semana ideal. Toca cualquier bloque para editarlo.</p>
                     </div>
                     <div className="flex gap-2">
+                        <button
+                            onClick={() => setRecordatoriosActivos(!notifOn)}
+                            title={notifOn ? 'Recordatorios activados' : 'Recordatorios desactivados'}
+                            className={`backdrop-blur font-bold px-3 py-2.5 rounded-xl transition-colors ${notifOn ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-white/10 text-blue-200 hover:bg-white/20'}`}
+                        >
+                            {notifOn ? <Bell size={18} /> : <BellOff size={18} />}
+                        </button>
                         {rutina.length === 0 && (
                             <button onClick={usarPlantilla} disabled={seeding} className="bg-white/20 backdrop-blur text-white font-bold px-4 py-2.5 rounded-xl hover:bg-white/30 transition-colors disabled:opacity-60">
                                 {seeding ? 'Creando rutina...' : '✨ Usar plantilla'}
@@ -5766,6 +5784,35 @@ export default function App() {
             .then((n) => { if (n) console.log(`[agenda] ${n} notificaciones programadas`); })
             .catch((e) => console.warn('No se pudieron programar notificaciones de agenda:', e));
     }, [user, googleToken]);
+
+    // Recordatorios de rutina: ajuste por dispositivo, espejado desde localStorage.
+    // Se actualiza vía CustomEvent (lo disparan la campana del hero y el tray).
+    const [recordatoriosOn, setRecordatoriosOn] = useState(recordatoriosActivos());
+
+    useEffect(() => {
+        const onChange = (e) => setRecordatoriosOn(e.detail);
+        window.addEventListener('recordatorios:changed', onChange);
+        // Handshake de arranque con Electron: informa a main el estado persistido
+        // (para el checkbox del tray) y escucha los toggles hechos desde el tray.
+        window.desktop?.setRecordatorios?.(recordatoriosActivos());
+        const off = window.desktop?.onRecordatoriosChanged?.((v) => setRecordatoriosActivos(v));
+        return () => { window.removeEventListener('recordatorios:changed', onChange); off?.(); };
+    }, []);
+
+    // Escritorio (Electron): cadena de setTimeout en el renderer que dispara
+    // toasts nativos de Windows al inicio de cada bloque de rutina.
+    useEffect(() => {
+        if (!recordatoriosOn) return;
+        return iniciarRecordatoriosRutina(rutina);
+    }, [rutina, recordatoriosOn]);
+
+    // iOS: notificaciones locales semanales repetitivas por bloque de rutina.
+    useEffect(() => {
+        if (!user) return;
+        programarRecordatoriosRutina(rutina, recordatoriosOn)
+            .then((n) => { if (n) console.log(`[rutina] ${n} recordatorios programados`); })
+            .catch((e) => console.warn('No se pudieron programar recordatorios de rutina:', e));
+    }, [user, rutina, recordatoriosOn]);
 
     // Notificaciones (avisos de límite de gastos)
     const [notifPermiso, setNotifPermiso] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'denied');
