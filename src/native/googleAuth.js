@@ -11,7 +11,7 @@
 import { Capacitor } from '@capacitor/core';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 
-const API_BASE = Capacitor.isNativePlatform()
+const API_BASE = (Capacitor.isNativePlatform() || window.desktop?.isElectron)
     ? 'https://finanzas-360.milarock10520.workers.dev'
     : '';
 
@@ -57,6 +57,45 @@ export async function obtenerTokenGoogle() {
 
 // Conecta Google con el login NATIVO (in-app) y deja la conexión permanente.
 export async function conectarGoogle() {
+    // Escritorio (Electron): el navegador del sistema hace el consentimiento
+    // (loopback RFC 8252) y ya devuelve un refresh_token directo (access_type=
+    // offline+prompt=consent), así que se lo mandamos al servidor tal cual en
+    // vez de un serverAuthCode para que lo guarde bajo el linkToken.
+    if (window.desktop?.isElectron) {
+        const { refreshToken, accessToken, expiresIn } = await window.desktop.connectGoogleCalendar();
+        const linkToken = getLinkToken();
+
+        if (refreshToken) {
+            try {
+                const res = await fetch(`${API_BASE}/api/google/connect`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ linkToken, refreshToken })
+                });
+                if (res.ok) {
+                    try { localStorage.setItem('google_connected', '1'); } catch (e) { /* */ }
+                    const r = await obtenerTokenGoogle().catch(() => null);
+                    if (r && r.token) return r;
+                } else {
+                    console.warn('Guardar refreshToken falló:', res.status);
+                }
+            } catch (e) {
+                console.warn('Error en /api/google/connect:', e);
+            }
+        }
+
+        if (accessToken) {
+            const expiresAt = Date.now() + ((Number(expiresIn) || 3600) * 1000);
+            try {
+                localStorage.setItem('google_calendar_token', JSON.stringify({ token: accessToken, expiresAt }));
+                if (refreshToken) localStorage.setItem('google_connected', '1');
+            } catch (e) { /* */ }
+            return { token: accessToken, expiresAt };
+        }
+
+        throw new Error('Google no devolvió credenciales válidas.');
+    }
+
     // 1) Login nativo: hoja de Google dentro de la app (no Safari). Pide permisos
     //    de Calendar/Tasks. Devuelve un serverAuthCode canjeable por refresh token.
     const result = await FirebaseAuthentication.signInWithGoogle({ scopes: GOOGLE_OAUTH_SCOPES });

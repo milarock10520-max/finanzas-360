@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
-const { signInWithGoogleDesktop } = require('./googleAuth.cjs');
+const { signInWithGoogleDesktop, connectGoogleCalendarDesktop } = require('./googleAuth.cjs');
 
 function createWindow() {
     const win = new BrowserWindow({
@@ -32,6 +32,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
     ipcMain.handle('auth:google-signin', () => signInWithGoogleDesktop());
+    ipcMain.handle('auth:google-connect-calendar', () => connectGoogleCalendarDesktop());
 
     createWindow();
 

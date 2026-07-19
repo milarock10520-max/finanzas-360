@@ -1,10 +1,16 @@
-// Login de Google para escritorio (Electron) usando el flujo "Desktop app" con
+// OAuth de Google para escritorio (Electron) usando el flujo "Desktop app" con
 // redirect loopback (RFC 8252): abrimos el navegador REAL del sistema (nunca una
 // ventana de Electron, porque Google bloquea el OAuth embebido), levantamos un
 // servidor HTTP temporal en 127.0.0.1 para recibir el `code`, y lo canjeamos por
-// tokens directamente con Google. El resultado ({ idToken, accessToken }) se le
-// pasa al renderer, que lo usa igual que la rama nativa de la app
-// (GoogleAuthProvider.credential + signInWithCredential).
+// tokens directamente con Google.
+//
+// Dos usos comparten el mismo mecanismo de loopback (runLoopbackAuth):
+//  - signInWithGoogleDesktop(): login principal de la app (idToken/accessToken
+//    para Firebase, igual que la rama nativa vía GoogleAuthProvider.credential).
+//  - connectGoogleCalendarDesktop(): conectar Calendar/Tasks (pide un
+//    refresh_token con access_type=offline+prompt=consent, que el renderer
+//    manda al servidor para guardarlo bajo el linkToken, igual que la conexión
+//    permanente nativa).
 
 const http = require('http');
 const fs = require('fs');
@@ -27,7 +33,7 @@ function loadOAuthConfig() {
     return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 }
 
-function signInWithGoogleDesktop() {
+function runLoopbackAuth({ scope, accessType, prompt }) {
     const { clientId, clientSecret } = loadOAuthConfig();
 
     return new Promise((resolve, reject) => {
@@ -83,7 +89,12 @@ function signInWithGoogleDesktop() {
                     finish(reject, new Error(data.error_description || data.error || 'Fallo al canjear el código de Google.'));
                     return;
                 }
-                finish(resolve, { idToken: data.id_token, accessToken: data.access_token });
+                finish(resolve, {
+                    idToken: data.id_token,
+                    accessToken: data.access_token,
+                    refreshToken: data.refresh_token,
+                    expiresIn: data.expires_in,
+                });
             } catch (e) {
                 finish(reject, e);
             }
@@ -104,12 +115,25 @@ function signInWithGoogleDesktop() {
             authUrl.searchParams.set('client_id', clientId);
             authUrl.searchParams.set('redirect_uri', redirectUri);
             authUrl.searchParams.set('response_type', 'code');
-            authUrl.searchParams.set('scope', 'openid email profile');
-            authUrl.searchParams.set('prompt', 'select_account');
+            authUrl.searchParams.set('scope', scope);
+            authUrl.searchParams.set('prompt', prompt);
+            if (accessType) authUrl.searchParams.set('access_type', accessType);
 
             shell.openExternal(authUrl.toString());
         });
     });
 }
 
-module.exports = { signInWithGoogleDesktop };
+function signInWithGoogleDesktop() {
+    return runLoopbackAuth({ scope: 'openid email profile', prompt: 'select_account' });
+}
+
+function connectGoogleCalendarDesktop() {
+    return runLoopbackAuth({
+        scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks',
+        accessType: 'offline',
+        prompt: 'consent',
+    });
+}
+
+module.exports = { signInWithGoogleDesktop, connectGoogleCalendarDesktop };

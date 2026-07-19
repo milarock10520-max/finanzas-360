@@ -106,16 +106,28 @@ export async function callbackGet(context) {
     }
 }
 
-// POST /api/google/connect  { linkToken, serverAuthCode }
+// POST /api/google/connect  { linkToken, serverAuthCode } o { linkToken, refreshToken }
 // Canjea el serverAuthCode del login NATIVO de Google (in-app) por un refresh
 // token y lo guarda bajo el linkToken. Es el flujo preferido (sin navegador).
+// Escritorio (Electron) ya hace su propio intercambio con su cliente OAuth de
+// "Desktop app" (loopback RFC 8252) y manda el refreshToken directo: en ese
+// caso solo lo guardamos, sin volver a canjear nada.
 export async function connectPost(context) {
     const { request, env } = context;
     try {
-        const { linkToken, serverAuthCode } = await request.json();
-        if (!linkToken || !serverAuthCode) {
+        const { linkToken, serverAuthCode, refreshToken } = await request.json();
+        if (!linkToken || (!serverAuthCode && !refreshToken)) {
             return new Response(JSON.stringify({ error: 'faltan_datos' }), { status: 400, headers: cors });
         }
+
+        if (refreshToken) {
+            await env.GOOGLE_TOKENS.put(`gauth:${linkToken}`, JSON.stringify({
+                refresh_token: refreshToken,
+                createdAt: Date.now()
+            }));
+            return new Response(JSON.stringify({ ok: true }), { status: 200, headers: cors });
+        }
+
         const clientId = env.GOOGLE_OAUTH_CLIENT_ID;
         const clientSecret = env.GOOGLE_OAUTH_CLIENT_SECRET;
 

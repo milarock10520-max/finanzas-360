@@ -4197,10 +4197,11 @@ const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/calendar.events https://w
 const GOOGLE_API_SCOPES = ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/tasks'];
 
 const requestGoogleToken = (interactive) => {
-    // App nativa (iOS): flujo OAuth del lado del servidor (conexión permanente).
-    // interactive=true abre el navegador para autorizar una vez; interactive=false
-    // pide un token fresco al servidor en silencio (renovación sin UI).
-    if (Capacitor.isNativePlatform()) {
+    // App nativa (iOS) o escritorio (Electron): flujo OAuth del lado del servidor
+    // (conexión permanente). interactive=true abre el navegador para autorizar
+    // una vez; interactive=false pide un token fresco al servidor en silencio
+    // (renovación sin UI).
+    if (Capacitor.isNativePlatform() || window.desktop?.isElectron) {
         return interactive ? conectarGoogle() : obtenerTokenGoogle();
     }
 
