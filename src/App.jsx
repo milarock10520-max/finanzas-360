@@ -64,7 +64,9 @@ import {
     Mic,
     ArrowLeft,
     Archive,
-    FolderKanban
+    FolderKanban,
+    Server,
+    FileCode
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import {
@@ -3470,7 +3472,334 @@ const ProyectoEditorModal = ({ proyecto, onClose, onSave }) => {
     );
 };
 
-const ProyectoDetail = ({ proyecto, items, onBack, onEdit, genericAdd, genericUpdate, genericDelete }) => {
+// =============================================
+// === CREDENCIALES CIFRADAS POR PROYECTO ===
+// =============================================
+// Cada credencial guarda UN solo blob cifrado (AES-256-GCM) con todo lo
+// sensible junto: {valor, usuario, url, notas}. En Firestore queda en claro
+// únicamente la etiqueta y el tipo — lo mínimo para poder listar y avisar
+// vencimientos con la bóveda bloqueada. A diferencia de la colección
+// `passwords`, aquí ni el usuario ni la URL son visibles: en infraestructura
+// el metadato ya es media credencial (revela host, motor y usuario de servicio).
+//
+// Los helpers de cifrado y VaultLockScreen se declaran más abajo en el archivo;
+// como solo se usan en tiempo de render, el orden no importa.
+
+const TIPOS_CREDENCIAL = {
+    apikey: { label: 'API Key / Token', icon: KeyRound, bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-200', dot: 'bg-violet-400' },
+    acceso: { label: 'Acceso (usuario/clave)', icon: Lock, bg: 'bg-sky-50', text: 'text-sky-700', border: 'border-sky-200', dot: 'bg-sky-400' },
+    conexion: { label: 'Cadena de conexión', icon: Server, bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', dot: 'bg-amber-400' },
+    bloque: { label: 'Bloque (SSH / PEM / .env)', icon: FileCode, bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-400' },
+};
+
+const ENTORNOS = ['', 'dev', 'staging', 'prod'];
+const OCULTAR_SECRETO_MS = 30000;
+const LIMPIAR_PORTAPAPELES_MS = 45000;
+
+const ProyectoCredenciales = ({ proyectoId, credenciales, vault, genericAdd, genericUpdate, genericDelete }) => {
+    const [showForm, setShowForm] = useState(false);
+    const [tipo, setTipo] = useState('apikey');
+    const [nombre, setNombre] = useState('');
+    const [valor, setValor] = useState('');
+    const [usuario, setUsuario] = useState('');
+    const [url, setUrl] = useState('');
+    const [notas, setNotas] = useState('');
+    const [entorno, setEntorno] = useState('');
+    const [expiraEn, setExpiraEn] = useState('');
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState('');
+    const [busqueda, setBusqueda] = useState('');
+    const [revelados, setRevelados] = useState({}); // id -> payload descifrado
+    const [copiedId, setCopiedId] = useState(null);
+    const timersRef = useRef({});
+
+    // Si la bóveda se bloquea (pestaña, inactividad o botón), se borra de
+    // memoria todo lo que estaba descifrado.
+    useEffect(() => {
+        if (!vault.isUnlocked) setRevelados({});
+    }, [vault.isUnlocked]);
+
+    useEffect(() => () => {
+        Object.values(timersRef.current).forEach(clearTimeout);
+    }, []);
+
+    if (!vault.isUnlocked) {
+        return (
+            <VaultLockScreen
+                vault={vault}
+                titulo="Credenciales del Proyecto"
+                subtitulo="Usa la misma clave maestra de tu bóveda de contraseñas"
+            />
+        );
+    }
+
+    const limpiarForm = () => {
+        setNombre(''); setValor(''); setUsuario(''); setUrl('');
+        setNotas(''); setEntorno(''); setExpiraEn(''); setError('');
+    };
+
+    const handleAdd = async (e) => {
+        e.preventDefault();
+        vault.touch();
+        if (!nombre.trim() || !valor.trim()) { setError('Falta el nombre o el valor.'); return; }
+        if (!vault.salt) { setError('La bóveda aún no está lista, intenta de nuevo.'); return; }
+        setSaving(true);
+        try {
+            const payload = JSON.stringify({
+                valor,
+                usuario: usuario || '',
+                url: url || '',
+                notas: notas || '',
+            });
+            const cifrado = await encryptText(payload, vault.masterPassword, vault.salt, vault.iterations);
+            await genericAdd('proyecto_credenciales', {
+                proyectoId,
+                nombre: nombre.trim(),
+                tipo,
+                entorno,
+                expiraEn: expiraEn || null,
+                secretoEncrypted: cifrado.ciphertext,
+                iv: cifrado.iv,
+                createdAt: new Date().toISOString(),
+            });
+            limpiarForm();
+            setShowForm(false);
+        } catch (err) {
+            setError('No se pudo cifrar la credencial.');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    // Descifrado defensivo: decryptText devuelve null si la clave no sirve, y
+    // JSON.parse(null) explota.
+    const descifrar = async (cred) => {
+        try {
+            const json = await decryptText(
+                { ciphertext: cred.secretoEncrypted, iv: cred.iv },
+                vault.masterPassword, vault.salt, vault.iterations
+            );
+            if (!json) return null;
+            return JSON.parse(json);
+        } catch (err) {
+            return null;
+        }
+    };
+
+    const toggleRevelar = async (cred) => {
+        vault.touch();
+        if (revelados[cred.id]) {
+            clearTimeout(timersRef.current[cred.id]);
+            setRevelados(prev => { const p = { ...prev }; delete p[cred.id]; return p; });
+            return;
+        }
+        const payload = await descifrar(cred);
+        if (!payload) { setError('No se pudo descifrar esa credencial.'); return; }
+        setRevelados(prev => ({ ...prev, [cred.id]: payload }));
+        // Se vuelve a ocultar sola para no dejarla expuesta en pantalla.
+        timersRef.current[cred.id] = setTimeout(() => {
+            setRevelados(prev => { const p = { ...prev }; delete p[cred.id]; return p; });
+        }, OCULTAR_SECRETO_MS);
+    };
+
+    const copiar = async (cred, campo = 'valor') => {
+        vault.touch();
+        const payload = revelados[cred.id] || await descifrar(cred);
+        if (!payload) { setError('No se pudo descifrar esa credencial.'); return; }
+        await navigator.clipboard.writeText(payload[campo] || '');
+        setCopiedId(cred.id + campo);
+        setTimeout(() => setCopiedId(null), 2000);
+        // Limpieza parcial del portapapeles (ver aviso en la UI).
+        setTimeout(() => {
+            if (!document.hasFocus()) return;
+            navigator.clipboard.writeText('').catch(() => {});
+        }, LIMPIAR_PORTAPAPELES_MS);
+    };
+
+    const eliminar = (cred) => {
+        vault.touch();
+        if (!window.confirm(`¿Eliminar la credencial "${cred.nombre}"? No se puede recuperar.`)) return;
+        clearTimeout(timersRef.current[cred.id]);
+        genericDelete('proyecto_credenciales', cred.id);
+    };
+
+    const lista = credenciales
+        .filter(c => !busqueda || `${c.nombre} ${c.entorno || ''}`.toLowerCase().includes(busqueda.toLowerCase()))
+        .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+    const campos = {
+        apikey: { valorLabel: 'API key / token', multilinea: false, usaUsuario: false, usaUrl: false, usaExpira: true },
+        acceso: { valorLabel: 'Contraseña', multilinea: false, usaUsuario: true, usaUrl: true, usaExpira: false },
+        conexion: { valorLabel: 'Cadena de conexión', multilinea: false, usaUsuario: false, usaUrl: false, usaExpira: false },
+        bloque: { valorLabel: 'Contenido (SSH / PEM / .env)', multilinea: true, usaUsuario: false, usaUrl: false, usaExpira: false },
+    }[tipo];
+
+    return (
+        <div className="space-y-4 animate-in fade-in duration-500">
+            <div className="bg-slate-800 text-white rounded-2xl p-4 flex items-start gap-3">
+                <Shield size={20} className="shrink-0 mt-0.5 text-emerald-400" />
+                <div className="text-xs leading-relaxed">
+                    <p className="font-bold text-sm mb-0.5">Cifrado en tu dispositivo</p>
+                    <p className="text-slate-300">
+                        El valor, usuario, URL y notas se cifran con tu clave maestra antes de salir del equipo.
+                        En la nube solo queda el nombre y el tipo. La bóveda se bloquea sola tras 5 min sin actividad.
+                    </p>
+                </div>
+            </div>
+
+            <div className="flex gap-2">
+                <div className="relative flex-1">
+                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+                    <input
+                        type="text" placeholder="Buscar credencial..." value={busqueda}
+                        onChange={e => setBusqueda(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 border-2 border-slate-200 rounded-xl outline-none focus:border-slate-500 text-sm"
+                    />
+                </div>
+                <button onClick={() => { setShowForm(!showForm); setError(''); }} className="bg-slate-800 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-slate-900 transition-colors shrink-0">
+                    {showForm ? 'Cancelar' : '+ Credencial'}
+                </button>
+                <button onClick={() => vault.lock()} title="Bloquear bóveda" className="bg-slate-100 text-slate-500 px-3 py-2 rounded-xl hover:bg-slate-200 transition-colors shrink-0">
+                    <Lock size={16} />
+                </button>
+            </div>
+
+            {showForm && (
+                <form onSubmit={handleAdd} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-3 animate-in zoom-in-95 duration-300">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        {Object.entries(TIPOS_CREDENCIAL).map(([id, t]) => {
+                            const Icono = t.icon;
+                            return (
+                                <button type="button" key={id} onClick={() => setTipo(id)}
+                                    className={`flex items-center gap-1.5 px-2 py-2 rounded-xl text-xs font-bold border-2 transition-all ${tipo === id ? `${t.bg} ${t.text} ${t.border}` : 'bg-white text-slate-400 border-slate-100 hover:border-slate-200'}`}>
+                                    <Icono size={14} /> <span className="truncate">{t.label.split(' ')[0]}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    <input
+                        type="text" placeholder='Nombre (ej: "Stripe producción") — visible sin descifrar'
+                        value={nombre} onChange={e => setNombre(e.target.value)}
+                        className="w-full px-3 py-2 border-2 border-slate-200 rounded-xl outline-none focus:border-slate-500 text-sm" required
+                    />
+
+                    {campos.usaUsuario && (
+                        <input type="text" placeholder="Usuario" value={usuario} onChange={e => setUsuario(e.target.value)}
+                            className="w-full px-3 py-2 border-2 border-slate-200 rounded-xl outline-none focus:border-slate-500 text-sm" />
+                    )}
+
+                    {campos.multilinea ? (
+                        <textarea
+                            placeholder={campos.valorLabel} value={valor} onChange={e => setValor(e.target.value)}
+                            rows={6} maxLength={65536} required
+                            className="w-full px-3 py-2 border-2 border-slate-200 rounded-xl outline-none focus:border-slate-500 text-xs font-mono resize-y"
+                        />
+                    ) : (
+                        <input type="text" placeholder={campos.valorLabel} value={valor} onChange={e => setValor(e.target.value)}
+                            className="w-full px-3 py-2 border-2 border-slate-200 rounded-xl outline-none focus:border-slate-500 text-sm font-mono" required />
+                    )}
+
+                    {campos.usaUrl && (
+                        <input type="text" placeholder="URL / host" value={url} onChange={e => setUrl(e.target.value)}
+                            className="w-full px-3 py-2 border-2 border-slate-200 rounded-xl outline-none focus:border-slate-500 text-sm" />
+                    )}
+
+                    <div className="flex gap-2">
+                        <select value={entorno} onChange={e => setEntorno(e.target.value)}
+                            className="flex-1 px-3 py-2 border-2 border-slate-200 rounded-xl outline-none focus:border-slate-500 text-sm bg-white">
+                            {ENTORNOS.map(en => <option key={en} value={en}>{en ? en.toUpperCase() : 'Sin entorno'}</option>)}
+                        </select>
+                        {campos.usaExpira && (
+                            <input type="date" value={expiraEn} onChange={e => setExpiraEn(e.target.value)} title="Fecha de expiración"
+                                className="flex-1 px-3 py-2 border-2 border-slate-200 rounded-xl outline-none focus:border-slate-500 text-sm text-slate-500" />
+                        )}
+                    </div>
+
+                    <input type="text" placeholder="Notas (se cifran)" value={notas} onChange={e => setNotas(e.target.value)}
+                        className="w-full px-3 py-2 border-2 border-slate-200 rounded-xl outline-none focus:border-slate-500 text-sm" />
+
+                    {error && <p className="text-xs text-rose-600 font-medium">{error}</p>}
+
+                    <button type="submit" disabled={saving} className="w-full bg-slate-800 text-white font-bold py-2.5 rounded-xl hover:bg-slate-900 transition-colors disabled:opacity-50">
+                        {saving ? 'Cifrando...' : '🔐 Guardar cifrada'}
+                    </button>
+                </form>
+            )}
+
+            {error && !showForm && <p className="text-xs text-rose-600 font-medium">{error}</p>}
+
+            {lista.length === 0 ? (
+                <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 text-center text-slate-400 text-sm">
+                    Sin credenciales guardadas. Aquí puedes tener las API keys y accesos del proyecto, cifrados de punta a punta.
+                </div>
+            ) : (
+                <div className="space-y-2">
+                    {lista.map((cred, i) => {
+                        const t = TIPOS_CREDENCIAL[cred.tipo] || TIPOS_CREDENCIAL.apikey;
+                        const Icono = t.icon;
+                        const abierto = revelados[cred.id];
+                        const vencida = cred.expiraEn && cred.expiraEn < dateKey();
+                        const porVencer = cred.expiraEn && !vencida && (new Date(cred.expiraEn) - new Date()) < 14 * 86400000;
+                        return (
+                            <div key={cred.id} style={{ animationDelay: `${i * 30}ms` }} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 animate-in zoom-in-95 duration-300">
+                                <div className="flex items-start gap-3">
+                                    <span className={`w-9 h-9 flex items-center justify-center rounded-xl shrink-0 ${t.bg} ${t.text}`}>
+                                        <Icono size={17} />
+                                    </span>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <h4 className="font-bold text-slate-800 text-sm truncate">{cred.nombre}</h4>
+                                            {cred.entorno && (
+                                                <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${cred.entorno === 'prod' ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-500'}`}>{cred.entorno}</span>
+                                            )}
+                                            {vencida && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-600">⚠ Vencida {cred.expiraEn}</span>}
+                                            {porVencer && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">📅 Vence {cred.expiraEn}</span>}
+                                        </div>
+                                        <p className="text-[11px] text-slate-400">{t.label}</p>
+                                    </div>
+                                    <div className="flex items-center gap-1 shrink-0">
+                                        <button onClick={() => toggleRevelar(cred)} title={abierto ? 'Ocultar' : 'Revelar'}
+                                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
+                                            {abierto ? <EyeOff size={16} /> : <Eye size={16} />}
+                                        </button>
+                                        <button onClick={() => copiar(cred, 'valor')} title="Copiar valor"
+                                            className={`p-1.5 rounded-lg transition-colors ${copiedId === cred.id + 'valor' ? 'bg-emerald-100 text-emerald-600' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'}`}>
+                                            {copiedId === cred.id + 'valor' ? <CheckCircle2 size={16} /> : <Copy size={16} />}
+                                        </button>
+                                        <button onClick={() => eliminar(cred)} className="p-1.5 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition-colors">
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {abierto && (
+                                    <div className="mt-3 pt-3 border-t border-slate-50 space-y-2 animate-in fade-in duration-300">
+                                        {abierto.usuario && (
+                                            <p className="text-xs text-slate-500">Usuario: <span className="font-mono font-bold text-slate-700">{abierto.usuario}</span>
+                                                <button onClick={() => copiar(cred, 'usuario')} className="ml-2 text-slate-300 hover:text-slate-600 align-middle"><Copy size={12} /></button>
+                                            </p>
+                                        )}
+                                        {abierto.url && <p className="text-xs text-slate-500">URL: <span className="font-mono text-slate-700 break-all">{abierto.url}</span></p>}
+                                        {cred.tipo === 'bloque' ? (
+                                            <pre className="max-h-48 overflow-auto text-xs font-mono bg-slate-50 p-3 rounded-xl whitespace-pre-wrap break-all text-slate-700">{abierto.valor}</pre>
+                                        ) : (
+                                            <p className="text-xs font-mono bg-slate-50 p-2.5 rounded-xl break-all text-slate-700">{abierto.valor}</p>
+                                        )}
+                                        {abierto.notas && <p className="text-xs text-slate-400 italic">{abierto.notas}</p>}
+                                        <p className="text-[10px] text-slate-300">Se oculta sola en 30 s · al copiar, el portapapeles se limpia en 45 s (el historial de Windows Win+V puede conservarlo)</p>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const ProyectoDetail = ({ proyecto, items, credenciales = [], vault, onBack, onEdit, genericAdd, genericUpdate, genericDelete }) => {
     const [vista, setVista] = useState('tareas');
     const [nuevaTarea, setNuevaTarea] = useState('');
     const [nuevaPrioridad, setNuevaPrioridad] = useState('media');
@@ -3501,6 +3830,7 @@ const ProyectoDetail = ({ proyecto, items, onBack, onEdit, genericAdd, genericUp
         { id: 'avances', label: `Avances${avances.length ? ` (${avances.length})` : ''}` },
         { id: 'notas', label: `Notas${notas.length ? ` (${notas.length})` : ''}` },
         { id: 'metas', label: `Metas${metas.length ? ` (${metas.length})` : ''}` },
+        { id: 'credenciales', label: `🔐 Credenciales${credenciales.length ? ` (${credenciales.length})` : ''}` },
     ];
 
     const NOTA_COLORES = ['amarillo', 'verde', 'azul', 'rosa', 'naranja'];
@@ -3673,6 +4003,17 @@ const ProyectoDetail = ({ proyecto, items, onBack, onEdit, genericAdd, genericUp
                 </div>
             )}
 
+            {vista === 'credenciales' && (
+                <ProyectoCredenciales
+                    proyectoId={proyecto.id}
+                    credenciales={credenciales}
+                    vault={vault}
+                    genericAdd={genericAdd}
+                    genericUpdate={genericUpdate}
+                    genericDelete={genericDelete}
+                />
+            )}
+
             {vista === 'metas' && (
                 <div className="space-y-4">
                     <form
@@ -3721,7 +4062,7 @@ const ProyectoDetail = ({ proyecto, items, onBack, onEdit, genericAdd, genericUp
     );
 };
 
-const ProyectosSection = ({ proyectos, proyectoItems, genericAdd, genericUpdate, genericDelete }) => {
+const ProyectosSection = ({ proyectos, proyectoItems, proyectoCredenciales = [], vault, genericAdd, genericUpdate, genericDelete }) => {
     const [selectedProjectId, setSelectedProjectId] = useState(null);
     const [editorProyecto, setEditorProyecto] = useState(null); // null | 'nuevo' | proyecto
     const [showArchived, setShowArchived] = useState(false);
@@ -3744,6 +4085,8 @@ const ProyectosSection = ({ proyectos, proyectoItems, genericAdd, genericUpdate,
                 <ProyectoDetail
                     proyecto={proyectoActual}
                     items={proyectoItems.filter(i => i.proyectoId === proyectoActual.id)}
+                    credenciales={proyectoCredenciales.filter(c => c.proyectoId === proyectoActual.id)}
+                    vault={vault}
                     onBack={() => setSelectedProjectId(null)}
                     onEdit={() => setEditorProyecto(proyectoActual)}
                     genericAdd={genericAdd}
@@ -3946,43 +4289,36 @@ const CAT_COLORS = {
 };
 
 // =============================================
-// === COMPONENTE: PASSWORD VAULT ===
+// === SESIÓN DE BÓVEDA (compartida) ===
 // =============================================
+// La clave maestra vive SOLO en memoria (estado de React): nunca se guarda en
+// localStorage ni viaja al servidor. Este hook la comparte entre la bóveda de
+// contraseñas y las credenciales de proyectos (misma clave para ambas).
+//
+// OJO: al compartirla dejó de destruirse sola al desmontar la pestaña de
+// contraseñas, así que el bloqueo por inactividad de abajo NO es opcional:
+// es justamente lo que compensa esa protección.
 
-const PasswordVault = ({ passwords, vaultConfig, genericAdd, genericUpdate, genericDelete, user, db, activeTab }) => {
+const VAULT_TABS = ['passwords', 'proyectos'];
+const VAULT_IDLE_MS = 5 * 60 * 1000;
+
+const useVaultSession = (vaultConfig, activeTab, genericAdd, genericUpdate) => {
     const [isUnlocked, setIsUnlocked] = useState(false);
     const [masterPassword, setMasterPassword] = useState('');
-    const [masterInput, setMasterInput] = useState('');
-    const [confirmInput, setConfirmInput] = useState('');
     const [isCreatingMaster, setIsCreatingMaster] = useState(false);
     const [error, setError] = useState('');
     const [salt, setSalt] = useState(null);
     const [iterations, setIterations] = useState(PBKDF2_ITERATIONS);
+    const lastActivity = useRef(Date.now());
 
-    // Form states
-    const [servicio, setServicio] = useState('');
-    const [usuario, setUsuario] = useState('');
-    const [passwordInput, setPasswordInput] = useState('');
-    const [categoria, setCategoria] = useState(CATEGORIAS_PASSWORDS[0]);
-    const [url, setUrl] = useState('');
-    const [searchQuery, setSearchQuery] = useState('');
-    const [showPasswords, setShowPasswords] = useState({});
-    const [decryptedCache, setDecryptedCache] = useState({});
-    const [copiedId, setCopiedId] = useState(null);
-    const [editingId, setEditingId] = useState(null);
-    const [editForm, setEditForm] = useState({});
+    const lock = () => {
+        setIsUnlocked(false);
+        setMasterPassword('');
+        setError('');
+    };
+    const touch = () => { lastActivity.current = Date.now(); };
 
-    // Auto-lock on tab change
-    useEffect(() => {
-        if (activeTab !== 'passwords') {
-            setIsUnlocked(false);
-            setMasterPassword('');
-            setDecryptedCache({});
-            setShowPasswords({});
-        }
-    }, [activeTab]);
-
-    // Check if vault already has a master password
+    // ¿Ya existe bóveda creada?
     useEffect(() => {
         if (vaultConfig && vaultConfig.length > 0) {
             setIsCreatingMaster(false);
@@ -3998,31 +4334,55 @@ const PasswordVault = ({ passwords, vaultConfig, genericAdd, genericUpdate, gene
         }
     }, [vaultConfig]);
 
-    const handleCreateMaster = async (e) => {
-        e.preventDefault();
-        if (masterInput.length < 10) { setError('Usa al menos 10 caracteres (mejor una frase larga)'); return; }
-        if (masterInput !== confirmInput) { setError('Las claves no coinciden'); return; }
+    // Bloqueo al salir de las pestañas que usan la bóveda.
+    useEffect(() => {
+        if (!VAULT_TABS.includes(activeTab)) lock();
+    }, [activeTab]);
+
+    // Bloqueo por inactividad. Compara contra Date.now() real porque el
+    // navegador estrangula los timers cuando la ventana está en segundo plano.
+    useEffect(() => {
+        if (!isUnlocked) return;
+        lastActivity.current = Date.now();
+        const marcar = () => { lastActivity.current = Date.now(); };
+        const onVisibility = () => { if (!document.hidden) marcar(); };
+        window.addEventListener('mousedown', marcar);
+        window.addEventListener('keydown', marcar);
+        document.addEventListener('visibilitychange', onVisibility);
+        const timer = setInterval(() => {
+            if (Date.now() - lastActivity.current > VAULT_IDLE_MS) lock();
+        }, 30000);
+        return () => {
+            window.removeEventListener('mousedown', marcar);
+            window.removeEventListener('keydown', marcar);
+            document.removeEventListener('visibilitychange', onVisibility);
+            clearInterval(timer);
+        };
+    }, [isUnlocked]);
+
+    const createMaster = async (input, confirm) => {
+        if (input.length < 10) { setError('Usa al menos 10 caracteres (mejor una frase larga)'); return false; }
+        if (input !== confirm) { setError('Las claves no coinciden'); return false; }
 
         const newSalt = crypto.getRandomValues(new Uint8Array(16));
         const saltB64 = btoa(String.fromCharCode(...newSalt));
         // Verificador: ciframos un texto fijo con la clave maestra. Para
         // desbloquear hay que poder descifrarlo (no se guarda ningún hash
         // rápido que pueda atacarse offline).
-        const verifier = await encryptText(VAULT_VERIFIER_TEXT, masterInput, newSalt, PBKDF2_ITERATIONS);
+        const verifier = await encryptText(VAULT_VERIFIER_TEXT, input, newSalt, PBKDF2_ITERATIONS);
 
         await genericAdd('vault_config', { salt: saltB64, iterations: PBKDF2_ITERATIONS, verifier });
         setSalt(newSalt);
         setIterations(PBKDF2_ITERATIONS);
-        setMasterPassword(masterInput);
+        setMasterPassword(input);
         setIsUnlocked(true);
-        setMasterInput('');
-        setConfirmInput('');
         setError('');
+        touch();
+        return true;
     };
 
-    const handleUnlock = async (e) => {
-        e.preventDefault();
-        if (!vaultConfig || vaultConfig.length === 0) return;
+    const unlock = async (input) => {
+        if (!vaultConfig || vaultConfig.length === 0) return false;
         const config = vaultConfig[0];
         const saltBytes = new Uint8Array(atob(config.salt).split('').map(c => c.charCodeAt(0)));
         const iters = config.iterations || LEGACY_PBKDF2_ITERATIONS;
@@ -4030,16 +4390,16 @@ const PasswordVault = ({ passwords, vaultConfig, genericAdd, genericUpdate, gene
         let ok = false;
         if (config.verifier) {
             // Esquema nuevo: desbloqueo = poder descifrar el verificador.
-            const dec = await decryptText(config.verifier, masterInput, saltBytes, iters);
+            const dec = await decryptText(config.verifier, input, saltBytes, iters);
             ok = dec === VAULT_VERIFIER_TEXT;
         } else if (config.masterHash) {
             // Esquema antiguo: hash rápido. Si coincide, MIGRAMOS a verificador
             // y eliminamos el hash para cerrar el ataque offline.
-            const inputHash = await hashText(masterInput + config.salt);
+            const inputHash = await hashText(input + config.salt);
             ok = inputHash === config.masterHash;
             if (ok) {
                 try {
-                    const verifier = await encryptText(VAULT_VERIFIER_TEXT, masterInput, saltBytes, iters);
+                    const verifier = await encryptText(VAULT_VERIFIER_TEXT, input, saltBytes, iters);
                     await genericUpdate('vault_config', config.id, {
                         verifier, iterations: iters, masterHash: null
                     });
@@ -4048,16 +4408,120 @@ const PasswordVault = ({ passwords, vaultConfig, genericAdd, genericUpdate, gene
         }
 
         if (ok) {
-            setMasterPassword(masterInput);
+            setMasterPassword(input);
             setSalt(saltBytes);
             setIterations(iters);
             setIsUnlocked(true);
-            setMasterInput('');
             setError('');
+            touch();
         } else {
             setError('Clave maestra incorrecta');
         }
+        return ok;
     };
+
+    return {
+        isUnlocked, masterPassword, salt, iterations, isCreatingMaster,
+        error, setError, createMaster, unlock, lock, touch,
+    };
+};
+
+// Pantalla de crear/desbloquear bóveda. La usan tanto la bóveda de contraseñas
+// como las credenciales de proyectos; los inputs viven aquí para que se
+// descarten al desmontar.
+const VaultLockScreen = ({ vault, titulo, subtitulo }) => {
+    const [masterInput, setMasterInput] = useState('');
+    const [confirmInput, setConfirmInput] = useState('');
+    const { isCreatingMaster, error, setError } = vault;
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        const ok = isCreatingMaster
+            ? await vault.createMaster(masterInput, confirmInput)
+            : await vault.unlock(masterInput);
+        if (ok) { setMasterInput(''); setConfirmInput(''); }
+    };
+
+    return (
+        <div className="flex items-center justify-center min-h-[60vh] animate-in fade-in duration-500">
+            <div className="bg-white rounded-3xl shadow-xl border border-slate-100 p-10 w-full max-w-md text-center">
+                <div className="w-20 h-20 bg-gradient-to-br from-slate-700 to-slate-900 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg">
+                    <Lock size={36} className="text-white" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-800 mb-2">
+                    {isCreatingMaster ? 'Crear Clave Maestra' : (titulo || 'Bóveda de Contraseñas')}
+                </h2>
+                <p className="text-slate-400 text-sm mb-6">
+                    {isCreatingMaster
+                        ? 'Crea una clave maestra fuerte (mínimo 10 caracteres; ideal una frase larga). No la olvides — no se puede recuperar y de ella depende toda la seguridad.'
+                        : (subtitulo || 'Ingresa tu clave maestra para acceder')
+                    }
+                </p>
+
+                {error && (
+                    <div className="bg-rose-50 border border-rose-200 text-rose-600 text-sm p-3 rounded-xl mb-4 flex items-center gap-2">
+                        <AlertTriangle size={14} /> {error}
+                    </div>
+                )}
+
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <input
+                        type="password" placeholder="Clave Maestra" value={masterInput}
+                        onChange={e => { setMasterInput(e.target.value); setError(''); }}
+                        className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl outline-none focus:border-slate-700 text-center text-lg tracking-widest transition-colors"
+                        required autoFocus
+                    />
+                    {isCreatingMaster && (
+                        <input
+                            type="password" placeholder="Confirmar Clave" value={confirmInput}
+                            onChange={e => { setConfirmInput(e.target.value); setError(''); }}
+                            className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl outline-none focus:border-slate-700 text-center text-lg tracking-widest transition-colors"
+                            required
+                        />
+                    )}
+                    <button type="submit" className="w-full bg-slate-800 text-white py-3 rounded-xl font-bold hover:bg-slate-900 transition-colors shadow-lg">
+                        {isCreatingMaster ? '🔐 Crear Bóveda' : '🔓 Desbloquear'}
+                    </button>
+                </form>
+
+                {isCreatingMaster && (
+                    <div className="mt-6 bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700">
+                        <strong>⚠️ Importante:</strong> Si olvidas tu clave maestra, no podrás recuperar tus contraseñas.
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// =============================================
+// === COMPONENTE: PASSWORD VAULT ===
+// =============================================
+
+const PasswordVault = ({ passwords, vault, genericAdd, genericUpdate, genericDelete, user, db }) => {
+    const { isUnlocked, masterPassword, salt, iterations } = vault;
+
+    // Form states
+    const [servicio, setServicio] = useState('');
+    const [usuario, setUsuario] = useState('');
+    const [passwordInput, setPasswordInput] = useState('');
+    const [categoria, setCategoria] = useState(CATEGORIAS_PASSWORDS[0]);
+    const [url, setUrl] = useState('');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [showPasswords, setShowPasswords] = useState({});
+    const [decryptedCache, setDecryptedCache] = useState({});
+    const [copiedId, setCopiedId] = useState(null);
+    const [editingId, setEditingId] = useState(null);
+    const [editForm, setEditForm] = useState({});
+
+    // Al bloquearse la bóveda (por pestaña, inactividad o botón) se tira todo
+    // lo que quedó descifrado en memoria.
+    useEffect(() => {
+        if (!isUnlocked) {
+            setDecryptedCache({});
+            setShowPasswords({});
+        }
+    }, [isUnlocked]);
 
     const handleAddPassword = async (e) => {
         e.preventDefault();
@@ -4130,56 +4594,7 @@ const PasswordVault = ({ passwords, vaultConfig, genericAdd, genericUpdate, gene
 
     // --- LOCK SCREEN ---
     if (!isUnlocked) {
-        return (
-            <div className="flex items-center justify-center min-h-[60vh] animate-in fade-in duration-500">
-                <div className="bg-white rounded-3xl shadow-xl border border-slate-100 p-10 w-full max-w-md text-center">
-                    <div className="w-20 h-20 bg-gradient-to-br from-slate-700 to-slate-900 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg">
-                        <Lock size={36} className="text-white" />
-                    </div>
-                    <h2 className="text-2xl font-bold text-slate-800 mb-2">
-                        {isCreatingMaster ? 'Crear Clave Maestra' : 'Bóveda de Contraseñas'}
-                    </h2>
-                    <p className="text-slate-400 text-sm mb-6">
-                        {isCreatingMaster
-                            ? 'Crea una clave maestra fuerte (mínimo 10 caracteres; ideal una frase larga). No la olvides — no se puede recuperar y de ella depende toda la seguridad.'
-                            : 'Ingresa tu clave maestra para acceder'
-                        }
-                    </p>
-
-                    {error && (
-                        <div className="bg-rose-50 border border-rose-200 text-rose-600 text-sm p-3 rounded-xl mb-4 flex items-center gap-2">
-                            <AlertTriangle size={14} /> {error}
-                        </div>
-                    )}
-
-                    <form onSubmit={isCreatingMaster ? handleCreateMaster : handleUnlock} className="space-y-4">
-                        <input
-                            type="password" placeholder="Clave Maestra" value={masterInput}
-                            onChange={e => { setMasterInput(e.target.value); setError(''); }}
-                            className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl outline-none focus:border-slate-700 text-center text-lg tracking-widest transition-colors"
-                            required autoFocus
-                        />
-                        {isCreatingMaster && (
-                            <input
-                                type="password" placeholder="Confirmar Clave" value={confirmInput}
-                                onChange={e => { setConfirmInput(e.target.value); setError(''); }}
-                                className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl outline-none focus:border-slate-700 text-center text-lg tracking-widest transition-colors"
-                                required
-                            />
-                        )}
-                        <button type="submit" className="w-full bg-slate-800 text-white py-3 rounded-xl font-bold hover:bg-slate-900 transition-colors shadow-lg">
-                            {isCreatingMaster ? '🔐 Crear Bóveda' : '🔓 Desbloquear'}
-                        </button>
-                    </form>
-
-                    {isCreatingMaster && (
-                        <div className="mt-6 bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700">
-                            <strong>⚠️ Importante:</strong> Si olvidas tu clave maestra, no podrás recuperar tus contraseñas.
-                        </div>
-                    )}
-                </div>
-            </div>
-        );
+        return <VaultLockScreen vault={vault} />;
     }
 
     // --- VAULT UNLOCKED ---
@@ -4197,7 +4612,7 @@ const PasswordVault = ({ passwords, vaultConfig, genericAdd, genericUpdate, gene
                             <p className="text-slate-400 text-sm">{passwords.length} credencial{passwords.length !== 1 ? 'es' : ''} guardada{passwords.length !== 1 ? 's' : ''} • Cifrado AES-256</p>
                         </div>
                     </div>
-                    <button onClick={() => { setIsUnlocked(false); setMasterPassword(''); setDecryptedCache({}); setShowPasswords({}); }}
+                    <button onClick={() => vault.lock()}
                         className="flex items-center gap-2 bg-white/10 hover:bg-white/20 px-4 py-2 rounded-xl text-sm font-medium transition-colors border border-white/10">
                         <Lock size={16} /> Bloquear Bóveda
                     </button>
@@ -5943,6 +6358,7 @@ export default function App() {
     const [rutina, setRutina] = useState([]);
     const [proyectos, setProyectos] = useState([]);
     const [proyectoItems, setProyectoItems] = useState([]);
+    const [proyectoCredenciales, setProyectoCredenciales] = useState([]);
     const [coachMensajes, setCoachMensajes] = useState([]);
     const [coachPerfil, setCoachPerfil] = useState([]);
     // Token de Google Calendar persistido: sobrevive recargas mientras no caduque (~1h).
@@ -6229,13 +6645,18 @@ export default function App() {
         const unsubProyectoItems = onSnapshot(collection(db, `${basePath}/proyecto_items`), (snap) =>
             setProyectoItems(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
+        // Credenciales de proyecto: lo que llega aquí ya viene cifrado; solo se
+        // descifra en memoria al desbloquear la bóveda.
+        const unsubProyectoCredenciales = onSnapshot(collection(db, `${basePath}/proyecto_credenciales`), (snap) =>
+            setProyectoCredenciales(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+
         const unsubCoach = onSnapshot(collection(db, `${basePath}/coach_mensajes`), (snap) =>
             setCoachMensajes(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
         const unsubCoachPerfil = onSnapshot(collection(db, `${basePath}/coach_perfil`), (snap) =>
             setCoachPerfil(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
-        return () => { unsubTrans(); unsubDeudas(); unsubMetas(); unsubPresupuesto(); unsubLimites(); unsubPasswords(); unsubVaultConfig(); unsubHabitos(); unsubDiario(); unsubRutina(); unsubProyectos(); unsubProyectoItems(); unsubCoach(); unsubCoachPerfil(); };
+        return () => { unsubTrans(); unsubDeudas(); unsubMetas(); unsubPresupuesto(); unsubLimites(); unsubPasswords(); unsubVaultConfig(); unsubHabitos(); unsubDiario(); unsubRutina(); unsubProyectos(); unsubProyectoItems(); unsubProyectoCredenciales(); unsubCoach(); unsubCoachPerfil(); };
     }, [user]);
 
     // --- ACTIONS FIREBASE ---
@@ -6274,6 +6695,9 @@ export default function App() {
         return deleteDoc(doc(db, `artifacts/${appId}/users/${user.uid}/${coll}`, id));
     };
 
+    // Sesión de bóveda compartida entre Contraseñas y las credenciales de
+    // Proyectos (la clave maestra solo vive aquí, en memoria).
+    const vault = useVaultSession(vaultConfig, activeTab, genericAdd, genericUpdate);
 
     // --- HANDLER PARA PRESUPUESTO ---
     const handleEjecutarPago = (item) => {
@@ -6333,7 +6757,7 @@ export default function App() {
 
         try {
             setLoading(true);
-            const collections = ['transacciones', 'deudas', 'metas', 'presupuesto', 'limites', 'passwords', 'vault_config', 'habitos', 'diario', 'rutina', 'proyectos', 'proyecto_items', 'coach_mensajes', 'coach_perfil'];
+            const collections = ['transacciones', 'deudas', 'metas', 'presupuesto', 'limites', 'passwords', 'vault_config', 'habitos', 'diario', 'rutina', 'proyectos', 'proyecto_items', 'proyecto_credenciales', 'coach_mensajes', 'coach_perfil'];
             const { getDocs, setDoc, doc } = await import('firebase/firestore');
 
             let totalMigrated = 0;
@@ -6505,7 +6929,7 @@ export default function App() {
                     {activeTab === 'midia' && <MiDia user={user} habitos={habitos} diario={diario} transacciones={transacciones} presupuestoItems={presupuestoItems} saldoActual={saldoActual} googleToken={googleToken} genericAdd={genericAdd} genericUpdate={genericUpdate} setActiveTab={setActiveTab} />}
                     {activeTab === 'habitos' && <HabitTracker habitos={habitos} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} />}
                     {activeTab === 'rutina' && <RutinaSemanal rutina={rutina} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} googleToken={googleToken} />}
-                    {activeTab === 'proyectos' && <ProyectosSection proyectos={proyectos} proyectoItems={proyectoItems} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} />}
+                    {activeTab === 'proyectos' && <ProyectosSection proyectos={proyectos} proyectoItems={proyectoItems} proyectoCredenciales={proyectoCredenciales} vault={vault} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} />}
                     {activeTab === 'dashboard' && <DashboardView saldoActual={saldoActual} totalIngresos={totalIngresos} totalGastos={totalGastos} totalDeudaPendiente={totalDeudaPendiente} transacciones={transacciones} />}
                     {activeTab === 'analisis' && <FinancialAnalysis transacciones={transacciones} />}
                     {activeTab === 'presupuesto' && <BudgetPlanner presupuestoItems={presupuestoItems} limites={limites} transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} onEjecutarPago={handleEjecutarPago} notifPermiso={notifPermiso} onActivarNotif={activarNotificaciones} />}
@@ -6514,7 +6938,7 @@ export default function App() {
                     {activeTab === 'gastos' && <TransactionManager tipo="gasto" transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} prefillData={prefillData} setPrefillData={setPrefillData} activeTab={activeTab} pendingBudgetId={pendingBudgetId} setPendingBudgetId={setPendingBudgetId} setActiveTab={setActiveTab} />}
                     {activeTab === 'deudas' && <DebtManager deudas={deudas} genericAdd={genericAdd} genericUpdate={genericUpdate} />}
                     {activeTab === 'metas' && <GoalTracker metas={metas} transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} />}
-                    {activeTab === 'passwords' && <PasswordVault passwords={passwords} vaultConfig={vaultConfig} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} user={user} db={db} activeTab={activeTab} />}
+                    {activeTab === 'passwords' && <PasswordVault passwords={passwords} vault={vault} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} user={user} db={db} />}
                     {activeTab === 'agenda' && <ProductivityHub genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} googleToken={googleToken} setGoogleToken={setGoogleToken} />}
                 </div>
             </main>
