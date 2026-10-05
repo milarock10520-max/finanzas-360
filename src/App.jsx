@@ -66,7 +66,10 @@ import {
     Archive,
     FolderKanban,
     Server,
-    FileCode
+    FileCode,
+    ChevronLeft,
+    ChevronRight,
+    ChevronDown
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import {
@@ -851,84 +854,494 @@ const DashboardView = ({ saldoActual, totalIngresos, totalGastos, totalDeudaPend
     </div>
 );
 
-const FinancialAnalysis = ({ transacciones }) => {
-    const [mesSeleccionado, setMesSeleccionado] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
+// --- ANÁLISIS MENSUAL: INFORME COMPLETO DE EN QUÉ SE VA EL DINERO ---
+const COLORES_ANALISIS = ['#6366f1', '#f43f5e', '#10b981', '#f59e0b', '#06b6d4', '#8b5cf6', '#ec4899', '#84cc16', '#f97316', '#14b8a6', '#64748b'];
+const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const MESES_LARGOS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const DIAS_SEMANA_CORTOS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
-    const transaccionesMes = transacciones.filter(t => t.fecha && t.fecha.startsWith(mesSeleccionado));
+// Desplaza un mes 'YYYY-MM' n meses (n negativo = hacia atrás)
+const desplazarMes = (ym, n) => {
+    const [y, m] = ym.split('-').map(Number);
+    const d = new Date(y, m - 1 + n, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
+const etiquetaMesLarga = (ym) => {
+    const [y, m] = ym.split('-').map(Number);
+    return `${MESES_LARGOS[m - 1]} de ${y}`;
+};
 
-    const ingresosMes = transaccionesMes.filter(t => t.tipo === 'ingreso').reduce((acc, curr) => acc + (Number(curr.monto) || 0), 0);
-    // Los aportes a inversión NO cuentan como gasto real (no es consumo, es mover dinero a tu patrimonio)
-    const gastosMes = transaccionesMes.filter(t => t.tipo === 'gasto' && !t.esInversion && !t.esAhorro).reduce((acc, curr) => acc + (Number(curr.monto) || 0), 0);
-    const balanceMes = ingresosMes - gastosMes;
+const esGastoConsumo = (t) => t.tipo === 'gasto' && !t.esInversion && !t.esAhorro;
+const sumaMonto = (lista) => lista.reduce((acc, t) => acc + (Number(t.monto) || 0), 0);
 
-    const gastosPorCategoria = transaccionesMes
-        .filter(t => t.tipo === 'gasto' && !t.esInversion && !t.esAhorro)
-        .reduce((acc, curr) => {
-            acc[curr.categoria] = (acc[curr.categoria] || 0) + (Number(curr.monto) || 0);
+// Etiqueta de variación porcentual. "subirEsMalo" invierte los colores (gastos).
+const Variacion = ({ actual, anterior, subirEsMalo = false }) => {
+    if (!anterior) return <span className="text-xs text-slate-400">sin datos del mes anterior</span>;
+    const pct = ((actual - anterior) / anterior) * 100;
+    if (Math.abs(pct) < 0.5) return <span className="text-xs text-slate-400">igual que el mes anterior</span>;
+    const sube = pct > 0;
+    const malo = subirEsMalo ? sube : !sube;
+    return (
+        <span className={`inline-flex items-center gap-1 text-xs font-semibold ${malo ? 'text-rose-600' : 'text-emerald-600'}`}>
+            {sube ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
+            {sube ? '+' : ''}{pct.toFixed(1)}% vs mes anterior
+        </span>
+    );
+};
+
+const FinancialAnalysis = ({ transacciones, limites = [] }) => {
+    const hoyMes = new Date().toISOString().slice(0, 7);
+    const [mes, setMes] = useState(hoyMes); // YYYY-MM
+    const [categoriaAbierta, setCategoriaAbierta] = useState(null);
+
+    const datos = useMemo(() => {
+        const delMes = (ym) => transacciones.filter(t => t.fecha && t.fecha.startsWith(ym));
+        const resumen = (ym) => {
+            const lista = delMes(ym);
+            return {
+                ingresos: sumaMonto(lista.filter(t => t.tipo === 'ingreso')),
+                gastos: sumaMonto(lista.filter(esGastoConsumo)),
+            };
+        };
+
+        const txMes = delMes(mes);
+        const gastosLista = txMes.filter(esGastoConsumo);
+        const ingresosLista = txMes.filter(t => t.tipo === 'ingreso');
+        const ingresos = sumaMonto(ingresosLista);
+        const gastos = sumaMonto(gastosLista);
+        const invertido = sumaMonto(txMes.filter(t => t.tipo === 'gasto' && (t.esInversion || t.categoria === 'Aporte Inversión')));
+        const ahorrado = sumaMonto(txMes.filter(t => t.tipo === 'gasto' && t.esAhorro));
+        const balance = ingresos - gastos;
+        const tasaAhorro = ingresos > 0 ? (balance / ingresos) * 100 : null;
+
+        const prevMes = desplazarMes(mes, -1);
+        const prev = resumen(prevMes);
+        const gastosPrevLista = delMes(prevMes).filter(esGastoConsumo);
+
+        // Por categoría (mes actual y anterior)
+        const agrupar = (lista) => lista.reduce((acc, t) => {
+            const c = t.categoria || 'Sin categoría';
+            if (!acc[c]) acc[c] = { total: 0, n: 0, items: [] };
+            acc[c].total += Number(t.monto) || 0;
+            acc[c].n += 1;
+            acc[c].items.push(t);
             return acc;
         }, {});
+        const porCat = agrupar(gastosLista);
+        const porCatPrev = agrupar(gastosPrevLista);
+        const categorias = Object.entries(porCat)
+            .map(([nombre, v]) => ({
+                nombre,
+                total: v.total,
+                n: v.n,
+                items: [...v.items].sort((a, b) => (Number(b.monto) || 0) - (Number(a.monto) || 0)),
+                anterior: porCatPrev[nombre]?.total || 0,
+                pct: gastos > 0 ? (v.total / gastos) * 100 : 0,
+            }))
+            .sort((a, b) => b.total - a.total)
+            .map((c, i) => ({ ...c, color: COLORES_ANALISIS[i % COLORES_ANALISIS.length] }));
 
-    const sortedCategorias = Object.entries(gastosPorCategoria)
-        .sort(([, a], [, b]) => b - a);
+        // Por día del mes
+        const [y, m] = mes.split('-').map(Number);
+        const diasMes = new Date(y, m, 0).getDate();
+        const porDia = Array.from({ length: diasMes }, () => 0);
+        gastosLista.forEach(t => {
+            const d = parseInt(t.fecha.slice(8, 10), 10);
+            if (d >= 1 && d <= diasMes) porDia[d - 1] += Number(t.monto) || 0;
+        });
+        const maxDia = Math.max(...porDia, 0);
+        const diaMasCaro = maxDia > 0 ? porDia.indexOf(maxDia) + 1 : null;
+        const diasConGasto = porDia.filter(v => v > 0).length;
 
-    const maxGasto = sortedCategorias.length > 0 ? sortedCategorias[0][1] : 0;
+        // Por día de la semana (total y promedio por ocurrencia de ese día en el mes)
+        const totalSemana = Array(7).fill(0);
+        const vecesSemana = Array(7).fill(0);
+        for (let d = 1; d <= diasMes; d++) vecesSemana[new Date(y, m - 1, d).getDay()] += 1;
+        gastosLista.forEach(t => {
+            const d = parseInt(t.fecha.slice(8, 10), 10);
+            if (d >= 1 && d <= diasMes) totalSemana[new Date(y, m - 1, d).getDay()] += Number(t.monto) || 0;
+        });
+        const promedioSemana = totalSemana.map((tot, i) => (vecesSemana[i] ? tot / vecesSemana[i] : 0));
+        const maxSemana = Math.max(...promedioSemana, 0);
+
+        // Ritmo / proyección (solo el mes en curso)
+        const esMesActual = mes === hoyMes;
+        const diaHoy = new Date().getDate();
+        const diasTranscurridos = esMesActual ? diaHoy : diasMes;
+        const promedioDiario = diasTranscurridos > 0 ? gastos / diasTranscurridos : 0;
+        const proyeccion = esMesActual ? promedioDiario * diasMes : null;
+
+        // Mayores gastos individuales y conceptos que más se repiten
+        const mayores = [...gastosLista].sort((a, b) => (Number(b.monto) || 0) - (Number(a.monto) || 0)).slice(0, 8);
+        const porConcepto = gastosLista.reduce((acc, t) => {
+            const clave = (t.concepto || 'Sin concepto').trim().toLowerCase();
+            if (!acc[clave]) acc[clave] = { nombre: (t.concepto || 'Sin concepto').trim(), total: 0, n: 0 };
+            acc[clave].total += Number(t.monto) || 0;
+            acc[clave].n += 1;
+            return acc;
+        }, {});
+        const conceptosTop = Object.values(porConcepto).sort((a, b) => b.total - a.total).slice(0, 8);
+
+        // Gastos hormiga
+        const hormigaLista = gastosLista.filter(t => t.categoria === 'Gastos Hormiga');
+        const hormiga = sumaMonto(hormigaLista);
+
+        // Tendencia de los últimos 6 meses
+        const tendencia = Array.from({ length: 6 }, (_, i) => {
+            const ym = desplazarMes(mes, i - 5);
+            return { ym, ...resumen(ym) };
+        });
+        const maxTendencia = Math.max(...tendencia.map(t => Math.max(t.ingresos, t.gastos)), 0);
+        const mesesConGasto = tendencia.filter(t => t.gastos > 0);
+        const promedio6m = mesesConGasto.length > 0 ? mesesConGasto.reduce((a, t) => a + t.gastos, 0) / mesesConGasto.length : 0;
+
+        // Límites por categoría
+        const limitesEstado = limites
+            .map(l => {
+                const gastado = porCat[l.categoria]?.total || 0;
+                const tope = Number(l.limite) || 0;
+                return { categoria: l.categoria, gastado, tope, pct: tope > 0 ? (gastado / tope) * 100 : 0 };
+            })
+            .sort((a, b) => b.pct - a.pct);
+
+        // Lectura rápida (hallazgos automáticos)
+        const hallazgos = [];
+        if (gastosLista.length > 0) {
+            if (ingresos > 0) {
+                const p = (gastos / ingresos) * 100;
+                hallazgos.push({ tipo: p > 90 ? 'warn' : p > 70 ? 'info' : 'ok', texto: `Gastaste ${formatCurrency(gastos)}, el ${p.toFixed(0)}% de tus ingresos del mes.` });
+            } else {
+                hallazgos.push({ tipo: 'info', texto: `Gastaste ${formatCurrency(gastos)} y no registraste ingresos en este mes.` });
+            }
+            if (balance < 0) hallazgos.push({ tipo: 'warn', texto: `Gastaste ${formatCurrency(-balance)} más de lo que ingresó este mes.` });
+            const top = categorias[0];
+            hallazgos.push({ tipo: top.pct >= 50 ? 'warn' : 'info', texto: `Tu mayor gasto es "${top.nombre}": ${formatCurrency(top.total)} (${top.pct.toFixed(0)}% del total).` });
+            if (categorias.length >= 3) {
+                const top3 = categorias.slice(0, 3).reduce((a, c) => a + c.pct, 0);
+                hallazgos.push({ tipo: 'info', texto: `Solo 3 categorías concentran el ${top3.toFixed(0)}% de tus gastos.` });
+            }
+            if (prev.gastos > 0) {
+                const dif = gastos - prev.gastos;
+                const p = (dif / prev.gastos) * 100;
+                hallazgos.push({
+                    tipo: dif > 0 ? 'warn' : 'ok',
+                    texto: dif > 0
+                        ? `Gastaste ${formatCurrency(dif)} más (+${p.toFixed(0)}%) que en ${etiquetaMesLarga(prevMes)}.`
+                        : `Gastaste ${formatCurrency(-dif)} menos (${p.toFixed(0)}%) que en ${etiquetaMesLarga(prevMes)}.`,
+                });
+                const sube = categorias.filter(c => c.anterior > 0 || c.total > 0).map(c => ({ ...c, dif: c.total - c.anterior })).sort((a, b) => b.dif - a.dif)[0];
+                if (sube && sube.dif > 0 && prev.gastos > 0) {
+                    hallazgos.push({ tipo: 'warn', texto: `La categoría que más subió fue "${sube.nombre}": +${formatCurrency(sube.dif)} frente al mes anterior.` });
+                }
+            }
+            if (hormiga > 0) {
+                hallazgos.push({ tipo: 'info', texto: `Los gastos hormiga sumaron ${formatCurrency(hormiga)} en ${hormigaLista.length} compra${hormigaLista.length === 1 ? '' : 's'} (${((hormiga / gastos) * 100).toFixed(0)}% del gasto).` });
+            }
+            if (diaMasCaro) hallazgos.push({ tipo: 'info', texto: `El día de mayor gasto fue el ${diaMasCaro}: ${formatCurrency(maxDia)}.` });
+            if (proyeccion !== null && diaHoy < diasMes) {
+                hallazgos.push({ tipo: ingresos > 0 && proyeccion > ingresos ? 'warn' : 'info', texto: `Al ritmo actual (${formatCurrency(promedioDiario)} al día) cerrarías el mes con unos ${formatCurrency(proyeccion)} en gastos.` });
+            }
+            const excedidos = limitesEstado.filter(l => l.tope > 0 && l.gastado > l.tope);
+            if (excedidos.length > 0) {
+                hallazgos.push({ tipo: 'warn', texto: `Superaste el límite en: ${excedidos.map(l => l.categoria).join(', ')}.` });
+            }
+        }
+
+        return {
+            ingresos, gastos, balance, tasaAhorro, invertido, ahorrado, prev, categorias, porDia, maxDia, diasMes, diaMasCaro,
+            diasConGasto, promedioSemana, maxSemana, esMesActual, promedioDiario, proyeccion, mayores, conceptosTop, hormiga,
+            hormigaN: hormigaLista.length, tendencia, maxTendencia, promedio6m, limitesEstado, hallazgos, nGastos: gastosLista.length,
+            nIngresos: ingresosLista.length,
+        };
+    }, [transacciones, limites, mes, hoyMes]);
+
+    const {
+        ingresos, gastos, balance, tasaAhorro, invertido, ahorrado, prev, categorias, porDia, maxDia, diasMes, diasConGasto,
+        promedioSemana, maxSemana, esMesActual, promedioDiario, proyeccion, mayores, conceptosTop, hormiga, hormigaN, tendencia,
+        maxTendencia, promedio6m, limitesEstado, hallazgos, nGastos,
+    } = datos;
+
+    const tarjeta = 'bg-white p-5 md:p-6 rounded-2xl shadow-sm border border-slate-100';
+    const iconoHallazgo = { warn: <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />, ok: <CheckCircle2 size={16} className="text-emerald-500 shrink-0 mt-0.5" />, info: <Sparkles size={16} className="text-indigo-500 shrink-0 mt-0.5" /> };
+
+    // Donut: cada segmento en base 100 sobre una circunferencia de radio 15.9155
+    let acumulado = 0;
+    const segmentos = categorias.map(c => {
+        const seg = { ...c, offset: 25 - acumulado };
+        acumulado += c.pct;
+        return seg;
+    });
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
-            <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-                <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                    <BarChart3 className="text-indigo-600" /> Análisis Mensual
-                </h2>
-                <input
-                    type="month"
-                    value={mesSeleccionado}
-                    onChange={(e) => setMesSeleccionado(e.target.value)}
-                    className="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-500"
-                />
+            {/* Encabezado + selector de mes */}
+            <div className="flex flex-wrap gap-3 justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+                <div>
+                    <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                        <BarChart3 className="text-indigo-600" /> Análisis Mensual
+                    </h2>
+                    <p className="text-sm text-slate-500 capitalize mt-0.5">Informe de {etiquetaMesLarga(mes)}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                    <button onClick={() => setMes(desplazarMes(mes, -1))} className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50" aria-label="Mes anterior"><ChevronLeft size={18} /></button>
+                    <input
+                        type="month"
+                        value={mes}
+                        onChange={(e) => e.target.value && setMes(e.target.value)}
+                        className="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-500"
+                    />
+                    <button onClick={() => setMes(desplazarMes(mes, 1))} disabled={mes >= hoyMes} className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed" aria-label="Mes siguiente"><ChevronRight size={18} /></button>
+                </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Indicadores principales */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
                     <p className="text-emerald-600 text-sm font-bold">Ingresos</p>
-                    <p className="text-2xl font-bold text-emerald-700">{formatCurrency(ingresosMes)}</p>
+                    <p className="text-2xl font-bold text-emerald-700">{formatCurrency(ingresos)}</p>
+                    <Variacion actual={ingresos} anterior={prev.ingresos} />
                 </div>
                 <div className="bg-rose-50 p-4 rounded-xl border border-rose-100">
                     <p className="text-rose-600 text-sm font-bold">Gastos</p>
-                    <p className="text-2xl font-bold text-rose-700">{formatCurrency(gastosMes)}</p>
+                    <p className="text-2xl font-bold text-rose-700">{formatCurrency(gastos)}</p>
+                    <Variacion actual={gastos} anterior={prev.gastos} subirEsMalo />
                 </div>
-                <div className={`p-4 rounded-xl border ${balanceMes >= 0 ? 'bg-blue-50 border-blue-100' : 'bg-orange-50 border-orange-100'}`}>
-                    <p className={`${balanceMes >= 0 ? 'text-blue-600' : 'text-orange-600'} text-sm font-bold`}>Balance Neto</p>
-                    <p className={`text-2xl font-bold ${balanceMes >= 0 ? 'text-blue-700' : 'text-orange-700'}`}>{formatCurrency(balanceMes)}</p>
+                <div className={`p-4 rounded-xl border ${balance >= 0 ? 'bg-blue-50 border-blue-100' : 'bg-orange-50 border-orange-100'}`}>
+                    <p className={`${balance >= 0 ? 'text-blue-600' : 'text-orange-600'} text-sm font-bold`}>Balance Neto</p>
+                    <p className={`text-2xl font-bold ${balance >= 0 ? 'text-blue-700' : 'text-orange-700'}`}>{formatCurrency(balance)}</p>
+                    <span className="text-xs text-slate-400">{balance >= 0 ? 'te sobró este mes' : 'gastaste más de lo que ingresó'}</span>
+                </div>
+                <div className="bg-violet-50 p-4 rounded-xl border border-violet-100">
+                    <p className="text-violet-600 text-sm font-bold">Tasa de ahorro</p>
+                    <p className="text-2xl font-bold text-violet-700">{tasaAhorro === null ? '—' : `${tasaAhorro.toFixed(1)}%`}</p>
+                    <span className="text-xs text-slate-400">{tasaAhorro === null ? 'sin ingresos registrados' : 'de tus ingresos no se gastó'}</span>
                 </div>
             </div>
 
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-                <h3 className="font-bold text-lg text-slate-800 mb-6">¿En qué se fue tu dinero?</h3>
-                {sortedCategorias.length === 0 ? (
-                    <p className="text-slate-400 text-center py-8">No hay gastos registrados en este mes.</p>
-                ) : (
-                    <div className="space-y-4">
-                        {sortedCategorias.map(([cat, monto]) => {
-                            const porcentaje = (monto / (gastosMes || 1)) * 100;
-                            const anchoBarra = (monto / (maxGasto || 1)) * 100;
-                            return (
-                                <div key={cat}>
-                                    <div className="flex justify-between text-sm mb-1">
-                                        <span className="font-medium text-slate-700">{cat}</span>
-                                        <span className="text-slate-500">{formatCurrency(monto)} ({porcentaje.toFixed(1)}%)</span>
-                                    </div>
-                                    <div className="w-full bg-slate-100 rounded-full h-3">
-                                        <div
-                                            className="bg-indigo-500 h-3 rounded-full transition-all duration-500"
-                                            style={{ width: `${anchoBarra}%` }}
-                                        ></div>
-                                    </div>
-                                </div>
-                            );
-                        })}
+            {nGastos === 0 ? (
+                <div className={`${tarjeta} text-center py-12`}>
+                    <p className="text-slate-400">No hay gastos registrados en {etiquetaMesLarga(mes)}.</p>
+                </div>
+            ) : (
+                <>
+                    {/* Lectura rápida */}
+                    <div className={tarjeta}>
+                        <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2"><Sparkles size={18} className="text-indigo-500" /> Lectura rápida del mes</h3>
+                        <ul className="space-y-2.5">
+                            {hallazgos.map((h, i) => (
+                                <li key={i} className="flex gap-2.5 text-sm text-slate-700">{iconoHallazgo[h.tipo]}<span>{h.texto}</span></li>
+                            ))}
+                        </ul>
                     </div>
-                )}
-            </div>
+
+                    {/* Datos clave del gasto */}
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div className={tarjeta}>
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">Promedio diario</p>
+                            <p className="text-xl font-bold text-slate-800 mt-1">{formatCurrency(promedioDiario)}</p>
+                            <p className="text-xs text-slate-400 mt-1">{diasConGasto} día{diasConGasto === 1 ? '' : 's'} con gastos</p>
+                        </div>
+                        <div className={tarjeta}>
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">{esMesActual ? 'Proyección del mes' : 'Nº de gastos'}</p>
+                            <p className="text-xl font-bold text-slate-800 mt-1">{esMesActual ? formatCurrency(proyeccion) : nGastos}</p>
+                            <p className="text-xs text-slate-400 mt-1">{esMesActual ? 'si sigues a este ritmo' : `ticket medio ${formatCurrency(gastos / nGastos)}`}</p>
+                        </div>
+                        <div className={tarjeta}>
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">Gastos hormiga</p>
+                            <p className="text-xl font-bold text-slate-800 mt-1">{formatCurrency(hormiga)}</p>
+                            <p className="text-xs text-slate-400 mt-1">{hormigaN} compra{hormigaN === 1 ? '' : 's'}</p>
+                        </div>
+                        <div className={tarjeta}>
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">Invertido / ahorrado</p>
+                            <p className="text-xl font-bold text-slate-800 mt-1">{formatCurrency(invertido + ahorrado)}</p>
+                            <p className="text-xs text-slate-400 mt-1">no cuenta como gasto</p>
+                        </div>
+                    </div>
+
+                    {/* ¿En qué se fue tu dinero? */}
+                    <div className={tarjeta}>
+                        <h3 className="font-bold text-lg text-slate-800 mb-6">¿En qué se fue tu dinero?</h3>
+                        <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-8 items-start">
+                            <div className="relative w-52 h-52 mx-auto">
+                                <svg viewBox="0 0 36 36" className="w-full h-full -rotate-0">
+                                    <circle cx="18" cy="18" r="15.9155" fill="none" stroke="#f1f5f9" strokeWidth="5" />
+                                    {segmentos.map(s => (
+                                        <circle key={s.nombre} cx="18" cy="18" r="15.9155" fill="none" stroke={s.color} strokeWidth="5"
+                                            strokeDasharray={`${s.pct} ${100 - s.pct}`} strokeDashoffset={s.offset}>
+                                            <title>{`${s.nombre}: ${formatCurrency(s.total)} (${s.pct.toFixed(1)}%)`}</title>
+                                        </circle>
+                                    ))}
+                                </svg>
+                                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                    <span className="text-xs text-slate-400 font-medium">Total gastado</span>
+                                    <span className="text-lg font-bold text-slate-800">{formatCurrency(gastos)}</span>
+                                </div>
+                            </div>
+
+                            <div className="space-y-1">
+                                {categorias.map(c => {
+                                    const abierta = categoriaAbierta === c.nombre;
+                                    const dif = c.total - c.anterior;
+                                    return (
+                                        <div key={c.nombre} className="rounded-xl border border-transparent hover:border-slate-100">
+                                            <button onClick={() => setCategoriaAbierta(abierta ? null : c.nombre)} className="w-full text-left p-2.5">
+                                                <div className="flex justify-between items-center gap-3 text-sm mb-1.5">
+                                                    <span className="font-semibold text-slate-700 flex items-center gap-2 min-w-0">
+                                                        <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: c.color }}></span>
+                                                        <span className="truncate">{c.nombre}</span>
+                                                        <span className="text-xs font-normal text-slate-400 shrink-0">{c.n} mov.</span>
+                                                    </span>
+                                                    <span className="flex items-center gap-2 shrink-0">
+                                                        <span className="text-slate-700 font-bold">{formatCurrency(c.total)}</span>
+                                                        <span className="text-slate-400 w-12 text-right">{c.pct.toFixed(1)}%</span>
+                                                        <ChevronDown size={16} className={`text-slate-300 transition-transform ${abierta ? 'rotate-180' : ''}`} />
+                                                    </span>
+                                                </div>
+                                                <div className="w-full bg-slate-100 rounded-full h-2.5">
+                                                    <div className="h-2.5 rounded-full transition-all duration-500" style={{ width: `${c.pct}%`, backgroundColor: c.color }}></div>
+                                                </div>
+                                                {prev.gastos > 0 && (
+                                                    <p className={`text-xs mt-1 ${c.anterior === 0 ? 'text-slate-400' : dif > 0 ? 'text-rose-500' : dif < 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                                        {c.anterior === 0 ? 'Sin gasto el mes anterior' : dif === 0 ? 'Igual que el mes anterior' : `${dif > 0 ? '▲ +' : '▼ -'}${formatCurrency(Math.abs(dif))} vs mes anterior (${formatCurrency(c.anterior)})`}
+                                                    </p>
+                                                )}
+                                            </button>
+                                            {abierta && (
+                                                <div className="mx-2.5 mb-3 pl-5 border-l-2 space-y-1.5" style={{ borderColor: c.color }}>
+                                                    {c.items.map(t => (
+                                                        <div key={t.id} className="flex justify-between gap-3 text-sm">
+                                                            <span className="text-slate-600 truncate">{t.concepto || 'Sin concepto'} <span className="text-slate-400 text-xs">• {t.fecha}</span></span>
+                                                            <span className="font-semibold text-slate-700 shrink-0">{formatCurrency(t.monto)}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Límites por categoría */}
+                    {limitesEstado.length > 0 && (
+                        <div className={tarjeta}>
+                            <h3 className="font-bold text-lg text-slate-800 mb-4">Cumplimiento de límites</h3>
+                            <div className="space-y-4">
+                                {limitesEstado.map(l => {
+                                    const color = l.pct >= 100 ? 'bg-rose-500' : l.pct >= 80 ? 'bg-amber-500' : 'bg-emerald-500';
+                                    return (
+                                        <div key={l.categoria}>
+                                            <div className="flex justify-between text-sm mb-1">
+                                                <span className="font-medium text-slate-700">{l.categoria}</span>
+                                                <span className={l.pct >= 100 ? 'text-rose-600 font-semibold' : 'text-slate-500'}>{formatCurrency(l.gastado)} de {formatCurrency(l.tope)} ({l.pct.toFixed(0)}%)</span>
+                                            </div>
+                                            <div className="w-full bg-slate-100 rounded-full h-2.5">
+                                                <div className={`${color} h-2.5 rounded-full transition-all duration-500`} style={{ width: `${Math.min(l.pct, 100)}%` }}></div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Gasto día a día */}
+                    <div className={tarjeta}>
+                        <h3 className="font-bold text-lg text-slate-800 mb-1">Gasto día a día</h3>
+                        <p className="text-sm text-slate-500 mb-5">Cuánto gastaste cada día de {etiquetaMesLarga(mes)}.</p>
+                        <div className="flex items-end gap-[3px] h-40">
+                            {porDia.map((v, i) => (
+                                <div key={i} className="flex-1 h-full flex items-end" title={`Día ${i + 1}: ${formatCurrency(v)}`}>
+                                    <div className={`w-full rounded-t ${v > 0 && v === maxDia ? 'bg-rose-500' : 'bg-indigo-400'}`} style={{ height: `${maxDia > 0 ? (v / maxDia) * 100 : 0}%`, minHeight: v > 0 ? '3px' : '0' }}></div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="flex gap-[3px] mt-1.5">
+                            {porDia.map((_, i) => (
+                                <span key={i} className="flex-1 text-center text-[9px] text-slate-400">{(i + 1) % 5 === 0 || i === 0 ? i + 1 : ''}</span>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Día de la semana */}
+                        <div className={tarjeta}>
+                            <h3 className="font-bold text-lg text-slate-800 mb-1">¿Qué días gastas más?</h3>
+                            <p className="text-sm text-slate-500 mb-5">Promedio gastado por cada día de la semana.</p>
+                            <div className="space-y-2.5">
+                                {promedioSemana.map((v, i) => ({ v, i })).sort((a, b) => ((a.i + 6) % 7) - ((b.i + 6) % 7)).map(({ v, i }) => (
+                                    <div key={i} className="flex items-center gap-3 text-sm">
+                                        <span className="w-8 text-slate-500 font-medium">{DIAS_SEMANA_CORTOS[i]}</span>
+                                        <div className="flex-1 bg-slate-100 rounded-full h-2.5">
+                                            <div className={`h-2.5 rounded-full ${v > 0 && v === maxSemana ? 'bg-rose-500' : 'bg-indigo-400'}`} style={{ width: `${maxSemana > 0 ? (v / maxSemana) * 100 : 0}%` }}></div>
+                                        </div>
+                                        <span className="w-24 text-right text-slate-600">{formatCurrency(v)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Tendencia 6 meses */}
+                        <div className={tarjeta}>
+                            <h3 className="font-bold text-lg text-slate-800 mb-1">Últimos 6 meses</h3>
+                            <p className="text-sm text-slate-500 mb-5">
+                                Ingresos vs gastos{promedio6m > 0 ? ` · gasto promedio ${formatCurrency(promedio6m)}` : ''}.
+                            </p>
+                            <div className="flex items-end gap-3 h-40">
+                                {tendencia.map(t => (
+                                    <div key={t.ym} className="flex-1 h-full flex flex-col justify-end">
+                                        <div className="flex items-end justify-center gap-1 flex-1">
+                                            <div className="w-1/2 bg-emerald-400 rounded-t" title={`Ingresos: ${formatCurrency(t.ingresos)}`} style={{ height: `${maxTendencia > 0 ? (t.ingresos / maxTendencia) * 100 : 0}%`, minHeight: t.ingresos > 0 ? '3px' : '0' }}></div>
+                                            <div className="w-1/2 bg-rose-400 rounded-t" title={`Gastos: ${formatCurrency(t.gastos)}`} style={{ height: `${maxTendencia > 0 ? (t.gastos / maxTendencia) * 100 : 0}%`, minHeight: t.gastos > 0 ? '3px' : '0' }}></div>
+                                        </div>
+                                        <span className={`text-center text-xs mt-1.5 capitalize ${t.ym === mes ? 'font-bold text-slate-700' : 'text-slate-400'}`}>{MESES_CORTOS[Number(t.ym.slice(5)) - 1]}</span>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="flex gap-4 mt-3 text-xs text-slate-500">
+                                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-400"></span>Ingresos</span>
+                                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-rose-400"></span>Gastos</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Mayores gastos */}
+                        <div className={tarjeta}>
+                            <h3 className="font-bold text-lg text-slate-800 mb-4">Tus mayores gastos</h3>
+                            <div className="divide-y divide-slate-100">
+                                {mayores.map((t, i) => (
+                                    <div key={t.id} className="flex items-center gap-3 py-2.5">
+                                        <span className="w-6 h-6 rounded-full bg-slate-100 text-slate-500 text-xs font-bold flex items-center justify-center shrink-0">{i + 1}</span>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-sm font-semibold text-slate-700 truncate">{t.concepto || 'Sin concepto'}</p>
+                                            <p className="text-xs text-slate-400">{t.categoria} • {t.fecha}</p>
+                                        </div>
+                                        <span className="font-bold text-rose-600 text-sm shrink-0">{formatCurrency(t.monto)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Conceptos que más se repiten */}
+                        <div className={tarjeta}>
+                            <h3 className="font-bold text-lg text-slate-800 mb-4">En qué conceptos gastas más</h3>
+                            <div className="divide-y divide-slate-100">
+                                {conceptosTop.map(c => (
+                                    <div key={c.nombre} className="flex items-center gap-3 py-2.5">
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-sm font-semibold text-slate-700 truncate">{c.nombre}</p>
+                                            <p className="text-xs text-slate-400">{c.n} vez{c.n === 1 ? '' : 'es'} · {((c.total / gastos) * 100).toFixed(1)}% del gasto</p>
+                                        </div>
+                                        <span className="font-bold text-slate-700 text-sm shrink-0">{formatCurrency(c.total)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </>
+            )}
         </div>
     );
 };
@@ -6964,7 +7377,7 @@ export default function App() {
                     {activeTab === 'rutina' && <RutinaSemanal rutina={rutina} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} googleToken={googleToken} />}
                     {activeTab === 'proyectos' && <ProyectosSection proyectos={proyectos} proyectoItems={proyectoItems} proyectoCredenciales={proyectoCredenciales} vault={vault} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} />}
                     {activeTab === 'dashboard' && <DashboardView saldoActual={saldoActual} totalIngresos={totalIngresos} totalGastos={totalGastos} totalDeudaPendiente={totalDeudaPendiente} transacciones={transacciones} />}
-                    {activeTab === 'analisis' && <FinancialAnalysis transacciones={transacciones} />}
+                    {activeTab === 'analisis' && <FinancialAnalysis transacciones={transacciones} limites={limites} />}
                     {activeTab === 'presupuesto' && <BudgetPlanner presupuestoItems={presupuestoItems} limites={limites} transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} onEjecutarPago={handleEjecutarPago} notifPermiso={notifPermiso} onActivarNotif={activarNotificaciones} />}
                     {activeTab === 'inversiones' && <InvestmentPortfolio transacciones={transacciones} totalInvertido={totalInvertido} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} prefillData={prefillData} setPrefillData={setPrefillData} activeTab={activeTab} pendingBudgetId={pendingBudgetId} setPendingBudgetId={setPendingBudgetId} setActiveTab={setActiveTab} />}
                     {activeTab === 'ingresos' && <TransactionManager tipo="ingreso" transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} prefillData={prefillData} setPrefillData={setPrefillData} activeTab={activeTab} pendingBudgetId={pendingBudgetId} setPendingBudgetId={setPendingBudgetId} setActiveTab={setActiveTab} />}
