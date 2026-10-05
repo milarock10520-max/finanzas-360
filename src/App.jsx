@@ -290,12 +290,77 @@ const QuickExpenseModal = ({ isOpen, onClose, genericAdd, uid }) => {
 
 // --- COMPONENTES AUXILIARES ---
 
-const DeudaItem = ({ deuda, onAbonar }) => {
+const DeudaItem = ({ deuda, onAbonar, onEditar, onEliminar }) => {
     const [pagoInput, setPagoInput] = useState('');
+    const [editando, setEditando] = useState(false);
+    const [editNombre, setEditNombre] = useState('');
+    const [editTotal, setEditTotal] = useState('');
+    const [editPagado, setEditPagado] = useState('');
+    const [editCuotas, setEditCuotas] = useState('');
+    const [guardando, setGuardando] = useState(false);
     const montoTotal = Number(deuda.montoTotal) || 0;
     const montoPagado = Number(deuda.montoPagado) || 0;
     const restante = montoTotal - montoPagado;
     const progreso = montoTotal > 0 ? Math.min((montoPagado / montoTotal) * 100, 100) : 0;
+
+    const abrirEdicion = () => {
+        setEditNombre(deuda.nombre || '');
+        setEditTotal(String(montoTotal));
+        setEditPagado(String(montoPagado));
+        setEditCuotas(deuda.cuotas || '');
+        setEditando(true);
+    };
+
+    const guardarEdicion = async (e) => {
+        e.preventDefault();
+        const nombre = editNombre.trim();
+        const total = parseFloat(editTotal);
+        const pagado = parseFloat(editPagado);
+        if (!nombre || !(total > 0) || !(pagado >= 0)) return;
+        setGuardando(true);
+        try {
+            await onEditar(deuda, { nombre, montoTotal: total, montoPagado: pagado, cuotas: editCuotas });
+            setEditando(false);
+        } finally {
+            setGuardando(false);
+        }
+    };
+
+    const eliminar = () => {
+        if (window.confirm(`¿Eliminar la deuda "${deuda.nombre}"? Los abonos ya registrados en Gastos se conservan. No se puede deshacer.`)) onEliminar(deuda);
+    };
+
+    if (editando) {
+        const campo = 'w-full px-3 py-2 border rounded-lg text-sm outline-none focus:border-rose-500';
+        return (
+            <form onSubmit={guardarEdicion} className="bg-white p-6 rounded-2xl shadow-sm border border-rose-200 space-y-3">
+                <h4 className="font-bold text-slate-800 flex items-center gap-2"><Edit2 size={16} className="text-rose-500" /> Editar deuda</h4>
+                <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Nombre</label>
+                    <input type="text" value={editNombre} onChange={e => setEditNombre(e.target.value)} className={campo} required />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Monto total</label>
+                        <input type="number" min="1" step="any" value={editTotal} onChange={e => setEditTotal(e.target.value)} className={campo} required />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Ya pagado</label>
+                        <input type="number" min="0" step="any" value={editPagado} onChange={e => setEditPagado(e.target.value)} className={campo} required />
+                    </div>
+                </div>
+                <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Cuotas (opcional)</label>
+                    <input type="text" value={editCuotas} onChange={e => setEditCuotas(e.target.value)} className={campo} />
+                </div>
+                <p className="text-xs text-slate-400">Cambiar "Ya pagado" corrige el saldo de la deuda, pero no crea ni borra movimientos en Gastos.</p>
+                <div className="flex gap-2 justify-end">
+                    <button type="button" onClick={() => setEditando(false)} className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200">Cancelar</button>
+                    <button type="submit" disabled={guardando} className="px-4 py-2 rounded-lg text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-60">{guardando ? 'Guardando...' : 'Guardar cambios'}</button>
+                </div>
+            </form>
+        );
+    }
 
     return (
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden">
@@ -304,7 +369,11 @@ const DeudaItem = ({ deuda, onAbonar }) => {
             </div>
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mt-2">
                 <div>
-                    <h4 className="font-bold text-lg text-slate-800">{deuda.nombre}</h4>
+                    <div className="flex items-center gap-1">
+                        <h4 className="font-bold text-lg text-slate-800">{deuda.nombre}</h4>
+                        <button onClick={abrirEdicion} className="p-1.5 rounded-lg text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors" aria-label="Editar deuda" title="Editar"><Edit2 size={16} /></button>
+                        <button onClick={eliminar} className="p-1.5 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition-colors" aria-label="Eliminar deuda" title="Eliminar"><Trash2 size={16} /></button>
+                    </div>
                     <div className="text-sm text-slate-500 flex gap-3">
                         <span>Total: {formatCurrency(montoTotal)}</span>
                         <span>•</span>
@@ -2550,7 +2619,7 @@ const InvestmentPortfolio = ({ transacciones, totalInvertido, genericAdd, generi
 };
 
 
-const DebtManager = ({ deudas, genericAdd, genericUpdate }) => {
+const DebtManager = ({ deudas, genericAdd, genericUpdate, genericDelete }) => {
     const [nombre, setNombre] = useState('');
     const [montoTotal, setMontoTotal] = useState('');
     const [cuotas, setCuotas] = useState('');
@@ -2568,6 +2637,10 @@ const DebtManager = ({ deudas, genericAdd, genericUpdate }) => {
         await genericAdd('transacciones', { tipo: 'gasto', monto: parseFloat(montoPago), concepto: `Abono Deuda: ${deuda.nombre}`, categoria: 'Pago de Deudas', fecha: dateKey(), createdAt: new Date().toISOString() });
     };
 
+    const editarDeuda = (deuda, cambios) => genericUpdate('deudas', deuda.id, cambios);
+
+    const eliminarDeuda = (deuda) => genericDelete('deudas', deuda.id);
+
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in duration-500">
             <div className="lg:col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-slate-100 h-fit">
@@ -2580,7 +2653,7 @@ const DebtManager = ({ deudas, genericAdd, genericUpdate }) => {
                 </form>
             </div>
             <div className="lg:col-span-2 grid grid-cols-1 gap-4">
-                {deudas.map(deuda => <DeudaItem key={deuda.id} deuda={deuda} onAbonar={registrarPagoDeuda} />)}
+                {deudas.map(deuda => <DeudaItem key={deuda.id} deuda={deuda} onAbonar={registrarPagoDeuda} onEditar={editarDeuda} onEliminar={eliminarDeuda} />)}
                 {deudas.length === 0 && <p className="text-center text-slate-400 mt-10">No tienes deudas. ¡Excelente!</p>}
             </div>
         </div>
@@ -7382,7 +7455,7 @@ export default function App() {
                     {activeTab === 'inversiones' && <InvestmentPortfolio transacciones={transacciones} totalInvertido={totalInvertido} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} prefillData={prefillData} setPrefillData={setPrefillData} activeTab={activeTab} pendingBudgetId={pendingBudgetId} setPendingBudgetId={setPendingBudgetId} setActiveTab={setActiveTab} />}
                     {activeTab === 'ingresos' && <TransactionManager tipo="ingreso" transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} prefillData={prefillData} setPrefillData={setPrefillData} activeTab={activeTab} pendingBudgetId={pendingBudgetId} setPendingBudgetId={setPendingBudgetId} setActiveTab={setActiveTab} />}
                     {activeTab === 'gastos' && <TransactionManager tipo="gasto" transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} prefillData={prefillData} setPrefillData={setPrefillData} activeTab={activeTab} pendingBudgetId={pendingBudgetId} setPendingBudgetId={setPendingBudgetId} setActiveTab={setActiveTab} />}
-                    {activeTab === 'deudas' && <DebtManager deudas={deudas} genericAdd={genericAdd} genericUpdate={genericUpdate} />}
+                    {activeTab === 'deudas' && <DebtManager deudas={deudas} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} />}
                     {activeTab === 'metas' && <GoalTracker metas={metas} transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} />}
                     {activeTab === 'passwords' && <PasswordVault passwords={passwords} vault={vault} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} user={user} db={db} />}
                     {activeTab === 'agenda' && <ProductivityHub genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} googleToken={googleToken} setGoogleToken={setGoogleToken} />}
