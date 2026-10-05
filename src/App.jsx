@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
     LayoutDashboard,
     TrendingUp,
@@ -170,6 +170,9 @@ const CATEGORIAS_GASTOS = [
     "Transporte", "Entretenimiento", "Salud", "Educación",
     "Ropa", "Deudas", "Aporte Inversión", "Mascotas", "Gastos Hormiga", "Otros"
 ];
+
+// Valor especial del select de categoría para crear una categoría personalizada.
+const NUEVA_CATEGORIA = '__nueva__';
 
 const TIPOS_INVERSION = [
     "CDT / Renta Fija", "Acciones / Bolsa", "Criptomonedas", "Finca Raíz", "Negocio Propio", "Fondo de Emergencia"
@@ -1237,6 +1240,18 @@ const TransactionManager = ({ tipo, transacciones, genericAdd, genericUpdate, ge
     const [concepto, setConcepto] = useState('');
     const [categoria, setCategoria] = useState(tipo === 'ingreso' ? CATEGORIAS_INGRESOS[0] : CATEGORIAS_GASTOS[0]);
     const [fecha, setFecha] = useState(dateKey());
+    const [nuevaCategoria, setNuevaCategoria] = useState('');
+
+    // Categorías base + las personalizadas ya usadas en transacciones anteriores (así persisten sin guardado extra).
+    const opcionesCategoria = useMemo(() => {
+        const base = tipo === 'ingreso' ? CATEGORIAS_INGRESOS : CATEGORIAS_GASTOS;
+        const delSistema = ['Pago de Deudas', 'Ahorro Metas'];
+        const extras = new Set();
+        transacciones.forEach(t => {
+            if (t.tipo === tipo && t.categoria && !base.includes(t.categoria) && !delSistema.includes(t.categoria)) extras.add(t.categoria);
+        });
+        return [...base, ...[...extras].sort((a, b) => a.localeCompare(b))];
+    }, [tipo, transacciones]);
 
     useEffect(() => {
         // Auto-rellenar solo si estamos en la pestaña correcta
@@ -1254,6 +1269,14 @@ const TransactionManager = ({ tipo, transacciones, genericAdd, genericUpdate, ge
         e.preventDefault();
         if (!monto || !concepto) return;
 
+        let categoriaFinal = categoria;
+        if (categoria === NUEVA_CATEGORIA) {
+            categoriaFinal = nuevaCategoria.trim();
+            if (!categoriaFinal) return;
+            // Si coincide (sin importar mayúsculas) con una existente, reutilizarla en vez de duplicarla
+            categoriaFinal = opcionesCategoria.find(c => c.toLowerCase() === categoriaFinal.toLowerCase()) || categoriaFinal;
+        }
+
         // Guardar el ID antes de cualquier operación async para evitar que se pierda
         const budgetIdToUpdate = pendingBudgetId;
         const currentMonth = new Date().toISOString().slice(0, 7);
@@ -1265,7 +1288,7 @@ const TransactionManager = ({ tipo, transacciones, genericAdd, genericUpdate, ge
             tipo,
             monto: parseFloat(monto),
             concepto,
-            categoria,
+            categoria: categoriaFinal,
             fecha,
             createdAt: new Date().toISOString()
         });
@@ -1288,6 +1311,7 @@ const TransactionManager = ({ tipo, transacciones, genericAdd, genericUpdate, ge
             console.log('=== DEBUG: No hay budgetIdToUpdate ===');
         }
         setMonto(''); setConcepto('');
+        if (categoria === NUEVA_CATEGORIA) { setCategoria(categoriaFinal); setNuevaCategoria(''); }
     };
 
 
@@ -1304,7 +1328,16 @@ const TransactionManager = ({ tipo, transacciones, genericAdd, genericUpdate, ge
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div><label className="block text-sm font-medium text-slate-700 mb-1">Monto</label><input type="number" value={monto} onChange={(e) => setMonto(e.target.value)} className="w-full px-4 py-2 border rounded-lg outline-none focus:border-indigo-500" required /></div>
                     <div><label className="block text-sm font-medium text-slate-700 mb-1">Concepto</label><input type="text" value={concepto} onChange={(e) => setConcepto(e.target.value)} className="w-full px-4 py-2 border rounded-lg outline-none focus:border-indigo-500" required /></div>
-                    <div><label className="block text-sm font-medium text-slate-700 mb-1">Categoría</label><select value={categoria} onChange={(e) => setCategoria(e.target.value)} className="w-full px-4 py-2 border rounded-lg outline-none bg-white">{(tipo === 'ingreso' ? CATEGORIAS_INGRESOS : CATEGORIAS_GASTOS).map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Categoría</label>
+                        <select value={categoria} onChange={(e) => setCategoria(e.target.value)} className="w-full px-4 py-2 border rounded-lg outline-none bg-white">
+                            {opcionesCategoria.map(c => <option key={c} value={c}>{c}</option>)}
+                            <option value={NUEVA_CATEGORIA}>+ Crear nueva categoría...</option>
+                        </select>
+                        {categoria === NUEVA_CATEGORIA && (
+                            <input type="text" value={nuevaCategoria} onChange={(e) => setNuevaCategoria(e.target.value)} maxLength={40} placeholder="Nombre de la nueva categoría" className="w-full mt-2 px-4 py-2 border rounded-lg outline-none focus:border-indigo-500" autoFocus required />
+                        )}
+                    </div>
                     <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className="w-full px-4 py-2 border rounded-lg outline-none focus:border-indigo-500" required />
                     <button type="submit" className={`w-full py-3 rounded-lg font-bold text-white transition-transform active:scale-95 ${tipo === 'ingreso' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}`}>Guardar {tipo === 'ingreso' ? 'Ingreso' : 'Gasto'}</button>
                 </form>
