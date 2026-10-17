@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Sin conexión · Finanzas 360</title>
+<!-- Página local de la app iOS: se muestra solo si la interfaz nunca se ha guardado
+     en el dispositivo y no hay red (después, el service worker la sirve sin conexión). -->
+<style>
+  :root { --bg: #F4F6FB; --text: #0B1220; --text-2: #5B6474; --primary: #3355FF; --card: #fff; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #06080E; --text: #EEF1F8; --text-2: #9AA3B5; --primary: #6B84FF; --card: #10141E; } }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, system-ui, sans-serif; }
+  main { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; text-align: center; }
+  .icono { width: 64px; height: 64px; border-radius: 20px; background: var(--card); display: grid; place-items: center; box-shadow: 0 8px 24px rgba(0,0,0,.08); }
+  h1 { margin: 6px 0 0; font-size: 22px; }
+  p { margin: 0; max-width: 300px; color: var(--text-2); font-size: 15px; line-height: 1.45; }
+  button { margin-top: 8px; border: 0; border-radius: 16px; padding: 14px 28px; background: var(--primary); color: #fff; font-size: 16px; font-weight: 700; }
+</style>
+</head>
+<body>
+<main>
+  <div class="icono" aria-hidden="true">
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 2 20 20"/><path d="M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193"/><path d="M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7.008 7.008 0 0 0 10 5.07"/></svg>
+  </div>
+  <h1>Sin conexión</h1>
+  <p>Conéctate una vez para descargar la app. Después podrás abrirla y registrar gastos aunque no tengas internet.</p>
+  <button type="button" id="reintentar">Reintentar</button>
+</main>
+<script>
+  var URL_APP = 'https://finanzas-360.milarock10520.workers.dev/';
+  function reintentar() { location.replace(URL_APP); }
+  document.getElementById('reintentar').addEventListener('click', reintentar);
+  window.addEventListener('online', reintentar);
+</script>
+</body>
+</html>

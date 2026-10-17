@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0A683435AE9BB2A8F683D8CD /* FinanzasWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DFE8F7987B33689BC50F455 /* FinanzasWidget.swift */; };
+		140D95645859244084A35A7F /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9AAC4F202333CEED279BA19F /* WidgetKit.framework */; };
+		1FB8B13414AA31242D90498C /* FinanzasWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AACCDB97D9AB81B9F09974EF /* FinanzasWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
@@ -16,10 +19,40 @@
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		6199C29492D6D8E921B28936 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 90629C3EFC4BE699217D3618 /* GoogleService-Info.plist */; };
+		9F7AA51ADB803837163717D8 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 62249941579C16668AC1108D /* Foundation.framework */; };
+		CC69E69E412BC6A115392987 /* WidgetBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1730284020BAEE0A1352C504 /* WidgetBridgePlugin.swift */; };
+		D3594411FE902DD76B17865D /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8FB462243A99C62840C8CC36 /* SwiftUI.framework */; };
+		F2B55CA81B0B007DCBC7F88A /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 536C5E1D2F8CA6FD5D76466D /* MainViewController.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		6E0FE688051CE88CBDB54CD4 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D558C99B5640FD1B65B5DBCF;
+			remoteInfo = FinanzasWidget;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		BF9701A89EFDEE230E7100EA /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				1FB8B13414AA31242D90498C /* FinanzasWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		1730284020BAEE0A1352C504 /* WidgetBridgePlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetBridgePlugin.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
+		4E690CB2D22AE1427E68641F /* FinanzasWidget.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = FinanzasWidget.entitlements; sourceTree = "<group>"; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -28,8 +61,16 @@
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
+		536C5E1D2F8CA6FD5D76466D /* MainViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
+		62249941579C16668AC1108D /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		8FB462243A99C62840C8CC36 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		90629C3EFC4BE699217D3618 /* GoogleService-Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
+		9AAC4F202333CEED279BA19F /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		9DFE8F7987B33689BC50F455 /* FinanzasWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FinanzasWidget.swift; sourceTree = "<group>"; };
+		AACCDB97D9AB81B9F09974EF /* FinanzasWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FinanzasWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		D1FEDB251CD2EE5816B6A912 /* App.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
+		EB605CB6173DAAB761B36112 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -38,6 +79,16 @@
 			buildActionMask = 2147483647;
 			files = (
 				4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		55B5064F70C95BA4EE8E63B4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9F7AA51ADB803837163717D8 /* Foundation.framework in Frameworks */,
+				140D95645859244084A35A7F /* WidgetKit.framework in Frameworks */,
+				D3594411FE902DD76B17865D /* SwiftUI.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -50,6 +101,8 @@
 				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
 				504EC3061FED79650016851F /* App */,
 				504EC3051FED79650016851F /* Products */,
+				BD3DE652ECE6C220864457B3 /* Frameworks */,
+				9ED78E6D5C645EC08ED6A588 /* FinanzasWidget */,
 			);
 			sourceTree = "<group>";
 		};
@@ -57,6 +110,7 @@
 			isa = PBXGroup;
 			children = (
 				504EC3041FED79650016851F /* App.app */,
+				AACCDB97D9AB81B9F09974EF /* FinanzasWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -73,8 +127,40 @@
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
 				90629C3EFC4BE699217D3618 /* GoogleService-Info.plist */,
+				1730284020BAEE0A1352C504 /* WidgetBridgePlugin.swift */,
+				536C5E1D2F8CA6FD5D76466D /* MainViewController.swift */,
+				D1FEDB251CD2EE5816B6A912 /* App.entitlements */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		9ED78E6D5C645EC08ED6A588 /* FinanzasWidget */ = {
+			isa = PBXGroup;
+			children = (
+				9DFE8F7987B33689BC50F455 /* FinanzasWidget.swift */,
+				EB605CB6173DAAB761B36112 /* Info.plist */,
+				4E690CB2D22AE1427E68641F /* FinanzasWidget.entitlements */,
+			);
+			name = FinanzasWidget;
+			path = FinanzasWidget;
+			sourceTree = "<group>";
+		};
+		BD3DE652ECE6C220864457B3 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				F8958717CC3E85E2C8DD0FF9 /* iOS */,
+				9AAC4F202333CEED279BA19F /* WidgetKit.framework */,
+				8FB462243A99C62840C8CC36 /* SwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		F8958717CC3E85E2C8DD0FF9 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				62249941579C16668AC1108D /* Foundation.framework */,
+			);
+			name = iOS;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -87,10 +173,12 @@
 				504EC3001FED79650016851F /* Sources */,
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
+				BF9701A89EFDEE230E7100EA /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				302FB94B3B619C214C4DA3E1 /* PBXTargetDependency */,
 			);
 			name = App;
 			packageProductDependencies = (
@@ -99,6 +187,23 @@
 			productName = App;
 			productReference = 504EC3041FED79650016851F /* App.app */;
 			productType = "com.apple.product-type.application";
+		};
+		D558C99B5640FD1B65B5DBCF /* FinanzasWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A21C3877093D1CF3E99405FB /* Build configuration list for PBXNativeTarget "FinanzasWidget" */;
+			buildPhases = (
+				9B6F31C6BBC6AD04857EA413 /* Sources */,
+				55B5064F70C95BA4EE8E63B4 /* Frameworks */,
+				841B602C1F464BE3D74D864A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = FinanzasWidget;
+			productName = FinanzasWidget;
+			productReference = AACCDB97D9AB81B9F09974EF /* FinanzasWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -133,6 +238,7 @@
 			projectRoot = "";
 			targets = (
 				504EC3031FED79650016851F /* App */,
+				D558C99B5640FD1B65B5DBCF /* FinanzasWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -152,6 +258,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		841B602C1F464BE3D74D864A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -160,10 +273,29 @@
 			buildActionMask = 2147483647;
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
+				CC69E69E412BC6A115392987 /* WidgetBridgePlugin.swift in Sources */,
+				F2B55CA81B0B007DCBC7F88A /* MainViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9B6F31C6BBC6AD04857EA413 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0A683435AE9BB2A8F683D8CD /* FinanzasWidget.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		302FB94B3B619C214C4DA3E1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = FinanzasWidget;
+			target = D558C99B5640FD1B65B5DBCF /* FinanzasWidget */;
+			targetProxy = 6E0FE688051CE88CBDB54CD4 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		504EC30B1FED79650016851F /* Main.storyboard */ = {
@@ -185,6 +317,33 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		2372AC28D8245021D5E88EF7 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = "";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = FinanzasWidget/FinanzasWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FinanzasWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.finanzas360.app.FinanzasWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		504EC3141FED79650016851F /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 958DCC722DB07C7200EA8C5F /* debug.xcconfig */;
@@ -299,6 +458,7 @@
 			baseConfigurationReference = 958DCC722DB07C7200EA8C5F /* debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
@@ -321,6 +481,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
@@ -335,6 +496,34 @@
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		56FBB266C19DFC4D93CBA5EC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = "";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = FinanzasWidget/FinanzasWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FinanzasWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.finanzas360.app.FinanzasWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
 		};
@@ -355,6 +544,15 @@
 			buildConfigurations = (
 				504EC3171FED79650016851F /* Debug */,
 				504EC3181FED79650016851F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A21C3877093D1CF3E99405FB /* Build configuration list for PBXNativeTarget "FinanzasWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				56FBB266C19DFC4D93CBA5EC /* Release */,
+				2372AC28D8245021D5E88EF7 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

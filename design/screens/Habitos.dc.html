@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Hábitos · Finanzas 360</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./f360.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Sora:wght@400;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div class="f360 screen {{themeClass}}" style="font-family: 'Manrope', system-ui, sans-serif; color: var(--text); background: var(--bg)">
+<main class="scroll">
+
+<header class="rise d1" style="display: flex; align-items: center; justify-content: space-between">
+<div style="display: flex; align-items: center; gap: 10px">
+<a href="Metas.dc.html" class="icon-btn" aria-label="Volver">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg>
+</a>
+<h1 class="display" style="margin: 0; font-size: 26px; font-weight: 700">Hábitos</h1>
+</div>
+<div style="display: flex; gap: 8px">
+<button class="icon-btn theme-btn" aria-label="{{themeLabel}}" onClick="{{toggle}}">
+<svg class="sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+<svg class="moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"></path></svg>
+</button>
+<button class="icon-btn" aria-label="Nuevo hábito" onClick="{{toggleForm}}" style="background: var(--primary); color: var(--on-primary); border-color: transparent">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true" style="transition: transform .45s var(--spring); transform: {{plusRot}}"><path d="M12 5v14M5 12h14"></path></svg>
+</button>
+</div>
+</header>
+
+<section class="hero rise d2" style="margin-top: 18px; padding: 20px; display: flex; align-items: center; gap: 18px">
+<div class="orb" style="width: 200px; height: 200px; right: -80px; bottom: -100px; background: #22D3EE; opacity: .45"></div>
+<div class="grid-lines"></div>
+<div style="position: relative; width: 96px; height: 96px; flex-shrink: 0">
+<svg width="96" height="96" viewBox="0 0 108 108" role="img" aria-label="{{ringLabel}}">
+<circle cx="54" cy="54" r="48" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="9"></circle>
+<circle cx="54" cy="54" r="48" fill="none" stroke="#67E8F9" stroke-width="9" stroke-linecap="round" stroke-dasharray="302" stroke-dashoffset="{{ringOff}}" transform="rotate(-90 54 54)" style="transition: stroke-dashoffset .9s cubic-bezier(.34,1.56,.64,1)"></circle>
+</svg>
+<div class="num" style="position: absolute; inset: 0; display: grid; place-items: center; font-size: 22px; font-weight: 700">{{doneTxt}}</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span style="font-size: 13px; font-weight: 700; color: rgba(255,255,255,.72)">Hoy, viernes</span>
+<span class="display" style="font-size: 20px; font-weight: 700; line-height: 1.25">{{heroMsg}}</span>
+</div>
+</section>
+
+<sc-if value="{{formOpen}}" hint-placeholder-val="{{ false }}">
+<section class="card rise" style="margin-top: 14px; padding: 18px; display: flex; flex-direction: column; gap: 14px">
+<label class="field"><span class="field-label">Nuevo hábito</span><input class="input" placeholder="Ej: Tomar 2L de agua, Leer 20 min"></label>
+<div class="field">
+<span class="field-label">Color</span>
+<div style="display: flex; gap: 10px">
+<sc-for list="{{swatches}}" as="s" hint-placeholder-count="5">
+<button aria-label="{{s.label}}" aria-pressed="{{s.pressed}}" onClick="{{s.pick}}" style="width: 44px; height: 44px; border-radius: 14px; border: 0; cursor: pointer; background: {{s.color}}; box-shadow: {{s.ring}}; transition: box-shadow .3s, transform .3s var(--spring); transform: {{s.scale}}"></button>
+</sc-for>
+</div>
+</div>
+<button class="btn btn-primary" onClick="{{toggleForm}}">Crear hábito</button>
+</section>
+</sc-if>
+
+<div style="margin-top: 14px; display: flex; flex-direction: column; gap: 12px">
+<sc-for list="{{habits}}" as="h" hint-placeholder-count="3">
+<article class="card rise" style="padding: 16px; display: flex; flex-direction: column; gap: 14px; animation-delay: {{h.delay}}">
+<div style="display: flex; align-items: center; gap: 12px">
+<span class="tile" style="background: {{h.soft}}; color: {{h.color}}">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{h.icon}}"></path></svg>
+</span>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+<span style="font-size: 15px; font-weight: 800">{{h.name}}</span>
+<span style="font-size: 13px; color: var(--text-3)">{{h.streak}}</span>
+</div>
+<button aria-label="{{h.aria}}" aria-pressed="{{h.pressed}}" onClick="{{h.flip}}" style="width: 48px; height: 48px; border-radius: 16px; cursor: pointer; display: grid; place-items: center; border: 1.5px solid {{h.border}}; background: {{h.fill}}; color: #fff; transition: all .45s cubic-bezier(.34,1.56,.64,1); transform: {{h.pop}}">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="opacity: {{h.checkOp}}; transition: opacity .3s"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>
+</button>
+</div>
+<div style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px">
+<sc-for list="{{h.week}}" as="d" hint-placeholder-count="7">
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px">
+<span style="font-size: 11px; font-weight: 800; color: var(--text-3)">{{d.l}}</span>
+<span style="width: 100%; height: 8px; border-radius: 99px; background: {{d.bg}}; transition: background .4s"></span>
+</div>
+</sc-for>
+</div>
+</article>
+</sc-for>
+</div>
+
+</main>
+
+<nav class="nav" aria-label="Principal">
+<a href="Main.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 10.5L12 3.5l8.5 7V19a1.5 1.5 0 0 1-1.5 1.5h-4v-6h-6v6H5A1.5 1.5 0 0 1 3.5 19z"></path></svg>Inicio</a>
+<a href="Movimientos.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h14M14 4l4 4-4 4M20 16H6M10 12l-4 4 4 4"></path></svg>Flujo</a>
+<a href="Movimientos.dc.html" aria-label="Registrar movimiento"><span class="add"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></span></a>
+<a href="Analisis.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"></path></svg>Análisis</a>
+<a href="Metas.dc.html" class="on" aria-current="page"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><circle cx="12" cy="12" r="4.5"></circle><circle cx="12" cy="12" r="1" fill="currentColor"></circle></svg>Metas</a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(...args) {
+    super(...args);
+    this.state = { dark: null, done: {}, form: false, sw: 0 };
+  }
+  renderVals() {
+    const dark = this.state.dark !== null ? this.state.dark : !!this.props.dark;
+    const base = [
+      { id: 'sleep', name: 'Dormir mínimo 8 horas', color: 'var(--primary)', soft: 'var(--primary-soft)', icon: 'M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z' },
+      { id: 'water', name: 'Tomar 2L de agua', color: 'var(--cyan)', soft: 'var(--income-soft)', icon: 'M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z' },
+      { id: 'read', name: 'Leer 20 min', color: 'var(--violet)', soft: 'var(--violet-soft)', icon: 'M4 5h6a2 2 0 0 1 2 2v12a2 2 0 0 0-2-2H4zM20 5h-6a2 2 0 0 0-2 2v12a2 2 0 0 1 2-2h6z' }
+    ];
+    const days = ['S', 'D', 'L', 'M', 'X', 'J', 'V'];
+    const doneCount = base.filter((b) => this.state.done[b.id]).length;
+    const total = base.length;
+    const sw = [
+      { label: 'Azul', color: '#3355FF' }, { label: 'Cian', color: '#06B6D4' }, { label: 'Verde', color: '#059669' },
+      { label: 'Ámbar', color: '#D97706' }, { label: 'Violeta', color: '#7C3AED' }
+    ];
+    return {
+      themeClass: dark ? 'dark' : '',
+      themeLabel: dark ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro',
+      toggle: () => this.setState({ dark: !dark }),
+      formOpen: this.state.form,
+      plusRot: this.state.form ? 'rotate(45deg)' : 'rotate(0)',
+      toggleForm: () => this.setState({ form: !this.state.form }),
+      ringOff: String(302 * (1 - doneCount / total)),
+      ringLabel: doneCount + ' de ' + total + ' hábitos completados hoy',
+      doneTxt: doneCount + '/' + total,
+      heroMsg: doneCount === total ? '¡Día perfecto! Racha en marcha' : (doneCount === 0 ? 'Empieza con el más fácil' : 'Vas muy bien, sigue así'),
+      swatches: sw.map((s, i) => ({
+        label: s.label, color: s.color,
+        pressed: i === this.state.sw ? 'true' : 'false',
+        ring: i === this.state.sw ? '0 0 0 3px var(--surface), 0 0 0 5px ' + s.color : 'none',
+        scale: i === this.state.sw ? 'scale(1.06)' : 'scale(1)',
+        pick: () => this.setState({ sw: i })
+      })),
+      habits: base.map((b, i) => {
+        const on = !!this.state.done[b.id];
+        return {
+          name: b.name, color: b.color, soft: b.soft, icon: b.icon,
+          delay: (0.2 + i * 0.08) + 's',
+          streak: on ? '1 día de racha' : '0 días de racha',
+          aria: on ? 'Desmarcar ' + b.name : 'Marcar ' + b.name + ' como hecho',
+          pressed: on ? 'true' : 'false',
+          border: on ? 'transparent' : 'var(--line)',
+          fill: on ? b.color : 'var(--surface-2)',
+          pop: on ? 'scale(1.08) rotate(-6deg)' : 'scale(1)',
+          checkOp: on ? '1' : '0',
+          flip: () => this.setState({ done: Object.assign({}, this.state.done, { [b.id]: !on }) }),
+          week: days.map((l, j) => ({ l: l, bg: j === 6 && on ? b.color : (j === 6 ? 'var(--line)' : 'var(--surface-2)') }))
+        };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

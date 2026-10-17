@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Análisis · Finanzas 360</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./f360.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Sora:wght@400;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div class="f360 screen {{themeClass}}" style="font-family: 'Manrope', system-ui, sans-serif; color: var(--text); background: var(--bg)">
+<main class="scroll">
+
+<header class="rise d1" style="display: flex; align-items: center; justify-content: space-between">
+<h1 class="display" style="margin: 0; font-size: 26px; font-weight: 700">Análisis</h1>
+<button class="icon-btn theme-btn" aria-label="{{themeLabel}}" onClick="{{toggle}}">
+<svg class="sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+<svg class="moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"></path></svg>
+</button>
+</header>
+
+<div class="rise d2" style="margin-top: 16px; display: flex; align-items: center; justify-content: space-between; padding: 4px; border-radius: 16px; background: var(--surface-2)">
+<button class="icon-btn" aria-label="Mes anterior" style="border: 0">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg>
+</button>
+<span style="font-size: 15px; font-weight: 800">Octubre 2026</span>
+<button class="icon-btn" aria-label="Mes siguiente" disabled style="border: 0; opacity: .4; cursor: default">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+</button>
+</div>
+
+<section class="hero rise d3" style="margin-top: 14px; padding: 22px; display: flex; align-items: center; gap: 18px">
+<div class="orb" style="width: 200px; height: 200px; right: -70px; top: -90px; background: #3355FF; opacity: .7"></div>
+<div class="grid-lines"></div>
+<div class="sheen"></div>
+<div style="flex: 1; display: flex; flex-direction: column; gap: 8px">
+<span style="font-size: 13px; font-weight: 700; color: rgba(255,255,255,.72)">Balance neto</span>
+<span class="num" style="font-size: 30px; font-weight: 700; line-height: 1">$ 1.116.010</span>
+<span style="font-size: 13px; color: rgba(255,255,255,.72)">te sobró este mes</span>
+</div>
+<div style="position: relative; width: 108px; height: 108px; flex-shrink: 0">
+<svg width="108" height="108" viewBox="0 0 108 108" role="img" aria-label="Tasa de ahorro 20,8%">
+<defs><linearGradient id="rg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22D3EE"></stop><stop offset="1" stop-color="#6B84FF"></stop></linearGradient></defs>
+<circle cx="54" cy="54" r="48" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="8"></circle>
+<circle class="ring-arc" cx="54" cy="54" r="48" fill="none" stroke="url(#rg)" stroke-width="8" stroke-linecap="round" stroke-dasharray="302" stroke-dashoffset="239" transform="rotate(-90 54 54)"></circle>
+</svg>
+<div style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center">
+<span class="num" style="font-size: 20px; font-weight: 700">20,8%</span>
+<span style="font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: rgba(255,255,255,.7)">ahorro</span>
+</div>
+</div>
+</section>
+
+<div class="rise d4" style="margin-top: 14px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+<div class="card" style="padding: 16px; display: flex; flex-direction: column; gap: 6px">
+<span style="font-size: 13px; font-weight: 700; color: var(--text-2)">Ingresos</span>
+<span class="num" style="font-size: 20px; font-weight: 700; color: var(--income)">$ 5.369.000</span>
+<span style="display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 800; color: var(--income)">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"></path></svg>7,1% vs sep</span>
+</div>
+<div class="card" style="padding: 16px; display: flex; flex-direction: column; gap: 6px">
+<span style="font-size: 13px; font-weight: 700; color: var(--text-2)">Gastos</span>
+<span class="num" style="font-size: 20px; font-weight: 700; color: var(--expense)">$ 4.252.990</span>
+<span style="display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 800; color: var(--expense)">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"></path></svg>2,6% vs sep</span>
+</div>
+</div>
+
+<section class="card rise d5" style="margin-top: 14px; padding: 18px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; align-items: center; justify-content: space-between">
+<h2 style="margin: 0; font-size: 15px; font-weight: 800">Septiembre vs octubre</h2>
+<div style="display: flex; gap: 12px; font-size: 12px; font-weight: 700; color: var(--text-2)">
+<span style="display: inline-flex; align-items: center; gap: 6px"><span style="width: 10px; height: 10px; border-radius: 3px; background: var(--income)"></span>Ingresos</span>
+<span style="display: inline-flex; align-items: center; gap: 6px"><span style="width: 10px; height: 10px; border-radius: 3px; background: var(--expense)"></span>Gastos</span>
+</div>
+</div>
+<div role="img" aria-label="Ingresos subieron de 5,01 a 5,37 millones; gastos de 4,15 a 4,25 millones" style="height: 160px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: end; border-bottom: 1px solid var(--line); padding: 0 16px">
+<div style="display: flex; align-items: flex-end; justify-content: center; gap: 8px; height: 100%">
+<span class="grow" style="width: 34px; height: 131px; border-radius: 10px 10px 4px 4px; background: var(--income); opacity: .45; animation-delay: .5s"></span>
+<span class="grow" style="width: 34px; height: 108px; border-radius: 10px 10px 4px 4px; background: var(--expense); opacity: .45; animation-delay: .6s"></span>
+</div>
+<div style="display: flex; align-items: flex-end; justify-content: center; gap: 8px; height: 100%">
+<span class="grow" style="width: 34px; height: 140px; border-radius: 10px 10px 4px 4px; background: var(--income); animation-delay: .7s"></span>
+<span class="grow" style="width: 34px; height: 111px; border-radius: 10px 10px 4px 4px; background: var(--expense); animation-delay: .8s"></span>
+</div>
+</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; text-align: center; font-size: 12px; font-weight: 800; color: var(--text-3); margin-top: -6px">
+<span>Sep</span><span style="color: var(--text)">Oct</span>
+</div>
+</section>
+
+<section class="card rise d6" style="margin-top: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px">
+<h2 style="margin: 0; font-size: 15px; font-weight: 800">Topes del mes</h2>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; justify-content: space-between; font-size: 14px; font-weight: 700">
+<span>Gastos hormiga</span>
+<span class="num" style="color: var(--expense)">$ 145.000 / $ 100.000</span>
+</div>
+<div class="bar"><i style="width: 100%; background: linear-gradient(90deg, var(--warn), var(--expense))"></i></div>
+</div>
+<a href="Modulos.dc.html" style="font-size: 13px; font-weight: 800; color: var(--primary); text-decoration: none">Ajustar topes</a>
+</section>
+
+</main>
+
+<nav class="nav" aria-label="Principal">
+<a href="Main.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 10.5L12 3.5l8.5 7V19a1.5 1.5 0 0 1-1.5 1.5h-4v-6h-6v6H5A1.5 1.5 0 0 1 3.5 19z"></path></svg>Inicio</a>
+<a href="Movimientos.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h14M14 4l4 4-4 4M20 16H6M10 12l-4 4 4 4"></path></svg>Flujo</a>
+<a href="Movimientos.dc.html" aria-label="Registrar movimiento"><span class="add"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></span></a>
+<a href="Analisis.dc.html" class="on" aria-current="page"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"></path></svg>Análisis</a>
+<a href="Metas.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><circle cx="12" cy="12" r="4.5"></circle><circle cx="12" cy="12" r="1" fill="currentColor"></circle></svg>Metas</a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(...args) {
+    super(...args);
+    this.state = { dark: null };
+  }
+  renderVals() {
+    const dark = this.state.dark !== null ? this.state.dark : !!this.props.dark;
+    return {
+      themeClass: dark ? 'dark' : '',
+      themeLabel: dark ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro',
+      toggle: () => this.setState({ dark: !dark })
+    };
+  }
+}
+</script>
+</body>
+</html>

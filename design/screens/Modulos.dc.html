@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Más módulos · Finanzas 360</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./f360.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Sora:wght@400;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div class="f360 screen {{themeClass}}" style="font-family: 'Manrope', system-ui, sans-serif; color: var(--text); background: var(--bg)">
+<main class="scroll">
+
+<header class="rise d1" style="display: flex; align-items: center; justify-content: space-between">
+<div style="display: flex; align-items: center; gap: 10px">
+<a href="Main.dc.html" class="icon-btn" aria-label="Volver al inicio">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg>
+</a>
+<h1 class="display" style="margin: 0; font-size: 26px; font-weight: 700">Todo</h1>
+</div>
+<button class="icon-btn theme-btn" aria-label="{{themeLabel}}" onClick="{{toggle}}">
+<svg class="sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+<svg class="moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"></path></svg>
+</button>
+</header>
+
+<label class="rise d2" style="margin-top: 18px; display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 16px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line)">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="M20 20l-4-4"></path></svg>
+<span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Buscar módulo</span>
+<input placeholder="Buscar módulo…" value="{{q}}" onChange="{{onQ}}" style="flex: 1; min-width: 0; border: 0; background: transparent; outline: none; font-family: inherit; font-size: 15px; font-weight: 600; color: var(--text)">
+</label>
+
+<div style="margin-top: 14px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+<sc-for list="{{mods}}" as="m" hint-placeholder-count="8">
+<a href="{{m.href}}" class="card lift rise" style="padding: 16px; min-height: 148px; display: flex; flex-direction: column; justify-content: space-between; gap: 14px; text-decoration: none; color: var(--text); animation-delay: {{m.delay}}">
+<span class="tile" style="background: {{m.soft}}; color: {{m.color}}">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{m.icon}}"></path></svg>
+</span>
+<span style="display: flex; flex-direction: column; gap: 4px">
+<span style="font-size: 15px; font-weight: 800">{{m.title}}</span>
+<span class="num" style="font-size: 13px; font-weight: 600; letter-spacing: 0; color: var(--text-3)">{{m.sub}}</span>
+</span>
+</a>
+</sc-for>
+</div>
+
+<sc-if value="{{empty}}" hint-placeholder-val="{{ false }}">
+<p style="margin: 24px 0 0; text-align: center; font-size: 14px; color: var(--text-3)">Sin resultados</p>
+</sc-if>
+
+<button class="btn btn-outline rise d8" style="margin-top: 20px; width: 100%; color: var(--expense)">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 16l4-4-4-4M14 12H4"></path></svg>
+Cerrar sesión
+</button>
+
+</main>
+
+<nav class="nav" aria-label="Principal">
+<a href="Main.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 10.5L12 3.5l8.5 7V19a1.5 1.5 0 0 1-1.5 1.5h-4v-6h-6v6H5A1.5 1.5 0 0 1 3.5 19z"></path></svg>Inicio</a>
+<a href="Movimientos.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h14M14 4l4 4-4 4M20 16H6M10 12l-4 4 4 4"></path></svg>Flujo</a>
+<a href="Movimientos.dc.html" aria-label="Registrar movimiento"><span class="add"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></span></a>
+<a href="Analisis.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"></path></svg>Análisis</a>
+<a href="Metas.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><circle cx="12" cy="12" r="4.5"></circle><circle cx="12" cy="12" r="1" fill="currentColor"></circle></svg>Metas</a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(...args) {
+    super(...args);
+    this.state = { dark: null, q: '' };
+  }
+  renderVals() {
+    const dark = this.state.dark !== null ? this.state.dark : !!this.props.dark;
+    const all = [
+      { title: 'Inversiones', sub: '$ 157.000.146', href: 'Inversiones.dc.html', color: 'var(--violet)', soft: 'var(--violet-soft)', icon: 'M21 12A9 9 0 1 1 12 3v9zM15 3.5A9 9 0 0 1 20.5 9H15z' },
+      { title: 'Deudas', sub: 'Todo pagado', href: 'Deudas.dc.html', color: 'var(--expense)', soft: 'var(--expense-soft)', icon: 'M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 10h18M7 15h3' },
+      { title: 'Agenda', sub: 'Conectar Google', href: '#', color: 'var(--primary)', soft: 'var(--primary-soft)', icon: 'M5 5h14a1.5 1.5 0 0 1 1.5 1.5V19a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 19V6.5A1.5 1.5 0 0 1 5 5zM3.5 10h17M8 3v4M16 3v4' },
+      { title: 'Rutina semanal', sub: 'Viernes · 8 bloques', href: '#', color: 'var(--cyan)', soft: 'var(--income-soft)', icon: 'M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z' },
+      { title: 'Proyectos', sub: '2 activos', href: '#', color: 'var(--text)', soft: 'var(--surface-2)', icon: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM8 11v4M12 11v2M16 11v3' },
+      { title: 'Bóveda', sub: 'Bloqueada', href: '#', color: 'var(--text)', soft: 'var(--surface-2)', icon: 'M6 11h12a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 18 20H6a1.5 1.5 0 0 1-1.5-1.5v-6A1.5 1.5 0 0 1 6 11zM8 11V8a4 4 0 0 1 8 0v3' },
+      { title: 'Presupuesto', sub: 'Lista fija y topes', href: '#', color: 'var(--warn)', soft: 'var(--warn-soft)', icon: 'M9 5h10M9 12h10M9 19h10M4.5 5h.01M4.5 12h.01M4.5 19h.01' },
+      { title: 'Hábitos', sub: '0 de 6 hoy', href: 'Habitos.dc.html', color: 'var(--income)', soft: 'var(--income-soft)', icon: 'M12 3c1 3.5 5 5.5 5 10a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5.3 1.6 1.2 2.5 2 2.5-1-2.5-.5-5.5 1-8z' }
+    ];
+    const q = this.state.q.trim().toLowerCase();
+    const list = all.filter((m) => !q || m.title.toLowerCase().indexOf(q) >= 0);
+    return {
+      themeClass: dark ? 'dark' : '',
+      themeLabel: dark ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro',
+      toggle: () => this.setState({ dark: !dark }),
+      q: this.state.q,
+      onQ: (e) => this.setState({ q: e.target.value }),
+      empty: list.length === 0,
+      mods: list.map((m, i) => Object.assign({}, m, { delay: (0.12 + i * 0.05) + 's' }))
+    };
+  }
+}
+</script>
+</body>
+</html>

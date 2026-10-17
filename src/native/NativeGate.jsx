@@ -69,29 +69,30 @@ export default function NativeGate({ children }) {
 
     return (
         <div style={{
-            position: 'fixed', inset: 0, zIndex: 9999,
-            background: '#4f46e5', color: 'white',
+            position: 'fixed', inset: 0, zIndex: 9999, isolation: 'isolate', overflow: 'hidden',
+            background: 'var(--bg)', color: 'var(--text)',
             display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center', gap: 24, padding: 24,
+            alignItems: 'center', justifyContent: 'center', gap: 22,
+            padding: 'calc(var(--sat) + 24px) 28px calc(var(--sab) + 40px)',
             textAlign: 'center',
         }}>
-            <Lock size={48} />
-            <div style={{ fontSize: 22, fontWeight: 700 }}>Finanzas 360</div>
-            <div style={{ opacity: 0.85, maxWidth: 280 }}>
-                Tus finanzas están protegidas. Verifica tu identidad para continuar.
+            <div className="orb" style={{ width: 320, height: 320, left: -120, top: -80, background: 'var(--primary)', opacity: .22 }} />
+            <div className="orb" style={{ width: 260, height: 260, right: -110, top: 300, background: 'var(--cyan-bright)', opacity: .18, animationDuration: '18s' }} />
+            <div className="rise d1" style={{ width: 76, height: 76, borderRadius: 24, display: 'grid', placeItems: 'center', background: 'var(--primary)', color: 'var(--on-primary)', boxShadow: '0 18px 40px -12px var(--glow)', animation: 'floaty 5s ease-in-out infinite' }}>
+                <Lock size={32} strokeWidth={1.8} aria-hidden="true" />
             </div>
-            {error && <div style={{ color: '#fecaca', fontSize: 14 }}>{error}</div>}
+            <h1 className="display rise d2" style={{ margin: 0, fontSize: 28, fontWeight: 700 }}>Finanzas 360</h1>
+            <p className="rise d3" style={{ margin: 0, maxWidth: 280, fontSize: 15, lineHeight: 1.5, color: 'var(--text-2)' }}>
+                Tus finanzas están protegidas. Verifica tu identidad para continuar.
+            </p>
+            {error && <p style={{ margin: 0, color: 'var(--expense)', fontSize: 14, fontWeight: 700 }}>{error}</p>}
             <button
+                className="btn btn-primary rise d4"
                 onClick={authenticate}
                 disabled={authenticating}
-                style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    background: 'white', color: '#4f46e5', border: 'none',
-                    borderRadius: 12, padding: '14px 24px', fontSize: 16,
-                    fontWeight: 600, cursor: 'pointer', opacity: authenticating ? 0.6 : 1,
-                }}
+                style={{ width: '100%', maxWidth: 320 }}
             >
-                <Fingerprint size={20} />
+                <Fingerprint size={20} aria-hidden="true" />
                 {authenticating ? 'Verificando…' : 'Desbloquear'}
             </button>
         </div>

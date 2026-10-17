@@ -57,6 +57,11 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
+	<key>WKAppBoundDomains</key>
+	<array>
+		<string>finanzas-360.milarock10520.workers.dev</string>
+		<string>localhost</string>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

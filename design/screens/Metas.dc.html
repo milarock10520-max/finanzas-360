@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Metas · Finanzas 360</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./f360.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Sora:wght@400;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div class="f360 screen {{themeClass}}" style="font-family: 'Manrope', system-ui, sans-serif; color: var(--text); background: var(--bg)">
+<main class="scroll">
+
+<header class="rise d1" style="display: flex; align-items: center; justify-content: space-between">
+<h1 class="display" style="margin: 0; font-size: 26px; font-weight: 700">Metas</h1>
+<div style="display: flex; gap: 8px">
+<button class="icon-btn theme-btn" aria-label="{{themeLabel}}" onClick="{{toggle}}">
+<svg class="sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+<svg class="moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"></path></svg>
+</button>
+<button class="icon-btn" aria-label="Nueva meta" aria-expanded="{{formOpenTxt}}" onClick="{{toggleForm}}" style="background: var(--primary); color: var(--on-primary); border-color: transparent">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true" style="transition: transform .45s var(--spring); transform: {{plusRot}}"><path d="M12 5v14M5 12h14"></path></svg>
+</button>
+</div>
+</header>
+
+<div class="seg rise d2" style="margin-top: 18px" role="tablist" aria-label="Tipo de meta">
+<span class="thumb" style="transform: {{thumbX}}"></span>
+<button role="tab" class="{{finOn}}" onClick="{{setFin}}">Financieras</button>
+<button role="tab" class="{{perOn}}" onClick="{{setPer}}">Personales</button>
+</div>
+
+<sc-if value="{{formOpen}}" hint-placeholder-val="{{ false }}">
+<section class="card rise" style="margin-top: 14px; padding: 18px; display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-size: 16px; font-weight: 800">Nueva meta</h2>
+<label class="field"><span class="field-label">Nombre</span><input class="input" placeholder="Ej: Viaje a Europa"></label>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+<label class="field"><span class="field-label">Objetivo</span><input class="input num" inputmode="numeric" placeholder="$ 0"></label>
+<label class="field"><span class="field-label">Ya tengo</span><input class="input num" inputmode="numeric" placeholder="$ 0"></label>
+</div>
+<label class="field"><span class="field-label">Fecha límite</span><input class="input" type="date"></label>
+<div class="field">
+<span class="field-label">Aportes</span>
+<div class="seg">
+<span class="thumb" style="transform: {{freqX}}"></span>
+<button class="{{quinOn}}" onClick="{{setQuin}}">Quincenal</button>
+<button class="{{mensOn}}" onClick="{{setMens}}">Mensual</button>
+</div>
+</div>
+<button class="btn btn-primary" onClick="{{toggleForm}}">Crear plan de ahorro</button>
+</section>
+</sc-if>
+
+<sc-if value="{{isFin}}" hint-placeholder-val="{{ true }}">
+<article class="card lift rise d3" style="margin-top: 14px; padding: 18px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 10px">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 10px; background: var(--warn-soft); color: var(--warn); font-size: 12px; font-weight: 800">
+<span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor"></span>Atrasada
+</span>
+<h2 class="display" style="margin: 0; font-size: 21px; font-weight: 700">Viaje a Europa</h2>
+</div>
+<div style="display: flex; gap: 4px">
+<button class="icon-btn" aria-label="Editar meta" style="width: 40px; height: 40px; border-radius: 12px">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"></path></svg>
+</button>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; color: var(--text-2)">
+<span>{{progressTxt}} completado</span>
+<span>Quincenal</span>
+</div>
+<div class="bar" style="height: 10px"><i style="width: {{progressTxt}}; background: linear-gradient(90deg, var(--primary), var(--cyan-bright))"></i></div>
+</div>
+<div style="padding: 14px; border-radius: 16px; background: var(--surface-2); display: flex; align-items: center; gap: 12px">
+<span class="tile" style="width: 40px; height: 40px; background: var(--warn-soft); color: var(--warn)">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8v5M12 16.5v.5"></path><circle cx="12" cy="12" r="9"></circle></svg>
+</span>
+<div style="flex: 1; display: flex; flex-direction: column; gap: 2px">
+<span style="font-size: 13px; color: var(--text-2)">Aporta para nivelarte</span>
+<span class="num" style="font-size: 17px; font-weight: 700">$ 991.527</span>
+</div>
+<button class="chip" style="color: var(--primary)">Aportar</button>
+</div>
+</article>
+</sc-if>
+
+<sc-if value="{{isPer}}" hint-placeholder-val="{{ false }}">
+<section class="card rise d3" style="margin-top: 14px; padding: 32px 22px; display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center">
+<div style="width: 72px; height: 72px; border-radius: 24px; display: grid; place-items: center; background: var(--violet-soft); color: var(--violet); animation: floaty 4s ease-in-out infinite">
+<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"></path></svg>
+</div>
+<h2 class="display" style="margin: 0; font-size: 19px; font-weight: 700">Metas personales</h2>
+<p style="margin: 0; font-size: 14px; line-height: 1.5; color: var(--text-2)">Aprender un idioma, correr 10K, leer 12 libros. Ponles fecha y sigue tu avance.</p>
+<button class="btn btn-primary" onClick="{{toggleForm}}" style="width: 100%">Crear meta personal</button>
+</section>
+</sc-if>
+
+<a href="Habitos.dc.html" class="card lift rise d4" style="margin-top: 14px; padding: 16px; display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--text)">
+<span class="tile" style="background: var(--primary-soft); color: var(--primary)">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c1 3.5 5 5.5 5 10a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5.3 1.6 1.2 2.5 2 2.5-1-2.5-.5-5.5 1-8z"></path></svg>
+</span>
+<div style="flex: 1; display: flex; flex-direction: column; gap: 2px">
+<span style="font-size: 15px; font-weight: 800">Mis hábitos</span>
+<span style="font-size: 13px; color: var(--text-3)">6 hábitos · 0 hechos hoy</span>
+</div>
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+</a>
+
+</main>
+
+<nav class="nav" aria-label="Principal">
+<a href="Main.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 10.5L12 3.5l8.5 7V19a1.5 1.5 0 0 1-1.5 1.5h-4v-6h-6v6H5A1.5 1.5 0 0 1 3.5 19z"></path></svg>Inicio</a>
+<a href="Movimientos.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h14M14 4l4 4-4 4M20 16H6M10 12l-4 4 4 4"></path></svg>Flujo</a>
+<a href="Movimientos.dc.html" aria-label="Registrar movimiento"><span class="add"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></span></a>
+<a href="Analisis.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"></path></svg>Análisis</a>
+<a href="Metas.dc.html" class="on" aria-current="page"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><circle cx="12" cy="12" r="4.5"></circle><circle cx="12" cy="12" r="1" fill="currentColor"></circle></svg>Metas</a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"progress":{"editor":"range","min":0,"max":100,"step":1,"unit":"%","default":35},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(...args) {
+    super(...args);
+    this.state = { dark: null, tab: 'fin', form: false, freq: 'q' };
+  }
+  renderVals() {
+    const dark = this.state.dark !== null ? this.state.dark : !!this.props.dark;
+    const fin = this.state.tab === 'fin';
+    const q = this.state.freq === 'q';
+    const p = this.props.progress ?? 35;
+    return {
+      themeClass: dark ? 'dark' : '',
+      themeLabel: dark ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro',
+      toggle: () => this.setState({ dark: !dark }),
+      thumbX: fin ? 'translateX(0)' : 'translateX(100%)',
+      finOn: fin ? 'on' : '',
+      perOn: fin ? '' : 'on',
+      isFin: fin,
+      isPer: !fin,
+      setFin: () => this.setState({ tab: 'fin' }),
+      setPer: () => this.setState({ tab: 'per' }),
+      formOpen: this.state.form,
+      formOpenTxt: this.state.form ? 'true' : 'false',
+      plusRot: this.state.form ? 'rotate(45deg)' : 'rotate(0)',
+      toggleForm: () => this.setState({ form: !this.state.form }),
+      freqX: q ? 'translateX(0)' : 'translateX(100%)',
+      quinOn: q ? 'on' : '',
+      mensOn: q ? '' : 'on',
+      setQuin: () => this.setState({ freq: 'q' }),
+      setMens: () => this.setState({ freq: 'm' }),
+      progressTxt: p + '%'
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Coach · Finanzas 360</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./f360.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Sora:wght@400;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div class="f360 screen {{themeClass}}" style="font-family: 'Manrope', system-ui, sans-serif; color: var(--text); background: var(--bg)">
+<div style="position: absolute; inset: 0" aria-hidden="true">
+<dc-import name="Main" dark="{{dark}}" hint-size="390px,844px"></dc-import>
+</div>
+<a href="Main.dc.html" class="scrim" aria-label="Cerrar coach"></a>
+
+<section class="sheet" role="dialog" aria-label="Tu coach hoy" style="padding: 0 20px 28px; display: flex; flex-direction: column; gap: 18px">
+<div class="grabber"></div>
+
+<header style="display: flex; align-items: center; gap: 14px">
+<div style="position: relative; width: 52px; height: 52px; flex-shrink: 0">
+<div style="position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(from 0deg, #3355FF, #22D3EE, #A78BFA, #3355FF); animation: spin 4s linear infinite; filter: blur(.5px)"></div>
+<div style="position: absolute; inset: 3px; border-radius: 50%; background: var(--surface); display: grid; place-items: center; color: var(--violet)">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"></path><path d="M19 3v4M17 5h4" stroke-linecap="round"></path></svg>
+</div>
+</div>
+<div style="flex: 1; display: flex; flex-direction: column; gap: 2px">
+<h2 class="display" style="margin: 0; font-size: 21px; font-weight: 700">Tu coach hoy</h2>
+<span style="font-size: 13px; color: var(--text-3)">3 hallazgos en tus finanzas</span>
+</div>
+<a href="Main.dc.html" class="icon-btn" aria-label="Cerrar">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+</a>
+</header>
+
+<div style="display: flex; flex-direction: column; gap: 10px">
+<div class="rise d3" style="padding: 14px; border-radius: 18px; background: var(--expense-soft); display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: center; gap: 10px">
+<span style="width: 8px; height: 8px; border-radius: 50%; background: var(--expense); flex-shrink: 0"></span>
+<span style="flex: 1; font-size: 14px; font-weight: 800; color: var(--expense)">Pasaste tu tope de Gastos hormiga</span>
+<span class="num" style="font-size: 14px; font-weight: 700; color: var(--expense)">145%</span>
+</div>
+<div class="bar" style="background: var(--surface)"><i style="width: 100%; background: var(--expense)"></i></div>
+<span class="num" style="font-size: 13px; color: var(--text-2)">$ 145.000 de $ 100.000 este mes</span>
+</div>
+<div class="rise d4" style="padding: 14px; border-radius: 18px; background: var(--income-soft); display: flex; align-items: center; gap: 10px">
+<span style="width: 8px; height: 8px; border-radius: 50%; background: var(--income); flex-shrink: 0"></span>
+<span style="flex: 1; font-size: 14px; font-weight: 700; color: var(--text)">Ahorraste el <b class="num" style="color: var(--income)">20,8%</b> de tus ingresos este mes</span>
+</div>
+<div class="rise d5" style="padding: 14px; border-radius: 18px; background: var(--warn-soft); display: flex; align-items: center; gap: 10px">
+<span style="width: 8px; height: 8px; border-radius: 50%; background: var(--warn); flex-shrink: 0"></span>
+<span style="flex: 1; font-size: 14px; font-weight: 700; color: var(--text)">“Viaje a Europa” va atrasada: aporta <b class="num" style="color: var(--warn)">$ 991.527</b></span>
+</div>
+</div>
+
+<div class="rise d6" style="display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: 0 -20px; padding: 0 20px">
+<button class="chip">¿Cómo bajo los gastos hormiga?</button>
+<button class="chip">Arma mi plan quincenal</button>
+<button class="chip">Resumen del mes</button>
+</div>
+
+<label class="rise d7" style="display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 16px; border-radius: 18px; border: 1px solid var(--line); background: var(--surface-2)">
+<span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Pregunta al coach</span>
+<input placeholder="Pregúntale a tu coach…" style="flex: 1; min-width: 0; height: 44px; border: 0; background: transparent; outline: none; font-family: inherit; font-size: 15px; font-weight: 600; color: var(--text)">
+<button class="btn btn-primary" aria-label="Enviar" style="width: 44px; height: 44px; border-radius: 14px; padding: 0">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+</button>
+</label>
+
+<div class="rise d8" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+<a href="Main.dc.html" class="btn btn-ghost" style="text-decoration: none">Entendido</a>
+<a href="Main.dc.html" class="btn btn-primary" style="text-decoration: none">Abrir chat</a>
+</div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const dark = !!this.props.dark;
+    return { dark: dark, themeClass: dark ? 'dark' : '' };
+  }
+}
+</script>
+</body>
+</html>

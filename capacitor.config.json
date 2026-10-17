@@ -3,17 +3,21 @@
   "appName": "Finanzas 360",
   "webDir": "dist/client",
   "ios": {
-    "contentInset": "always"
+    "contentInset": "never",
+    "limitsNavigationsToAppBoundDomains": true
   },
   "server": {
     "iosScheme": "capacitor",
     "url": "https://finanzas-360.milarock10520.workers.dev",
-    "cleartext": false
+    "cleartext": false,
+    "errorPath": "offline.html"
   },
   "plugins": {
     "FirebaseAuthentication": {
       "skipNativeAuth": true,
-      "providers": ["google.com"]
+      "providers": [
+        "google.com"
+      ]
     }
   }
 }

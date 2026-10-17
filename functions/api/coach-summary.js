@@ -2,21 +2,25 @@
 // POST /api/coach-summary
 //
 // Construye el contexto financiero y de vida del usuario leyendo Firestore
-// (vía cuenta de servicio + REST, igual que quick-expense.js), llama a la API
-// de Claude y devuelve una respuesta hablada, lista para que Siri la lea.
+// (vía cuenta de servicio + REST, igual que quick-expense.js), llama a Workers AI
+// (gpt-oss-120b, gratis dentro de la cuota diaria) y devuelve una respuesta
+// hablada, lista para que Siri la lea. Incluye la memoria financiera de 12 meses
+// y el perfil escrito por el análisis semanal.
 //
 // Body JSON:
 //   { token: "<SHORTCUT_SECRET_TOKEN>", userId: "<uid>", pregunta?: "texto opcional" }
 //
 // Variables de entorno (secrets) necesarias en el Worker:
 //   - SHORTCUT_SECRET_TOKEN : palabra secreta (la misma del Atajo).
-//   - ANTHROPIC_API_KEY     : API key de Anthropic.
+//   - Binding AI (Workers AI) declarado en wrangler.jsonc.
 //   - FIREBASE_PROJECT_ID   : appfinanzas-84626
 //   - FIREBASE_CLIENT_EMAIL : del JSON de la cuenta de servicio.
 //   - FIREBASE_PRIVATE_KEY  : del JSON de la cuenta de servicio (con \n).
 
+import { llamarIA } from '../lib/ia.js';
+import { memoriaTexto } from '../../src/coach/memoria.js';
+
 const APP_ID = 'mi-finanzas-app-v1';
-const MODEL = 'claude-opus-4-8';
 
 const CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -277,15 +281,12 @@ export async function onRequestPost(context) {
         if (!userId) {
             return new Response(JSON.stringify({ error: 'Falta userId' }), { status: 400, headers: CORS });
         }
-        if (!env.ANTHROPIC_API_KEY) {
-            return new Response(JSON.stringify({ error: 'Falta ANTHROPIC_API_KEY' }), { status: 500, headers: CORS });
-        }
 
         // 2) Leer Firestore con cuenta de servicio
         const accessToken = await getAccessToken(env);
         const projectId = env.FIREBASE_PROJECT_ID || 'appfinanzas-84626';
 
-        const [transacciones, deudas, metas, presupuesto, limites, habitos, diario, perfil] = await Promise.all([
+        const [transacciones, deudas, metas, presupuesto, limites, habitos, diario, perfil, memoria] = await Promise.all([
             fetchCollection(accessToken, projectId, userId, 'transacciones'),
             fetchCollection(accessToken, projectId, userId, 'deudas'),
             fetchCollection(accessToken, projectId, userId, 'metas'),
@@ -294,44 +295,28 @@ export async function onRequestPost(context) {
             fetchCollection(accessToken, projectId, userId, 'habitos'),
             fetchCollection(accessToken, projectId, userId, 'diario'),
             fetchCollection(accessToken, projectId, userId, 'coach_perfil'),
+            fetchCollection(accessToken, projectId, userId, 'coach_memoria'),
         ]);
 
-        const ctx = buildContext({ transacciones, deudas, metas, presupuesto, limites, habitos, diario, perfil });
+        const perfilIA = (memoria.find(m => m.texto) || {}).texto || '';
+        const ctx = `${buildContext({ transacciones, deudas, metas, presupuesto, limites, habitos, diario, perfil })}
 
-        // 3) Llamar a Claude
+${memoriaTexto(transacciones)}
+
+PERFIL FINANCIERO (análisis semanal):
+${perfilIA || '(Aún no generado.)'}`;
+
+        // 3) Llamar a la IA
         const userQ = (pregunta && String(pregunta).trim())
             ? String(pregunta).trim()
             : '¿Cómo voy este mes? Dame un resumen hablado breve.';
 
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-                'x-api-key': env.ANTHROPIC_API_KEY,
-                'anthropic-version': '2023-06-01',
-                'content-type': 'application/json',
-            },
-            body: JSON.stringify({
-                model: MODEL,
-                max_tokens: 600,
-                system: [
-                    { type: 'text', text: PERSONA, cache_control: { type: 'ephemeral' } },
-                    { type: 'text', text: `DATOS DEL USUARIO EN TIEMPO REAL:\n${ctx}` },
-                ],
-                messages: [{ role: 'user', content: userQ }],
-            }),
+        const { texto } = await llamarIA(env, {
+            system: `${PERSONA}\n\nDATOS DEL USUARIO EN TIEMPO REAL:\n${ctx}`,
+            messages: [{ role: 'user', content: userQ }],
+            maxTokens: 1200,
         });
-
-        if (!res.ok) {
-            const errText = await res.text();
-            return new Response(JSON.stringify({ error: 'Error en la API de Claude', status: res.status, details: errText }), { status: 502, headers: CORS });
-        }
-
-        const data = await res.json();
-        const reply = (data.content || [])
-            .filter(b => b.type === 'text')
-            .map(b => b.text)
-            .join(' ')
-            .trim();
+        const reply = texto.replace(/\*\*/g, '').trim();
 
         // Devolvemos texto plano para que el Atajo lo lea directamente.
         return new Response(JSON.stringify({ reply, respuesta: reply }), { status: 200, headers: CORS });
