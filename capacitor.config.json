@@ -6,7 +6,9 @@
     "contentInset": "always"
   },
   "server": {
-    "iosScheme": "capacitor"
+    "iosScheme": "capacitor",
+    "url": "https://finanzas-360.milarock10520.workers.dev",
+    "cleartext": false
   },
   "plugins": {
     "FirebaseAuthentication": {
