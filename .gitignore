@@ -33,6 +33,7 @@ dist-ssr
 # iOS - Xcode user data (específico de la máquina, no del proyecto)
 ios/**/*.xcuserdata/
 ios/**/.DS_Store
+/build-ios
 
 # Electron (escritorio)
 /release
