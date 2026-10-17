@@ -7,12 +7,21 @@
 //      coach_mensajes con origin:'proactivo' y read:false; la app lo muestra en el
 //      chat del coach al instante (onSnapshot) y dispara un toast en escritorio.
 //
+// Memoria del coach (análisis semanal con la suscripción):
+//   4. POST /api/coach-context { token, userId, incluirHistorial: true } -> además
+//      de la memoria de 12 meses, el detalle de movimientos para analizarlos.
+//   5. POST /api/coach-memoria { token, userId, texto } -> guarda el PERFIL
+//      FINANCIERO en coach_memoria/perfil; la app y el coach por voz lo usan
+//      como contexto en cada respuesta.
+//
 // Auth y acceso a Firestore idénticos a coach-summary.js / quick-expense.js
 // (secreto compartido en el body + cuenta de servicio vía REST).
 //
 // Variables de entorno necesarias (ya desplegadas):
 //   - SHORTCUT_SECRET_TOKEN
 //   - FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY
+
+import { memoriaTexto } from '../../src/coach/memoria.js';
 
 const APP_ID = 'mi-finanzas-app-v1';
 
@@ -189,8 +198,20 @@ function seccionProyectos(proyectos, items) {
     return `PROYECTOS LABORALES ACTIVOS (${activos.length}):\n${lineas.join('\n')}`;
 }
 
-function buildContexto(data) {
-    const { transacciones, deudas, metas, presupuesto, limites, habitos, diario, perfil, rutina, proyectos, proyectoItems } = data;
+// Movimientos de los últimos 12 meses en una línea cada uno (para el análisis profundo).
+function seccionHistorial(transacciones) {
+    const desde = new Date(); desde.setMonth(desde.getMonth() - 12);
+    const desdeKey = dateKey(desde);
+    const lineas = transacciones
+        .filter(t => typeof t.fecha === 'string' && t.fecha >= desdeKey)
+        .sort((a, b) => a.fecha.localeCompare(b.fecha))
+        .map(t => `${t.fecha} | ${t.tipo}${t.esAhorro ? ' (ahorro)' : t.esInversion ? ' (inversión)' : ''} | ${t.categoria || ''} | ${t.concepto || ''} | ${fmt(t.monto)}`);
+    return `HISTORIAL DE MOVIMIENTOS (últimos 12 meses, ${lineas.length}):\nfecha | tipo | categoría | concepto | monto\n${lineas.join('\n')}`;
+}
+
+function buildContexto(data, { incluirHistorial = false } = {}) {
+    const { transacciones, deudas, metas, presupuesto, limites, habitos, diario, perfil, rutina, proyectos, proyectoItems, memoria = [] } = data;
+    const perfilIA = (memoria.find(m => m.texto) || {}).texto || '';
     const perfilNotas = (perfil && perfil[0] && perfil[0].notas) ? perfil[0].notas : '';
     const hoyKey = dateKey();
     const mesKey = hoyKey.slice(0, 7);
@@ -268,7 +289,12 @@ ${diarioTxt || 'Sin entradas.'}
 
 ${seccionRutina(rutina)}
 
-${seccionProyectos(proyectos, proyectoItems)}`;
+${seccionProyectos(proyectos, proyectoItems)}
+
+${memoriaTexto(transacciones)}
+
+PERFIL FINANCIERO ACTUAL (escrito por el análisis semanal anterior):
+${perfilIA || '(Aún no generado.)'}${incluirHistorial ? `\n\n${seccionHistorial(transacciones)}` : ''}`;
 }
 
 const authError = () => new Response(JSON.stringify({ error: 'Token inválido' }), { status: 401, headers: CORS });
@@ -283,19 +309,22 @@ const tokenValido = (env, token) =>
 export async function contextPost(context) {
     const { request, env } = context;
     try {
-        const { token, userId } = await request.json();
+        const { token, userId, incluirHistorial } = await request.json();
         if (!tokenValido(env, token)) return authError();
         if (!userId) return new Response(JSON.stringify({ error: 'Falta userId' }), { status: 400, headers: CORS });
 
         const projectId = env.FIREBASE_PROJECT_ID || 'appfinanzas-84626';
         const accessToken = await getAccessToken(env);
 
-        const [transacciones, deudas, metas, presupuesto, limites, habitos, diario, perfil, rutina, proyectos, proyectoItems] = await Promise.all(
-            ['transacciones', 'deudas', 'metas', 'presupuesto', 'limites', 'habitos', 'diario', 'coach_perfil', 'rutina', 'proyectos', 'proyecto_items']
+        const [transacciones, deudas, metas, presupuesto, limites, habitos, diario, perfil, rutina, proyectos, proyectoItems, memoria] = await Promise.all(
+            ['transacciones', 'deudas', 'metas', 'presupuesto', 'limites', 'habitos', 'diario', 'coach_perfil', 'rutina', 'proyectos', 'proyecto_items', 'coach_memoria']
                 .map(c => fetchCollection(accessToken, projectId, userId, c))
         );
 
-        const contexto = buildContexto({ transacciones, deudas, metas, presupuesto, limites, habitos, diario, perfil, rutina, proyectos, proyectoItems });
+        const contexto = buildContexto(
+            { transacciones, deudas, metas, presupuesto, limites, habitos, diario, perfil, rutina, proyectos, proyectoItems, memoria },
+            { incluirHistorial: incluirHistorial === true }
+        );
         return new Response(JSON.stringify({ contexto, generadoEn: new Date().toISOString() }), { status: 200, headers: CORS });
     } catch (e) {
         console.error('coach-context error:', e);
@@ -336,6 +365,43 @@ export async function pushPost(context) {
         return new Response(JSON.stringify({ ok: true }), { status: 200, headers: CORS });
     } catch (e) {
         console.error('coach-push error:', e);
+        return new Response(JSON.stringify({ error: 'interno' }), { status: 500, headers: CORS });
+    }
+}
+
+// POST /api/coach-memoria  { token, userId, texto }
+// Guarda (sobrescribe) el perfil financiero en coach_memoria/perfil.
+export async function memoriaPost(context) {
+    const { request, env } = context;
+    try {
+        const { token, userId, texto } = await request.json();
+        if (!tokenValido(env, token)) return authError();
+        if (!userId || !texto || !String(texto).trim()) {
+            return new Response(JSON.stringify({ error: 'Faltan userId o texto' }), { status: 400, headers: CORS });
+        }
+        const limpio = String(texto).trim().slice(0, 12000);
+
+        const projectId = env.FIREBASE_PROJECT_ID || 'appfinanzas-84626';
+        const accessToken = await getAccessToken(env);
+        const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${APP_ID}/users/${userId}/coach_memoria/perfil`;
+        const res = await fetch(url, {
+            method: 'PATCH',
+            headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                fields: {
+                    texto: { stringValue: limpio },
+                    updatedAt: { stringValue: new Date().toISOString() },
+                    origen: { stringValue: 'analisis_semanal' },
+                },
+            }),
+        });
+        if (!res.ok) {
+            console.error('coach-memoria firestore error:', res.status, await res.text());
+            return new Response(JSON.stringify({ error: 'firestore' }), { status: 502, headers: CORS });
+        }
+        return new Response(JSON.stringify({ ok: true, caracteres: limpio.length }), { status: 200, headers: CORS });
+    } catch (e) {
+        console.error('coach-memoria error:', e);
         return new Response(JSON.stringify({ error: 'interno' }), { status: 500, headers: CORS });
     }
 }

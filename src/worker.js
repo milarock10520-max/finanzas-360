@@ -5,7 +5,7 @@ import { onRequestPost as quickExpensePost, onRequestOptions as quickExpenseOpti
 import { onRequestPost as coachSummaryPost, onRequestOptions as coachSummaryOptions } from '../functions/api/coach-summary.js';
 import { onRequestGet as marketGet, onRequestOptions as marketOptions } from '../functions/api/market.js';
 import { callbackGet as googleCallback, connectPost as googleConnect, tokenPost as googleToken, disconnectPost as googleDisconnect, optionsHandler as googleOptions } from '../functions/api/google-auth.js';
-import { contextPost as coachContextPost, pushPost as coachPushPost, onRequestOptions as coachProactivoOptions } from '../functions/api/coach-proactivo.js';
+import { contextPost as coachContextPost, pushPost as coachPushPost, memoriaPost as coachMemoriaPost, onRequestOptions as coachProactivoOptions } from '../functions/api/coach-proactivo.js';
 
 export default {
     async fetch(request, env, ctx) {
@@ -45,6 +45,11 @@ export default {
         if (url.pathname === '/api/coach-push') {
             if (request.method === 'OPTIONS') return coachProactivoOptions(context);
             if (request.method === 'POST') return coachPushPost(context);
+            return new Response('Method Not Allowed', { status: 405 });
+        }
+        if (url.pathname === '/api/coach-memoria') {
+            if (request.method === 'OPTIONS') return coachProactivoOptions(context);
+            if (request.method === 'POST') return coachMemoriaPost(context);
             return new Response('Method Not Allowed', { status: 405 });
         }
 

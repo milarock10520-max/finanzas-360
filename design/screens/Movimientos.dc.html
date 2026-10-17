@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Flujo · Finanzas 360</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./f360.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Sora:wght@400;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div class="f360 screen {{themeClass}}" style="font-family: 'Manrope', system-ui, sans-serif; color: var(--text); background: var(--bg)">
+<main class="scroll">
+
+<header class="rise d1" style="display: flex; align-items: center; justify-content: space-between">
+<h1 class="display" style="margin: 0; font-size: 26px; font-weight: 700">Flujo</h1>
+<button class="icon-btn theme-btn" aria-label="{{themeLabel}}" onClick="{{toggle}}">
+<svg class="sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+<svg class="moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"></path></svg>
+</button>
+</header>
+
+<div class="seg rise d2" style="margin-top: 18px" role="tablist" aria-label="Tipo de movimiento">
+<span class="thumb" style="transform: {{thumbX}}"></span>
+<button role="tab" class="{{gastoOn}}" onClick="{{setGasto}}">Gasto</button>
+<button role="tab" class="{{ingresoOn}}" onClick="{{setIngreso}}">Ingreso</button>
+</div>
+
+<section class="card rise d3" style="margin-top: 14px; padding: 20px; display: flex; flex-direction: column; gap: 18px">
+<label style="display: flex; flex-direction: column; align-items: center; gap: 6px">
+<span class="eyebrow">Monto</span>
+<span style="display: flex; align-items: baseline; justify-content: center; gap: 4px; width: 100%">
+<span class="num" style="font-size: 30px; font-weight: 600; color: var(--text-3)">$</span>
+<input class="num" inputmode="numeric" placeholder="0" value="{{amountTxt}}" onChange="{{onAmount}}" style="width: 220px; border: 0; background: transparent; outline: none; text-align: center; font-size: 46px; font-weight: 700; color: {{accent}}; caret-color: var(--primary); transition: color .4s var(--ease)">
+</span>
+</label>
+
+<div class="field">
+<span class="field-label">Categoría</span>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<sc-for list="{{cats}}" as="c" hint-placeholder-count="6">
+<button class="chip {{c.on}}" onClick="{{c.pick}}" aria-pressed="{{c.pressed}}">{{c.label}}</button>
+</sc-for>
+</div>
+</div>
+
+<label class="field">
+<span class="field-label">Concepto</span>
+<input class="input" placeholder="{{conceptHint}}" value="{{concept}}" onChange="{{onConcept}}">
+</label>
+
+<div style="display: flex; gap: 10px">
+<button class="chip" style="height: 54px; border-radius: 16px; padding: 0 16px">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="3"></rect><path d="M3.5 10h17M8 3v4M16 3v4"></path></svg>
+Hoy
+</button>
+<button class="btn" onClick="{{save}}" style="flex: 1; color: #fff; background: {{accent}}; box-shadow: 0 12px 28px -12px {{accent}}">{{saveLabel}}</button>
+</div>
+</section>
+
+<div class="rise d4" style="margin-top: 24px; display: flex; align-items: center; justify-content: space-between">
+<h2 style="margin: 0; font-size: 17px; font-weight: 800">Historial</h2>
+<span class="num" style="font-size: 13px; font-weight: 600; color: var(--text-3)">octubre</span>
+</div>
+
+<div class="card rise d5" style="margin-top: 12px; padding: 4px 16px">
+<sc-for list="{{list}}" as="it" hint-placeholder-count="2">
+<div class="rise" style="display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--line)">
+<span class="tile" style="width: 40px; height: 40px; background: {{it.soft}}; color: {{it.color}}">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{it.icon}}"></path></svg>
+</span>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+<span style="font-size: 15px; font-weight: 800">{{it.concept}}</span>
+<span style="font-size: 13px; color: var(--text-3)">{{it.meta}}</span>
+</div>
+<span class="num" style="font-size: 15px; font-weight: 700; color: {{it.color}}">{{it.amount}}</span>
+</div>
+</sc-for>
+</div>
+
+</main>
+
+<nav class="nav" aria-label="Principal">
+<a href="Main.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 10.5L12 3.5l8.5 7V19a1.5 1.5 0 0 1-1.5 1.5h-4v-6h-6v6H5A1.5 1.5 0 0 1 3.5 19z"></path></svg>Inicio</a>
+<a href="Movimientos.dc.html" class="on" aria-current="page"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h14M14 4l4 4-4 4M20 16H6M10 12l-4 4 4 4"></path></svg>Flujo</a>
+<a href="Movimientos.dc.html" aria-label="Registrar movimiento"><span class="add"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></span></a>
+<a href="Analisis.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"></path></svg>Análisis</a>
+<a href="Metas.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><circle cx="12" cy="12" r="4.5"></circle><circle cx="12" cy="12" r="1" fill="currentColor"></circle></svg>Metas</a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"mode":{"editor":"enum","options":["gasto","ingreso"],"default":"gasto"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(...args) {
+    super(...args);
+    this.state = {
+      dark: null,
+      mode: null,
+      cat: null,
+      amount: '',
+      concept: '',
+      gastos: [{ concept: 'Nixon', cat: 'Salud', date: 'Hoy', value: 62000 }],
+      ingresos: [{ concept: 'Admob', cat: 'Retorno inversión', date: '9 oct', value: 660000 }]
+    };
+  }
+  renderVals() {
+    const dark = this.state.dark !== null ? this.state.dark : !!this.props.dark;
+    const mode = this.state.mode || this.props.mode || 'gasto';
+    const isG = mode === 'gasto';
+    const catList = isG
+      ? ['Vivienda', 'Alimentación', 'Transporte', 'Salud', 'Hormiga', 'Ocio']
+      : ['Salario', 'Retorno inversión', 'Freelance', 'Otros'];
+    const cat = catList.indexOf(this.state.cat) >= 0 ? this.state.cat : catList[0];
+    const fmt = (n) => '$ ' + Number(n).toLocaleString('es-CO');
+    const digits = this.state.amount;
+    const src = isG ? this.state.gastos : this.state.ingresos;
+    const up = 'M12 19V5M5 12l7-7 7 7';
+    const down = 'M12 5v14M5 12l7 7 7-7';
+    return {
+      themeClass: dark ? 'dark' : '',
+      themeLabel: dark ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro',
+      toggle: () => this.setState({ dark: !dark }),
+      thumbX: isG ? 'translateX(0)' : 'translateX(100%)',
+      gastoOn: isG ? 'on' : '',
+      ingresoOn: isG ? '' : 'on',
+      setGasto: () => this.setState({ mode: 'gasto' }),
+      setIngreso: () => this.setState({ mode: 'ingreso' }),
+      accent: isG ? 'var(--expense)' : 'var(--income)',
+      saveLabel: isG ? 'Guardar gasto' : 'Guardar ingreso',
+      conceptHint: isG ? 'Ej: Mercado, Uber, Café' : 'Ej: Quincena, Admob',
+      amountTxt: digits ? Number(digits).toLocaleString('es-CO') : '',
+      onAmount: (e) => this.setState({ amount: String(e.target.value).replace(/\D/g, '').slice(0, 10) }),
+      concept: this.state.concept,
+      onConcept: (e) => this.setState({ concept: e.target.value }),
+      cats: catList.map((c) => ({
+        label: c,
+        on: c === cat ? 'on' : '',
+        pressed: c === cat ? 'true' : 'false',
+        pick: () => this.setState({ cat: c })
+      })),
+      save: () => {
+        if (!digits) return;
+        const item = { concept: this.state.concept || cat, cat: cat, date: 'Hoy', value: Number(digits) };
+        const key = isG ? 'gastos' : 'ingresos';
+        this.setState({ [key]: [item].concat(this.state[key]), amount: '', concept: '' });
+      },
+      list: src.map((it) => ({
+        concept: it.concept,
+        meta: it.cat + ' · ' + it.date,
+        amount: (isG ? '− ' : '+ ') + fmt(it.value),
+        color: isG ? 'var(--expense)' : 'var(--income)',
+        soft: isG ? 'var(--expense-soft)' : 'var(--income-soft)',
+        icon: isG ? down : up
+      }))
+    };
+  }
+}
+</script>
+</body>
+</html>

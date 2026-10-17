@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Inicio · Finanzas 360</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./f360.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Sora:wght@400;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div class="f360 screen {{themeClass}}" style="font-family: 'Manrope', system-ui, sans-serif; color: var(--text); background: var(--bg)">
+<main class="scroll">
+
+<header class="rise d1" style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+<div style="display: flex; align-items: center; gap: 12px">
+<div class="tile" style="background: var(--primary); color: var(--on-primary); font-family: 'Sora', sans-serif; font-weight: 700; font-size: 18px; box-shadow: 0 8px 20px -8px var(--glow)">F</div>
+<div style="display: flex; flex-direction: column; gap: 2px">
+<span style="font-size: 13px; font-weight: 600; color: var(--text-3)">Viernes, 16 de octubre</span>
+<h1 class="display" style="margin: 0; font-size: 22px; font-weight: 700">Hola, Orlando</h1>
+</div>
+</div>
+<div style="display: flex; gap: 8px">
+<button class="icon-btn theme-btn" aria-label="{{themeLabel}}" onClick="{{toggle}}">
+<svg class="sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+<svg class="moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"></path></svg>
+</button>
+<a class="icon-btn" href="Modulos.dc.html" aria-label="Más módulos">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="2"></rect><rect x="13.5" y="4" width="6.5" height="6.5" rx="2"></rect><rect x="4" y="13.5" width="6.5" height="6.5" rx="2"></rect><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="2"></rect></svg>
+</a>
+</div>
+</header>
+
+<section class="hero rise d2" style="margin-top: 22px; padding: 22px; display: flex; flex-direction: column; gap: 14px">
+<div class="orb" style="width: 240px; height: 240px; right: -90px; top: -110px; background: #3355FF; opacity: .75"></div>
+<div class="orb" style="width: 170px; height: 170px; left: -60px; bottom: -80px; background: #22D3EE; opacity: .45; animation-duration: 18s"></div>
+<div class="grid-lines"></div>
+<div class="sheen"></div>
+<div style="display: flex; align-items: center; justify-content: space-between">
+<span style="font-size: 13px; font-weight: 700; color: rgba(255,255,255,.72)">Saldo disponible</span>
+<span style="display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: rgba(255,255,255,.72)"><span class="live"></span>En vivo</span>
+</div>
+<div class="num" style="font-size: 40px; font-weight: 700; line-height: 1">{{balance}}</div>
+<div style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: #67E8F9">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"></path><path d="M15 7h6v6"></path></svg>
+$ 1.116.010 te sobró este mes
+</div>
+<svg viewBox="0 0 300 56" width="100%" height="56" aria-hidden="true" style="display: block">
+<defs><linearGradient id="spk" x1="0" x2="1"><stop offset="0" stop-color="#22D3EE" stop-opacity=".2"></stop><stop offset="1" stop-color="#67E8F9"></stop></linearGradient></defs>
+<path class="draw" d="M0 44 C 30 40, 45 30, 70 34 S 110 48, 135 32 S 175 12, 200 22 S 240 36, 262 16 S 290 8, 300 6" fill="none" stroke="url(#spk)" stroke-width="2.5" stroke-linecap="round"></path>
+</svg>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+<div class="glass-pill" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 4px">
+<span style="font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: rgba(255,255,255,.7)">Gastado hoy</span>
+<span class="num" style="font-size: 18px; font-weight: 700">$ 62.000</span>
+</div>
+<div class="glass-pill" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 4px">
+<span style="font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: rgba(255,255,255,.7)">Hábitos</span>
+<span class="num" style="font-size: 18px; font-weight: 700">0 / 6</span>
+</div>
+</div>
+</section>
+
+<a href="Coach.dc.html" class="card lift rise d3" style="margin-top: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px; text-decoration: none; color: var(--text)">
+<div style="display: flex; align-items: center; gap: 12px">
+<div class="tile" style="background: var(--violet-soft); color: var(--violet)">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"></path><path d="M19 3v4M17 5h4" stroke-linecap="round"></path></svg>
+</div>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+<span class="eyebrow" style="color: var(--violet)">Tu coach</span>
+<span style="font-size: 15px; font-weight: 800">Superaste el tope de Gastos hormiga</span>
+</div>
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+</div>
+<div style="display: flex; align-items: baseline; justify-content: space-between">
+<span class="num" style="font-size: 14px; font-weight: 600; color: var(--text-2)">$ 145.000 de $ 100.000</span>
+<span class="num" style="font-size: 14px; font-weight: 700; color: var(--expense)">145%</span>
+</div>
+<div class="bar"><i style="width: 100%; background: linear-gradient(90deg, var(--warn), var(--expense))"></i></div>
+</a>
+
+<nav class="rise d4" aria-label="Acciones rápidas" style="margin-top: 14px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px">
+<a href="Movimientos.dc.html" class="card lift" style="border-radius: 20px; padding: 14px 4px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-decoration: none; color: var(--text); font-size: 12px; font-weight: 800">
+<span class="tile" style="width: 40px; height: 40px; background: var(--income-soft); color: var(--income)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"></path></svg></span>Ingreso
+</a>
+<a href="Movimientos.dc.html" class="card lift" style="border-radius: 20px; padding: 14px 4px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-decoration: none; color: var(--text); font-size: 12px; font-weight: 800">
+<span class="tile" style="width: 40px; height: 40px; background: var(--expense-soft); color: var(--expense)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7"></path></svg></span>Gasto
+</a>
+<a href="Deudas.dc.html" class="card lift" style="border-radius: 20px; padding: 14px 4px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-decoration: none; color: var(--text); font-size: 12px; font-weight: 800">
+<span class="tile" style="width: 40px; height: 40px; background: var(--warn-soft); color: var(--warn)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"></rect><path d="M3 10h18M7 15h3"></path></svg></span>Deuda
+</a>
+<a href="Inversiones.dc.html" class="card lift" style="border-radius: 20px; padding: 14px 4px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-decoration: none; color: var(--text); font-size: 12px; font-weight: 800">
+<span class="tile" style="width: 40px; height: 40px; background: var(--primary-soft); color: var(--primary)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12A9 9 0 1 1 12 3v9z"></path><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"></path></svg></span>Invertir
+</a>
+</nav>
+
+<div class="rise d5" style="margin-top: 24px; display: flex; align-items: center; justify-content: space-between">
+<h2 style="margin: 0; font-size: 17px; font-weight: 800">Hoy</h2>
+<a href="Modulos.dc.html" style="font-size: 13px; font-weight: 800; color: var(--primary); text-decoration: none">Ver agenda</a>
+</div>
+
+<div class="card rise d5" style="margin-top: 12px; padding: 6px 16px">
+<div style="display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line)">
+<span class="tile" style="width: 40px; height: 40px; background: var(--income-soft); color: var(--income)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span>
+<div style="flex: 1; display: flex; flex-direction: column; gap: 2px">
+<span style="font-size: 14px; font-weight: 800">Pagos al día</span>
+<span style="font-size: 13px; color: var(--text-3)">Nada por pagar en los próximos 7 días</span>
+</div>
+</div>
+<div style="display: flex; align-items: center; gap: 12px; padding: 12px 0">
+<span class="tile" style="width: 40px; height: 40px; background: var(--primary-soft); color: var(--primary)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="3"></rect><path d="M3.5 10h17M8 3v4M16 3v4"></path></svg></span>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+<span style="font-size: 14px; font-weight: 800">Tu calendario</span>
+<span style="font-size: 13px; color: var(--text-3)">Conecta Google para ver eventos y tareas</span>
+</div>
+<button class="chip" style="color: var(--primary)">Conectar</button>
+</div>
+</div>
+
+<a href="Habitos.dc.html" class="card lift rise d6" style="margin-top: 14px; padding: 16px; display: flex; flex-direction: column; gap: 14px; text-decoration: none; color: var(--text)">
+<div style="display: flex; align-items: center; justify-content: space-between">
+<span style="font-size: 15px; font-weight: 800">Hábitos de hoy</span>
+<span class="num" style="font-size: 13px; font-weight: 600; color: var(--text-3)">0 de 6</span>
+</div>
+<div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px">
+<sc-for list="{{habits}}" as="h" hint-placeholder-count="6">
+<span style="height: 8px; border-radius: 99px; background: var(--surface-2); border: 1px dashed var(--line)"></span>
+</sc-for>
+</div>
+</a>
+
+</main>
+
+<nav class="nav" aria-label="Principal">
+<a href="Main.dc.html" class="on" aria-current="page"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 10.5L12 3.5l8.5 7V19a1.5 1.5 0 0 1-1.5 1.5h-4v-6h-6v6H5A1.5 1.5 0 0 1 3.5 19z"></path></svg>Inicio</a>
+<a href="Movimientos.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h14M14 4l4 4-4 4M20 16H6M10 12l-4 4 4 4"></path></svg>Flujo</a>
+<a href="Movimientos.dc.html" aria-label="Registrar movimiento"><span class="add"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></span></a>
+<a href="Analisis.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"></path></svg>Análisis</a>
+<a href="Metas.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><circle cx="12" cy="12" r="4.5"></circle><circle cx="12" cy="12" r="1" fill="currentColor"></circle></svg>Metas</a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(...args) {
+    super(...args);
+    this.state = { dark: null, bal: 0 };
+  }
+  componentDidMount() {
+    const target = 1712809;
+    const t0 = performance.now();
+    const dur = 1500;
+    const step = (t) => {
+      const k = Math.min(1, (t - t0) / dur);
+      const e = 1 - Math.pow(1 - k, 4);
+      this.setState({ bal: target * e });
+      if (k < 1) this.raf = requestAnimationFrame(step);
+    };
+    this.raf = requestAnimationFrame(step);
+  }
+  componentWillUnmount() {
+    cancelAnimationFrame(this.raf);
+  }
+  renderVals() {
+    const dark = this.state.dark !== null ? this.state.dark : !!this.props.dark;
+    return {
+      themeClass: dark ? 'dark' : '',
+      themeLabel: dark ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro',
+      toggle: () => this.setState({ dark: !dark }),
+      balance: '$ ' + Math.round(this.state.bal).toLocaleString('es-CO'),
+      habits: [1, 2, 3, 4, 5, 6]
+    };
+  }
+}
+</script>
+</body>
+</html>

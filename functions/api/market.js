@@ -19,7 +19,7 @@ export async function onRequestGet(context) {
     const { request } = context;
     const url = new URL(request.url);
     // Saneamos el ticker (solo letras, números, punto y guion).
-    const ticker = (url.searchParams.get('ticker') || '').toUpperCase().replace(/[^A-Z0-9.\-]/g, '');
+    const ticker = (url.searchParams.get('ticker') || '').toUpperCase().replace(/[^A-Z0-9.=\-]/g, '');
     const range = (url.searchParams.get('range') || '5y').replace(/[^a-z0-9]/gi, '');
     const interval = (url.searchParams.get('interval') || '1d').replace(/[^a-z0-9]/gi, '');
 

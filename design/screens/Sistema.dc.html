@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Sistema de diseño · Finanzas 360</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./f360.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Sora:wght@400;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div class="f360" style="width: 1440px; height: 1240px; box-sizing: border-box; padding: 64px; display: flex; flex-direction: column; gap: 40px; font-family: 'Manrope', system-ui, sans-serif; color: var(--text); background: var(--bg)">
+
+<header style="display: flex; align-items: flex-end; justify-content: space-between; gap: 40px">
+<div style="display: flex; align-items: center; gap: 20px">
+<div class="tile" style="width: 64px; height: 64px; border-radius: 20px; background: var(--primary); color: var(--on-primary); font-family: 'Sora', sans-serif; font-weight: 700; font-size: 28px; box-shadow: 0 18px 40px -14px var(--glow)">F</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<h1 class="display" style="margin: 0; font-size: 44px; font-weight: 700">Finanzas 360 · Sistema</h1>
+<p style="margin: 0; font-size: 17px; color: var(--text-2)">Tokens en <b>f360.css</b> · tema claro por defecto, <b>.dark</b> en la raíz para oscuro</p>
+</div>
+</div>
+<span class="chip" style="cursor: default"><span class="live"></span>Respeta prefers-reduced-motion</span>
+</header>
+
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px">
+<sc-for list="{{themes}}" as="th" hint-placeholder-count="2">
+<section class="f360 {{th.cls}}" style="padding: 28px; border-radius: 28px; border: 1px solid var(--line); background: var(--bg); display: flex; flex-direction: column; gap: 20px">
+<div style="display: flex; align-items: center; justify-content: space-between">
+<h2 class="display" style="margin: 0; font-size: 24px; font-weight: 700; color: var(--text)">{{th.name}}</h2>
+<span class="eyebrow">{{th.hint}}</span>
+</div>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px">
+<sc-for list="{{th.sw}}" as="s" hint-placeholder-count="12">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="height: 64px; border-radius: 16px; background: var({{s.v}}); border: 1px solid var(--line)"></span>
+<span style="font-size: 13px; font-weight: 800; color: var(--text)">{{s.n}}</span>
+<span class="num" style="font-size: 12px; letter-spacing: 0; color: var(--text-3)">{{s.hex}}</span>
+</div>
+</sc-for>
+</div>
+</section>
+</sc-for>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; flex: 1">
+<section class="card" style="padding: 28px; display: flex; flex-direction: column; gap: 18px">
+<span class="eyebrow">Tipografía</span>
+<div style="display: flex; flex-direction: column; gap: 4px"><span class="num" style="font-size: 44px; font-weight: 700; line-height: 1">$ 1.712.809</span><span style="font-size: 13px; color: var(--text-3)">Sora 700 · 40–46 px · cifras tabulares</span></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><span class="display" style="font-size: 26px; font-weight: 700">Título de pantalla</span><span style="font-size: 13px; color: var(--text-3)">Sora 700 · 26 px · tracking −3%</span></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><span style="font-size: 15px; font-weight: 800">Título de tarjeta</span><span style="font-size: 13px; color: var(--text-3)">Manrope 800 · 15 px</span></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><span style="font-size: 14px; color: var(--text-2)">Texto de apoyo para descripciones y metadatos.</span><span style="font-size: 13px; color: var(--text-3)">Manrope 500 · 13–14 px</span></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><span class="eyebrow">Etiqueta</span><span style="font-size: 13px; color: var(--text-3)">Manrope 800 · 11 px · mayúsculas +10%</span></div>
+</section>
+
+<section class="card" style="padding: 28px; display: flex; flex-direction: column; gap: 14px">
+<span class="eyebrow">Motion</span>
+<sc-for list="{{motion}}" as="m" hint-placeholder-count="7">
+<div style="display: flex; align-items: center; gap: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line)">
+<span style="width: 10px; height: 10px; border-radius: 50%; background: var(--primary); flex-shrink: 0; box-shadow: 0 0 12px var(--glow)"></span>
+<span style="flex: 1; display: flex; flex-direction: column; gap: 2px">
+<span style="font-size: 14px; font-weight: 800">{{m.n}}</span>
+<span style="font-size: 12px; color: var(--text-3)">{{m.d}}</span>
+</span>
+<span class="num" style="font-size: 12px; letter-spacing: 0; color: var(--text-2)">{{m.t}}</span>
+</div>
+</sc-for>
+</section>
+
+<section class="card" style="padding: 28px; display: flex; flex-direction: column; gap: 16px">
+<span class="eyebrow">Componentes</span>
+<button class="btn btn-primary">Botón primario</button>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+<button class="btn btn-ghost">Secundario</button>
+<button class="btn btn-outline">Contorno</button>
+</div>
+<div class="seg"><span class="thumb"></span><button class="on">Gasto</button><button>Ingreso</button></div>
+<div style="display: flex; gap: 8px; flex-wrap: wrap"><button class="chip on">Activo</button><button class="chip">Chip</button><button class="chip">Salud</button></div>
+<input class="input" placeholder="Campo de texto">
+<div class="bar" style="height: 10px"><i style="width: 62%; background: linear-gradient(90deg, var(--primary), var(--cyan-bright))"></i></div>
+<div style="display: flex; gap: 10px">
+<span class="tile" style="background: var(--income-soft); color: var(--income)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"></path></svg></span>
+<span class="tile" style="background: var(--expense-soft); color: var(--expense)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7"></path></svg></span>
+<span class="tile" style="background: var(--warn-soft); color: var(--warn)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5M12 16.5v.5"></path></svg></span>
+<span class="tile" style="background: var(--violet-soft); color: var(--violet)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"></path></svg></span>
+</div>
+</section>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1240}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const light = [
+      ['Fondo', '--bg', '#F4F6FB'], ['Superficie', '--surface', '#FFFFFF'], ['Superficie 2', '--surface-2', '#EEF1F7'], ['Línea', '--line', '#E2E6EF'],
+      ['Texto', '--text', '#0B1020'], ['Texto 2', '--text-2', '#475066'], ['Primario', '--primary', '#3355FF'], ['Hero', '--hero', '#0B1020'],
+      ['Ingreso', '--income', '#047857'], ['Gasto', '--expense', '#C8253A'], ['Alerta', '--warn', '#A35208'], ['Coach', '--violet', '#6D28D9']
+    ];
+    const dark = [
+      ['Fondo', '--bg', '#06080E'], ['Superficie', '--surface', '#0E121C'], ['Superficie 2', '--surface-2', '#161B28'], ['Línea', '--line', '#222939'],
+      ['Texto', '--text', '#EDF0F7'], ['Texto 2', '--text-2', '#A6AEC0'], ['Primario', '--primary', '#6B84FF'], ['Hero', '--hero', '#0E1424'],
+      ['Ingreso', '--income', '#34D399'], ['Gasto', '--expense', '#FB7185'], ['Alerta', '--warn', '#FBBF24'], ['Coach', '--violet', '#A78BFA']
+    ];
+    const map = (arr) => arr.map((a) => ({ n: a[0], v: a[1], hex: a[2] }));
+    return {
+      themes: [
+        { name: 'Tema claro', hint: 'Por defecto', cls: '', sw: map(light) },
+        { name: 'Tema oscuro', hint: '.f360.dark', cls: 'dark', sw: map(dark) }
+      ],
+      motion: [
+        { n: 'Entrada escalonada', d: 'rise · opacidad + 18px + blur', t: '700ms · +70ms' },
+        { n: 'Hojas inferiores', d: 'sheetUp con resorte', t: '700ms spring' },
+        { n: 'Barra de navegación', d: 'navIn desde abajo', t: '700ms spring' },
+        { n: 'Cifras', d: 'Conteo ascendente easeOutQuart', t: '1500ms' },
+        { n: 'Gráficas', d: 'draw, grow, ring, fill', t: '900–2000ms' },
+        { n: 'Luz ambiental', d: 'orbes drift + sheen', t: '6–18s loop' },
+        { n: 'Pulsación', d: 'tap scale .9–.97 + resorte', t: '250ms' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

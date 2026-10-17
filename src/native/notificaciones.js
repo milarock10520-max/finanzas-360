@@ -128,11 +128,12 @@ export async function programarAgendaDiaria(googleToken) {
 // === Recordatorios de RUTINA (iOS) ===========
 // =============================================
 // Notificaciones locales semanales REPETITIVAS, una por bloque de rutina.
-// iOS permite máx. 64 pendientes: 7 son de la agenda diaria (ids 1000-1006),
-// así que la rutina usa ids 2000+ con tope de 57.
+// iOS permite máx. 64 pendientes: 7 son de la agenda diaria (ids 1000-1006) y
+// 20 de recordatorios de pagos (ids 4000+, deudas y tarjetas),
+// así que la rutina usa ids 2000+ con tope de 37 (los 3000+ son avisos inmediatos).
 
 const RUTINA_ID_BASE = 2000;
-const RUTINA_MAX = 57;
+const RUTINA_MAX = 37;
 
 export async function programarRecordatoriosRutina(rutina, activos) {
     if (!Capacitor.isNativePlatform()) return 0;
@@ -174,4 +175,75 @@ export async function programarRecordatoriosRutina(rutina, activos) {
 
     if (notifs.length) await LocalNotifications.schedule({ notifications: notifs });
     return notifs.length;
+}
+
+// =============================================
+// === Avisos inmediatos (topes, recordatorios) =
+// =============================================
+// En iOS usa notificaciones locales; en web/escritorio, el service worker o la
+// API Notification. Un mismo `tag` produce siempre el mismo id (no duplica).
+
+const AVISO_ID_BASE = 3000;
+const idDeTag = (tag) => {
+    let h = 0;
+    for (const ch of String(tag)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return AVISO_ID_BASE + (h % 900);
+};
+
+// 'granted' | 'denied' | 'default'
+export async function estadoPermisoAvisos() {
+    if (Capacitor.isNativePlatform()) {
+        try {
+            const { LocalNotifications } = await import('@capacitor/local-notifications');
+            const p = await LocalNotifications.checkPermissions();
+            return p.display === 'granted' ? 'granted' : p.display === 'denied' ? 'denied' : 'default';
+        } catch { return 'denied'; }
+    }
+    return typeof Notification !== 'undefined' ? Notification.permission : 'denied';
+}
+
+export async function pedirPermisoAvisos() {
+    if (Capacitor.isNativePlatform()) {
+        const { LocalNotifications } = await import('@capacitor/local-notifications');
+        const p = await LocalNotifications.requestPermissions();
+        return p.display === 'granted' ? 'granted' : 'denied';
+    }
+    if (typeof Notification === 'undefined') return 'denied';
+    return Notification.requestPermission();
+}
+
+export async function enviarAviso({ title, body, tag }) {
+    if (Capacitor.isNativePlatform()) {
+        const { LocalNotifications } = await import('@capacitor/local-notifications');
+        await LocalNotifications.schedule({
+            notifications: [{ id: idDeTag(tag || title), title, body, schedule: { at: new Date(Date.now() + 1500) } }],
+        });
+        return;
+    }
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        const reg = await navigator.serviceWorker.ready;
+        await reg.showNotification(title, { body, tag, icon: '/icon-192.png', badge: '/icon-192.png' });
+        return;
+    }
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') new Notification(title, { body, tag });
+}
+
+// Recordatorios con fecha (pagos de deudas, corte y pago de tarjetas).
+// `items`: [{ tag, title, body, at: Date }]. Reemplaza los programados con el mismo grupo.
+const RECORD_ID_BASE = 4000;
+const RECORD_MAX = 20;
+export async function programarRecordatoriosPagos(items) {
+    if (!Capacitor.isNativePlatform()) return 0;
+    let LocalNotifications;
+    try { ({ LocalNotifications } = await import('@capacitor/local-notifications')); } catch { return 0; }
+    const perm = await LocalNotifications.checkPermissions();
+    if (perm.display !== 'granted') return 0;
+    const previas = Array.from({ length: RECORD_MAX }, (_, i) => ({ id: RECORD_ID_BASE + i }));
+    try { await LocalNotifications.cancel({ notifications: previas }); } catch { /* nada */ }
+    const futuros = items.filter(x => x.at && x.at.getTime() > Date.now()).sort((a, b) => a.at - b.at).slice(0, RECORD_MAX);
+    if (!futuros.length) return 0;
+    await LocalNotifications.schedule({
+        notifications: futuros.map((x, i) => ({ id: RECORD_ID_BASE + i, title: x.title, body: x.body, schedule: { at: x.at, allowWhileIdle: true } })),
+    });
+    return futuros.length;
 }
