@@ -233,60 +233,61 @@ export default function VozIA({ abierto, onCerrar, obtenerContexto, ejecutarHerr
     const accion = pendientes[0] ? describirAccion({ name: pendientes[0].name, input: pendientes[0].args || {} }) : null;
     const textoIA = iaTrozos.length > 0;
 
+    const hayTexto = error || tuTexto || textoIA || estado !== 'conectando';
     return (
         <div className={`voz voz-${estado}`} role="dialog" aria-modal="true" aria-label="Asistente de voz">
-            <div className="voz-fondo" aria-hidden="true"><span className="voz-grid" /><span className="voz-scan" /></div>
+            <button type="button" className="voz-velo" onClick={onCerrar} aria-label="Cerrar asistente de voz" />
+            <span className="voz-borde" aria-hidden="true" />
 
-            <header className="voz-top">
-                <span className="voz-estado" role="status"><i />{ESTADOS[estado] || ''}</span>
-                <span className="voz-marca">GEMINI LIVE</span>
-            </header>
-
-            <div className="voz-centro">
-                <Esfera niveles={niveles} modo={modo} />
-            </div>
-
-            <div className="voz-texto" ref={textoRef} aria-live="polite">
-                {error ? (
-                    <p className="voz-error">{error}</p>
-                ) : (
-                    <>
-                        {tuTexto && <p className="voz-tu">{tuTexto}</p>}
-                        {textoIA ? (
-                            <p className="voz-ia">{iaTrozos.map(x => <span key={x.id}>{x.t}</span>)}</p>
-                        ) : (
-                            !tuTexto && estado !== 'conectando' && (
-                                <p className="voz-sugerencia">Prueba: “Anota un almuerzo de 25 mil” o “¿Cómo voy este mes?”</p>
-                            )
-                        )}
-                    </>
+            <div className="voz-panel">
+                {accion && (
+                    <div className="voz-accion" role="alertdialog" aria-label={accion.titulo}>
+                        <span className="voz-accion-icono" aria-hidden="true">{accion.icon}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <strong>{accion.titulo}</strong>
+                            <span>{accion.detalle}</span>
+                        </div>
+                        <div className="voz-accion-botones">
+                            <button type="button" onClick={() => resolver(pendientes[0], false)} aria-label="Cancelar acción"><X size={18} aria-hidden="true" /></button>
+                            <button type="button" className="si" onClick={() => resolver(pendientes[0], true)} aria-label="Confirmar acción"><Check size={18} aria-hidden="true" /></button>
+                        </div>
+                    </div>
                 )}
-            </div>
 
-            {accion && (
-                <div className="voz-accion" role="alertdialog" aria-label={accion.titulo}>
-                    <span className="voz-accion-icono" aria-hidden="true">{accion.icon}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                        <strong>{accion.titulo}</strong>
-                        <span>{accion.detalle}</span>
+                {hayTexto && (
+                    <div className="voz-burbuja">
+                        <span className="voz-estado" role="status"><i />{ESTADOS[estado] || ''}</span>
+                        <div className="voz-texto" ref={textoRef} aria-live="polite">
+                            {error ? (
+                                <p className="voz-error">{error}</p>
+                            ) : (
+                                <>
+                                    {tuTexto && <p className="voz-tu">{tuTexto}</p>}
+                                    {textoIA ? (
+                                        <p className="voz-ia">{iaTrozos.map(x => <span key={x.id}>{x.t}</span>)}</p>
+                                    ) : (
+                                        !tuTexto && estado !== 'conectando' && (
+                                            <p className="voz-sugerencia">Prueba: “Anota un almuerzo de 25 mil” o “¿Cómo voy este mes?”</p>
+                                        )
+                                    )}
+                                </>
+                            )}
+                        </div>
                     </div>
-                    <div className="voz-accion-botones">
-                        <button type="button" onClick={() => resolver(pendientes[0], false)} aria-label="Cancelar acción"><X size={18} aria-hidden="true" /></button>
-                        <button type="button" className="si" onClick={() => resolver(pendientes[0], true)} aria-label="Confirmar acción"><Check size={18} aria-hidden="true" /></button>
-                    </div>
+                )}
+
+                <div className="voz-fila">
+                    {estado === 'error' ? (
+                        <button type="button" className="voz-btn" onClick={() => setIntento(n => n + 1)} aria-label="Reintentar"><RotateCcw size={20} aria-hidden="true" /></button>
+                    ) : (
+                        <button type="button" className={`voz-btn ${silenciado ? 'off' : ''}`} onClick={() => setSilenciado(v => !v)} aria-pressed={silenciado} aria-label={silenciado ? 'Activar micrófono' : 'Pausar micrófono'}>
+                            {silenciado ? <MicOff size={20} aria-hidden="true" /> : <Mic size={20} aria-hidden="true" />}
+                        </button>
+                    )}
+                    <Esfera niveles={niveles} modo={modo} />
+                    <button type="button" className="voz-btn" onClick={onCerrar} aria-label="Cerrar asistente de voz"><X size={22} aria-hidden="true" /></button>
                 </div>
-            )}
-
-            <footer className="voz-controles">
-                {estado === 'error' ? (
-                    <button type="button" className="voz-btn" onClick={() => setIntento(n => n + 1)} aria-label="Reintentar"><RotateCcw size={22} aria-hidden="true" /></button>
-                ) : (
-                    <button type="button" className={`voz-btn ${silenciado ? 'off' : ''}`} onClick={() => setSilenciado(v => !v)} aria-pressed={silenciado} aria-label={silenciado ? 'Activar micrófono' : 'Pausar micrófono'}>
-                        {silenciado ? <MicOff size={22} aria-hidden="true" /> : <Mic size={22} aria-hidden="true" />}
-                    </button>
-                )}
-                <button type="button" className="voz-btn voz-cerrar" onClick={onCerrar} aria-label="Cerrar asistente de voz"><X size={26} aria-hidden="true" /></button>
-            </footer>
+            </div>
         </div>
     );
 }
