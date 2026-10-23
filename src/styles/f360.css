@@ -334,3 +334,4 @@
   font-size: 12px; font-weight: 700; line-height: 1.25;
   box-shadow: 0 6px 20px rgba(0,0,0,.18);
 }
+.sin-conexion.aviso-ahorro { top: auto; bottom: calc(var(--sab) + 104px); background: var(--income); color: #fff; }
