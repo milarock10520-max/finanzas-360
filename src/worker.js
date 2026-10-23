@@ -5,6 +5,7 @@ import { onRequestPost as quickExpensePost, onRequestOptions as quickExpenseOpti
 import { onRequestPost as coachSummaryPost, onRequestOptions as coachSummaryOptions } from '../functions/api/coach-summary.js';
 import { onRequestGet as marketGet, onRequestOptions as marketOptions } from '../functions/api/market.js';
 import { callbackGet as googleCallback, connectPost as googleConnect, tokenPost as googleToken, disconnectPost as googleDisconnect, optionsHandler as googleOptions } from '../functions/api/google-auth.js';
+import { onRequestPost as vozTokenPost, onRequestOptions as vozTokenOptions } from '../functions/api/voz-token.js';
 import { contextPost as coachContextPost, pushPost as coachPushPost, memoriaPost as coachMemoriaPost, onRequestOptions as coachProactivoOptions } from '../functions/api/coach-proactivo.js';
 
 export default {
@@ -15,6 +16,12 @@ export default {
         if (url.pathname === '/api/ai-coach') {
             if (request.method === 'OPTIONS') return aiCoachOptions(context);
             if (request.method === 'POST') return aiCoachPost(context);
+            return new Response('Method Not Allowed', { status: 405 });
+        }
+
+        if (url.pathname === '/api/voz-token') {
+            if (request.method === 'OPTIONS') return vozTokenOptions(context);
+            if (request.method === 'POST') return vozTokenPost(context);
             return new Response('Method Not Allowed', { status: 405 });
         }
 

@@ -13,7 +13,7 @@ import { llamarIA, aFuncionesIA, aplanarMensajes } from '../lib/ia.js';
 import { usuarioDeRequest } from '../lib/auth.js';
 
 // Herramientas que el Coach puede invocar. El cliente las ejecuta.
-const TOOLS = [
+export const TOOLS = [
     {
         name: 'registrar_transaccion',
         description: 'Registra un GASTO o un INGRESO en las finanzas del usuario. Úsalo cuando pida anotar/registrar un gasto, compra, pago, o un ingreso/entrada de dinero. No lo uses para abonar deudas (usa el monto como número, sin símbolos).',
@@ -172,7 +172,7 @@ REGLAS:
 7. CONOCES SU HISTORIA: recibes una MEMORIA FINANCIERA de sus últimos 12 meses (promedios por categoría, tendencias, gastos recurrentes, gastos inusuales, días de más gasto) y, si existe, un PERFIL FINANCIERO escrito por el análisis semanal. Úsalos siempre: compara lo de este mes con su promedio ("vas 30% por encima de tu promedio en Mercado"), menciona sus patrones y personaliza cada consejo. No digas que no tienes acceso a meses anteriores.
 8. TIENES MEMORIA DE LA CONVERSACIÓN: recibes el historial de la conversación. Actúa como un coach real que recuerda lo hablado antes: retoma compromisos, planes y metas mencionados en mensajes anteriores, haz seguimiento ("la semana pasada dijiste que...") y evita repetir preguntas cuyas respuestas ya conoces. Si el usuario retoma un tema viejo, conéctalo con lo que ya sabes.`;
 
-const PERSONA_ACCIONES = `
+export const PERSONA_ACCIONES = `
 
 ACCIONES (MUY IMPORTANTE):
 Además de aconsejar, PUEDES EJECUTAR acciones por el usuario usando tus herramientas:

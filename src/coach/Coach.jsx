@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
 import { Trash2, Calendar, Save, CheckCircle2, Sparkles, X, UserCog, Mic, ArrowRight } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { BottomSheet, fmtCOP } from '../ui/f360.jsx';
@@ -8,6 +8,8 @@ import { aCOP, tasaUSDGuardada } from '../lib/moneda';
 import { esPosicionInversion } from '../lib/inversiones';
 import { CATEGORIAS_GASTOS, CATEGORIAS_INGRESOS, MOODS, calcStreak, dateKey, formatCurrency, formatUSD, proximaFechaPago } from '../lib/finanzas';
 import { API_BASE, app, auth } from '../lib/firebase';
+
+const VozIA = lazy(() => import('../voz/Voz.jsx'));
 
 // Hallazgos del coach calculados localmente (sin IA, al instante). Se muestran en la
 // tarjeta de Inicio y en la hoja "Tu coach hoy".
@@ -90,7 +92,7 @@ export const mdLite = (txt) => String(txt || '')
 // =============================================
 // === COMPONENTE: AI COACH (CLAUDE OPUS 4.8) ===
 // =============================================
-export const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, habitos = [], diario = [], googleToken = null, coachMensajes = [], coachPerfil = [], coachMemoria = [], cuentas = [], genericAdd, genericUpdate, genericDelete, chatOpen = false, setChatOpen = () => {}, sheetOpen = false, setSheetOpen = () => {} }) => {
+export const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, habitos = [], diario = [], googleToken = null, coachMensajes = [], coachPerfil = [], coachMemoria = [], cuentas = [], genericAdd, genericUpdate, genericDelete, chatOpen = false, setChatOpen = () => {}, sheetOpen = false, setSheetOpen = () => {}, vozOpen = false, setVozOpen = () => {} }) => {
     // El chat y la hoja "Tu coach hoy" se controlan desde App (tarjeta de Inicio).
     const isOpen = chatOpen;
     const setIsOpen = setChatOpen;
@@ -636,11 +638,12 @@ ${perfilIA?.texto || '(Aún no generado.)'}`;
         }
     };
 
+    ejecutarRef.current = ejecutarHerramienta;
+
     // Llama al backend en modo agéntico. Devuelve { reply, content, stop_reason }.
-    const llamarCoach = async (msgs) => {
-        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-            throw new Error('Estás sin conexión. El coach necesita internet; tus gastos sí puedes registrarlos y se sincronizan al volver.');
-        }
+    // Contexto completo (fecha, calendario resuelto y datos financieros), compartido por el
+    // chat y el asistente de voz.
+    const contextoConFecha = async () => {
         const baseCtx = await buildFinancialContext();
         const ahora = new Date().toLocaleString('es-CO', { dateStyle: 'full', timeStyle: 'short' });
         // Calendario ya resuelto: los modelos abiertos se equivocan con "el viernes", "mañana"…
@@ -649,7 +652,19 @@ ${perfilIA?.texto || '(Aún no generado.)'}`;
             const etiqueta = i === 0 ? 'mañana' : d.toLocaleDateString('es-CO', { weekday: 'long' });
             return `${etiqueta} ${d.getDate()} = ${dateKey(d)}`;
         }).join('; ');
-        const context = `FECHA Y HORA ACTUAL: ${ahora} (hoy = ${dateKey()}).\nPRÓXIMOS DÍAS (usa esto para "mañana", "el viernes", "la otra semana"; "el viernes" = el PRÓXIMO viernes de esta lista): ${proximos}.\n\n${baseCtx}`;
+        return `FECHA Y HORA ACTUAL: ${ahora} (hoy = ${dateKey()}).\nPRÓXIMOS DÍAS (usa esto para "mañana", "el viernes", "la otra semana"; "el viernes" = el PRÓXIMO viernes de esta lista): ${proximos}.\n\n${baseCtx}`;
+    };
+    const contextoRef = useRef(contextoConFecha);
+    contextoRef.current = contextoConFecha;
+    const ejecutarRef = useRef(null);
+    const obtenerContextoVoz = useCallback(() => contextoRef.current(), []);
+    const ejecutarVoz = useCallback((tu) => ejecutarRef.current(tu), []);
+
+    const llamarCoach = async (msgs) => {
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+            throw new Error('Estás sin conexión. El coach necesita internet; tus gastos sí puedes registrarlos y se sincronizan al volver.');
+        }
+        const context = await contextoConFecha();
         const res = await fetch(`${API_BASE}/api/ai-coach`, {
             method: 'POST',
             headers: await encabezadosCoach(),
@@ -861,6 +876,12 @@ Máximo 4 viñetas cortas. Empieza con una frase tipo titular de una línea. Ton
 
     return (
       <>
+        {vozOpen && (
+            <Suspense fallback={null}>
+                <VozIA abierto={vozOpen} onCerrar={() => setVozOpen(false)} obtenerContexto={obtenerContextoVoz}
+                    ejecutarHerramienta={ejecutarVoz} describirAccion={describirAccion} />
+            </Suspense>
+        )}
         {/* === HOJA "TU COACH HOY" (se abre desde la tarjeta de Inicio) === */}
         <BottomSheet open={sheetOpen} onClose={() => setSheetOpen(false)} label="Tu coach hoy">
             <div style={{ padding: '14px 20px 8px', display: 'flex', flexDirection: 'column', gap: 18 }}>

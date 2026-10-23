@@ -5,6 +5,7 @@ import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { programarAgendaDiaria, programarRecordatoriosRutina, estadoPermisoAvisos, pedirPermisoAvisos, enviarAviso, programarRecordatoriosPagos } from './native/notificaciones';
 import { recordatoriosPagos, pagosProximos } from './lib/pagos';
 import { actualizarWidget, limpiarWidget } from './native/widget';
+import { prepararAudio } from './voz/audio';
 import { useTasaUSD, aCOP, valorInversionCOP } from './lib/moneda';
 import { patrimonioActual } from './lib/patrimonio';
 import { pendientesDeReglas, indiceAporte } from './lib/reglas';
@@ -71,6 +72,7 @@ export default function App() {
     const [flujoFocus, setFlujoFocus] = useState(0);
     const [coachSheet, setCoachSheet] = useState(false);
     const [coachChat, setCoachChat] = useState(false);
+    const [vozAbierta, setVozAbierta] = useState(false);
 
     // Datos
     const [transacciones, setTransacciones] = useState([]);
@@ -981,10 +983,10 @@ export default function App() {
                 </BottomSheet>
             )}
 
-            <BottomNav active={navActivo} onNavigate={setActiveTab} onAdd={() => abrirFlujo('gasto', true)} />
+            <BottomNav active={navActivo} onNavigate={setActiveTab} onAdd={() => abrirFlujo('gasto', true)} onVoz={() => { prepararAudio(); setVozAbierta(true); }} />
 
             <AICoach transacciones={transacciones} deudas={deudas} metas={metasVista} presupuestoItems={presupuestoItems} limites={limites} habitos={habitos} diario={diario} googleToken={googleToken} coachMensajes={coachMensajes} coachPerfil={coachPerfil} coachMemoria={coachMemoria} cuentas={cuentas} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete}
-                chatOpen={coachChat} setChatOpen={setCoachChat} sheetOpen={coachSheet} setSheetOpen={setCoachSheet} />
+                chatOpen={coachChat} setChatOpen={setCoachChat} sheetOpen={coachSheet} setSheetOpen={setCoachSheet} vozOpen={vozAbierta} setVozOpen={setVozAbierta} />
         </div>
     );
 }
