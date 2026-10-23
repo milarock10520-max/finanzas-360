@@ -52,6 +52,13 @@ export async function onRequestPost({ request, env }) {
     } catch {
         return new Response(JSON.stringify({ error: 'No autorizado' }), { status: 401, headers });
     }
+    // Diagnóstico de la app (cortes, reconexiones): solo eventos, nunca audio ni texto.
+    const body = await request.json().catch(() => ({}));
+    if (body && body.log) {
+        console.log(`voz-log: ${String(body.log.evento || '').slice(0, 40)} ${String(body.log.detalle || '').slice(0, 200)}`);
+        return new Response(null, { status: 204, headers });
+    }
+
     if (!env.GEMINI_API_KEY) {
         return new Response(JSON.stringify({ error: 'El asistente de voz no está configurado (falta GEMINI_API_KEY).' }), { status: 503, headers });
     }

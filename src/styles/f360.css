@@ -414,7 +414,8 @@
 
 /* Esfera sobre el botón del micrófono, con los controles a los lados */
 .voz-fila { display: flex; align-items: center; justify-content: center; gap: 4px; }
-.voz-esfera { width: 168px; height: 168px; margin: -22px -14px -18px; animation: vozEsfera .55s var(--spring) both; }
+.voz-esfera-btn { padding: 0; border: 0; background: none; cursor: pointer; border-radius: 50%; -webkit-tap-highlight-color: transparent; }
+.voz-esfera { display: block; width: 168px; height: 168px; margin: -22px -14px -18px; animation: vozEsfera .55s var(--spring) both; }
 @keyframes vozEsfera { from { opacity: 0; transform: translateY(30px) scale(.4); } }
 .voz-btn {
   width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; cursor: pointer; color: #EEF3FF;

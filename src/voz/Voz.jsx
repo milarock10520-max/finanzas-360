@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { X, Mic, MicOff, Check, RotateCcw } from 'lucide-react';
 import { iniciarMicrofono, crearReproductor } from './audio';
-import { abrirSesion } from './sesion';
+import { abrirSesion, pedirToken, registrarVoz } from './sesion';
 
 // =============================================
 // === ASISTENTE DE VOZ (Gemini Live) ===
@@ -12,9 +12,10 @@ import { abrirSesion } from './sesion';
 
 const ESTADOS = {
     conectando: 'Conectando…',
+    reconectando: 'Reconectando…',
     escuchando: 'Te escucho',
     oyendo: 'Escuchando…',
-    hablando: 'Respondiendo',
+    hablando: 'Respondiendo · toca para interrumpir',
     confirmar: 'Confirma la acción',
     silencio: 'Micrófono en pausa',
     error: 'Sin conexión',
@@ -141,6 +142,7 @@ export default function VozIA({ abierto, onCerrar, obtenerContexto, ejecutarHerr
     const micRef = useRef(null);
     const vozRef = useRef(null);
     const textoRef = useRef(null);
+    const ignorarIA = useRef(false);
 
     useEffect(() => {
         if (!abierto) return;
@@ -148,29 +150,63 @@ export default function VozIA({ abierto, onCerrar, obtenerContexto, ejecutarHerr
         setEstado('conectando'); setError(''); setTuTexto(''); setIaTrozos([]); setPendientes([]);
         turnoCerrado.current = true;
         iaCerrada.current = true;
+        ignorarIA.current = false;
+
+        // El micrófono no envía mientras la IA habla (y un instante después): así no se
+        // escucha a sí misma ni se interrumpe sola. Para cortarla, se toca la esfera.
+        let finHabla = 0;
+        let previos = [];
+        const t0 = Date.now();
+        const alMicrofono = (b64) => {
+            const voz = vozRef.current;
+            if (voz?.hablando() && !ignorarIA.current) { finHabla = Date.now(); return; }
+            if (Date.now() - finHabla < 350) return;
+            const sesion = sesionRef.current;
+            if (sesion?.lista()) {
+                if (previos.length) { previos.forEach(p => sesion.audio(p)); previos = []; }
+                sesion.audio(b64);
+            } else {
+                // Lo que dices mientras conecta no se pierde: se envía al quedar lista.
+                previos.push(b64);
+                if (previos.length > 30) previos.shift();
+            }
+        };
 
         (async () => {
             try {
-                const contexto = await obtenerContexto();
                 const voz = crearReproductor();
                 vozRef.current = voz;
+                // Contexto, token y micrófono a la vez: arranca mucho más rápido.
+                const [contexto, cfg, mic] = await Promise.all([
+                    obtenerContexto(),
+                    pedirToken(),
+                    iniciarMicrofono(alMicrofono),
+                ]);
+                micRef.current = mic;
+                if (!vivo) { mic.detener(); return; }
                 const sesion = await abrirSesion({
                     contexto,
+                    cfgInicial: cfg,
                     on: {
-                        estado: (s) => { if (s === 'lista' && vivo) setEstado('escuchando'); },
-                        audio: (b64) => voz.reproducir(b64),
-                        interrumpido: () => voz.cortar(),
+                        estado: (s) => {
+                            if (!vivo) return;
+                            if (s === 'lista') { setEstado('escuchando'); setError(''); registrarVoz('lista', `${Date.now() - t0} ms`); }
+                            if (s === 'reconectando') setEstado('reconectando');
+                        },
+                        audio: (b64) => { if (!ignorarIA.current) voz.reproducir(b64); },
+                        interrumpido: () => { voz.cortar(); ignorarIA.current = false; },
                         tuTexto: (t) => {
                             if (turnoCerrado.current) { turnoCerrado.current = false; iaCerrada.current = true; setTuTexto(t.trimStart()); setIaTrozos([]); }
                             else setTuTexto(prev => prev + t);
                         },
                         iaTexto: (t) => {
+                            if (ignorarIA.current) return;
                             turnoCerrado.current = true;
                             // Cada respuesta nueva reemplaza a la anterior en pantalla.
                             if (iaCerrada.current) { iaCerrada.current = false; setIaTrozos([{ id: Date.now(), t: t.trimStart() }]); }
                             else setIaTrozos(prev => [...prev, { id: prev.length + Date.now(), t }]);
                         },
-                        turnoFin: () => { turnoCerrado.current = true; iaCerrada.current = true; },
+                        turnoFin: () => { turnoCerrado.current = true; iaCerrada.current = true; ignorarIA.current = false; },
                         herramientas: (fcs) => setPendientes(prev => [...prev, ...fcs]),
                         cancelar: (ids) => setPendientes(prev => prev.filter(f => !ids.includes(f.id))),
                         error: (m) => { if (vivo) { setError(m); setEstado('error'); } },
@@ -178,11 +214,10 @@ export default function VozIA({ abierto, onCerrar, obtenerContexto, ejecutarHerr
                 });
                 if (!vivo) { sesion.cerrar(); return; }
                 sesionRef.current = sesion;
-                micRef.current = await iniciarMicrofono((b64) => sesionRef.current?.audio(b64));
-                if (!vivo) { micRef.current.detener(); return; }
             } catch (e) {
                 if (!vivo) return;
                 const permiso = e?.name === 'NotAllowedError';
+                registrarVoz('error-inicio', e?.name || e?.message);
                 setError(permiso ? 'Necesito permiso para usar el micrófono. Actívalo en Ajustes > Finanzas 360.' : (e?.message || 'No se pudo iniciar el asistente de voz.'));
                 setEstado('error');
             }
@@ -207,9 +242,9 @@ export default function VozIA({ abierto, onCerrar, obtenerContexto, ejecutarHerr
     useEffect(() => {
         if (!abierto) return;
         const id = setInterval(() => {
-            if (estado === 'error' || estado === 'conectando') { modo.current = estado; return; }
+            if (estado === 'error' || estado === 'conectando' || estado === 'reconectando') { modo.current = estado === 'reconectando' ? 'conectando' : estado; return; }
             const m = pendientes.length ? 'confirmar'
-                : vozRef.current?.hablando() ? 'hablando'
+                : vozRef.current?.hablando() && !ignorarIA.current ? 'hablando'
                 : silenciado ? 'silencio'
                 : niveles.current.tu > 0.12 ? 'oyendo' : 'escuchando';
             modo.current = m;
@@ -228,6 +263,14 @@ export default function VozIA({ abierto, onCerrar, obtenerContexto, ejecutarHerr
             : 'El usuario canceló esta acción; no se hizo nada. Pregúntale si quiere cambiar algo.';
         sesionRef.current?.responder([{ id: fc.id, name: fc.name, response: { result } }]);
     }, [ejecutarHerramienta]);
+
+    // Tocar la esfera mientras habla la corta y te devuelve la palabra.
+    const interrumpir = useCallback(() => {
+        if (!vozRef.current?.hablando()) return;
+        vozRef.current.cortar();
+        ignorarIA.current = true;
+        iaCerrada.current = true;
+    }, []);
 
     if (!abierto) return null;
     const accion = pendientes[0] ? describirAccion({ name: pendientes[0].name, input: pendientes[0].args || {} }) : null;
@@ -284,7 +327,9 @@ export default function VozIA({ abierto, onCerrar, obtenerContexto, ejecutarHerr
                             {silenciado ? <MicOff size={20} aria-hidden="true" /> : <Mic size={20} aria-hidden="true" />}
                         </button>
                     )}
-                    <Esfera niveles={niveles} modo={modo} />
+                    <button type="button" className="voz-esfera-btn" onClick={interrumpir} aria-label={estado === 'hablando' ? 'Interrumpir respuesta' : 'Asistente de voz'}>
+                        <Esfera niveles={niveles} modo={modo} />
+                    </button>
                     <button type="button" className="voz-btn" onClick={onCerrar} aria-label="Cerrar asistente de voz"><X size={22} aria-hidden="true" /></button>
                 </div>
             </div>
