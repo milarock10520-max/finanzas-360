@@ -7,9 +7,9 @@ import { recordatoriosPagos, pagosProximos } from './lib/pagos';
 import { actualizarWidget, limpiarWidget } from './native/widget';
 import { useTasaUSD, aCOP } from './lib/moneda';
 import { patrimonioActual } from './lib/patrimonio';
-import { pendientesDeReglas } from './lib/reglas';
+import { pendientesDeReglas, indiceAporte } from './lib/reglas';
 import { iniciarRecordatoriosRutina, recordatoriosActivos, setRecordatoriosActivos } from './native/recordatoriosRutina';
-import { collection, updateDoc, deleteDoc, doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { collection, updateDoc, deleteDoc, doc, onSnapshot, setDoc, runTransaction, writeBatch, arrayUnion } from 'firebase/firestore';
 import { Capacitor } from '@capacitor/core';
 import { ThemeToggle, ScreenHeader, BottomNav, BottomSheet, fmtCOP } from './ui/f360.jsx';
 import { AICoach } from './coach/Coach';
@@ -459,7 +459,33 @@ export default function App() {
 
     const genericDelete = async (coll, id) => {
         if (!user) return null;
+        if (coll === 'transacciones') return borrarMovimiento(id);
         return sinEsperarServidor(deleteDoc(doc(db, `artifacts/${appId}/users/${user.uid}/${coll}`, id)));
+    };
+
+    // Borrar un movimiento deshace lo que arrastra: un aporte de ahorro devuelve su monto a
+    // la meta, y un ingreso se lleva los aportes que le apartaron sus reglas de ahorro.
+    const borrarMovimiento = async (id) => {
+        const base = `artifacts/${appId}/users/${user.uid}`;
+        const mov = transacciones.find(t => t.id === id);
+        const aportes = mov?.tipo === 'ingreso' ? transacciones.filter(t => t.esAhorro && t.origenIngreso === id) : mov?.esAhorro ? [mov] : [];
+        const lote = writeBatch(db);
+        const metasCambiadas = new Map();
+        aportes.forEach(a => {
+            const meta = metasCambiadas.get(a.metaId) || metas.find(m => m.id === a.metaId)
+                || metas.find(m => a.concepto === `Ahorro → ${m.nombre}`);
+            if (!meta) return;
+            const lista = [...(meta.aportes || [])];
+            const i = indiceAporte({ aportes: lista }, a);
+            if (i >= 0) lista.splice(i, 1);
+            const ahorroActual = Math.max((Number(meta.ahorroActual) || 0) - (Number(a.monto) || 0), 0);
+            const objetivo = Number(meta.montoObjetivo) || 0;
+            metasCambiadas.set(meta.id, { ...meta, aportes: lista, ahorroActual, ...(meta.completada && objetivo > 0 && ahorroActual < objetivo ? { completada: false } : {}) });
+        });
+        metasCambiadas.forEach(m => lote.update(doc(db, `${base}/metas`, m.id), { aportes: m.aportes, ahorroActual: m.ahorroActual, ...(m.completada === false ? { completada: false } : {}) }));
+        aportes.filter(a => a.id !== id).forEach(a => lote.delete(doc(db, `${base}/transacciones`, a.id)));
+        lote.delete(doc(db, `${base}/transacciones`, id));
+        return sinEsperarServidor(lote.commit());
     };
 
     // Sesión de bóveda compartida entre Contraseñas y las credenciales de
@@ -580,25 +606,50 @@ export default function App() {
     // el aporte a la meta (automático o con confirmación). Cada regla se procesa una sola vez por ingreso.
     const pendientesAhorro = useMemo(() => pendientesDeReglas(reglasAhorro, transacciones, metas), [reglasAhorro, transacciones, metas]);
     const reglasEnCurso = useRef(new Set());
-    const aplicarRegla = async (p, aceptar) => {
+    const [avisoAhorro, setAvisoAhorro] = useState('');
+    useEffect(() => {
+        if (!avisoAhorro) return;
+        const t = setTimeout(() => setAvisoAhorro(''), 5000);
+        return () => clearTimeout(t);
+    }, [avisoAhorro]);
+    // Transacción: lee el ingreso y la meta en el servidor y solo aplica si la regla no se
+    // procesó ya (desde este u otro dispositivo). Sin conexión falla y se reintenta luego.
+    const aplicarRegla = async (p, aceptar, intento = 0) => {
         const clave = `${p.regla.id}:${p.ingreso.id}`;
         if (reglasEnCurso.current.has(clave)) return;
         reglasEnCurso.current.add(clave);
+        const base = `artifacts/${appId}/users/${user.uid}`;
+        const ingresoRef = doc(db, `${base}/transacciones`, p.ingreso.id);
+        const metaRef = doc(db, `${base}/metas`, p.meta.id);
+        const aporteRef = doc(collection(db, `${base}/transacciones`));
         try {
-            await genericUpdate('transacciones', p.ingreso.id, { reglasProcesadas: [...(p.ingreso.reglasProcesadas || []), p.regla.id] });
-            if (!aceptar) return;
-            const actual = Number(p.meta.ahorroActual) || 0;
-            const objetivo = Number(p.meta.montoObjetivo) || 0;
-            const nuevo = actual + p.monto;
-            await genericUpdate('metas', p.meta.id, {
-                ahorroActual: nuevo,
-                aportes: [...(p.meta.aportes || []), { monto: p.monto, fecha: dateKey(), regla: p.regla.id }],
-                ...(objetivo > 0 && nuevo >= objetivo ? { completada: true } : {}),
+            const aplicado = await runTransaction(db, async (tx) => {
+                const ingreso = await tx.get(ingresoRef);
+                const meta = await tx.get(metaRef);
+                // Recién creado puede no haber llegado aún al servidor: se reintenta en unos segundos.
+                if (!ingreso.exists()) throw new Error('ingreso-pendiente');
+                if ((ingreso.data().reglasProcesadas || []).includes(p.regla.id)) return false;
+                tx.update(ingresoRef, { reglasProcesadas: arrayUnion(p.regla.id) });
+                if (!aceptar || !meta.exists()) return false;
+                const m = meta.data();
+                const nuevo = (Number(m.ahorroActual) || 0) + p.monto;
+                const objetivo = Number(m.montoObjetivo) || 0;
+                tx.update(metaRef, {
+                    ahorroActual: nuevo,
+                    aportes: [...(m.aportes || []), { monto: p.monto, fecha: dateKey(), regla: p.regla.id, tx: aporteRef.id }],
+                    ...(objetivo > 0 && nuevo >= objetivo ? { completada: true } : {}),
+                });
+                tx.set(aporteRef, {
+                    tipo: 'gasto', monto: p.monto, concepto: `Ahorro → ${p.meta.nombre}`, categoria: 'Ahorro Metas', fecha: dateKey(),
+                    esAhorro: true, metaId: p.meta.id, origenIngreso: p.ingreso.id, reglaId: p.regla.id, createdAt: new Date().toISOString(),
+                });
+                return true;
             });
-            await genericAdd('transacciones', { tipo: 'gasto', monto: p.monto, concepto: `Ahorro → ${p.meta.nombre}`, categoria: 'Ahorro Metas', fecha: dateKey(), esAhorro: true, createdAt: new Date().toISOString() });
+            if (aplicado) setAvisoAhorro(`Apartamos ${formatCurrency(p.monto)} de "${p.ingreso.concepto || 'tu ingreso'}" para ${(p.meta.nombre || "").trim()}`);
         } catch (e) {
-            console.error('No se pudo aplicar la regla de ahorro:', e);
+            console.warn('No se pudo aplicar la regla de ahorro (se reintentará):', e);
             reglasEnCurso.current.delete(clave);
+            if (intento < 5) setTimeout(() => aplicarRegla(p, aceptar, intento + 1), 3000 * (intento + 1));
         }
     };
     useEffect(() => {
@@ -710,7 +761,7 @@ export default function App() {
     const HEADER_PROPIO = new Set(['deudas', 'habitos', 'inversiones', 'presupuesto', 'rutina', 'proyectos', 'passwords', 'agenda', 'cuentas', 'patrimonio']);
     const volverTodo = volver;
     const navActivo = ['midia', 'flujo', 'analisis', 'metas'].includes(activeTab) ? activeTab : null;
-    const flujoProps = { transacciones, cuentas, genericAdd, genericUpdate, genericDelete, prefillData, setPrefillData, pendingBudgetId, setPendingBudgetId, setActiveTab };
+    const flujoProps = { transacciones, cuentas, reglasAhorro, metas, genericAdd, genericUpdate, genericDelete, prefillData, setPrefillData, pendingBudgetId, setPendingBudgetId, setActiveTab };
 
     return (
         <div style={{ minHeight: '100dvh' }}>
@@ -759,6 +810,12 @@ export default function App() {
                     </div>
                 </div>
             </aside>
+
+            {avisoAhorro && (
+                <div role="status" className="sin-conexion aviso-ahorro">
+                    {avisoAhorro}
+                </div>
+            )}
 
             {!enLinea && (
                 <div role="status" className="sin-conexion">

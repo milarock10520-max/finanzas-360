@@ -45,7 +45,7 @@ export const Variacion = ({ actual, anterior, subirEsMalo = false }) => {
 
 // Interruptor con resorte (on/off accesible como botón).
 export const Switch = ({ on }) => (
-    <span aria-hidden="true" style={{ width: 46, height: 28, borderRadius: 99, padding: 3, flexShrink: 0, background: on ? 'var(--primary)' : 'var(--line)', transition: 'background .3s var(--ease)' }}>
+    <span aria-hidden="true" style={{ display: 'inline-block', verticalAlign: 'middle', width: 46, height: 28, borderRadius: 99, padding: 3, flexShrink: 0, background: on ? 'var(--primary)' : 'var(--line)', transition: 'background .3s var(--ease)' }}>
         <span style={{ display: 'block', width: 22, height: 22, borderRadius: '50%', background: '#fff', boxShadow: 'var(--shadow)', transform: on ? 'translateX(18px)' : 'none', transition: 'transform .35s var(--spring)' }} />
     </span>
 );

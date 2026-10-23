@@ -488,6 +488,7 @@ export const GoalTracker = ({ metas, transacciones = [], habitos = [], reglas = 
                 categoria: 'Ahorro Metas',
                 fecha: dateKey(),
                 esAhorro: true,
+                metaId: meta.id,
                 createdAt: new Date().toISOString(),
             });
         }

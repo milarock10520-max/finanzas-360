@@ -2,11 +2,19 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { Plus, Trash2, Calendar, CheckCircle2, ArrowUp, ArrowDown, Check, Search, X } from 'lucide-react';
 import { ScreenHeader, BottomSheet, fmtCOP } from '../ui/f360.jsx';
 import { CATEGORIAS_GASTOS, CATEGORIAS_INGRESOS, dateKey } from '../lib/finanzas';
+import { previaReglas } from '../lib/reglas';
 
 // =============================================
 // === FLUJO: ingresos y gastos en una sola pantalla ===
 // =============================================
-export const Flujo = ({ modo, setModo, transacciones, cuentas = [], genericAdd, genericUpdate, genericDelete, prefillData, setPrefillData, pendingBudgetId, setPendingBudgetId, setActiveTab, focusToken }) => {
+// Confirmación al borrar: avisa lo que se deshace con el movimiento.
+const mensajeBorrar = (t) => {
+    if (t.esAhorro) return `¿Eliminar "${t.concepto}"? Se devolverán ${fmtCOP(t.monto)} de la meta a tu saldo.`;
+    if (t.tipo === 'ingreso') return `¿Eliminar "${t.concepto}"? Si una regla apartó ahorro de este ingreso, también se deshace.`;
+    return `¿Eliminar "${t.concepto}"?`;
+};
+
+export const Flujo = ({ modo, setModo, transacciones, cuentas = [], reglasAhorro = [], metas = [], genericAdd, genericUpdate, genericDelete, prefillData, setPrefillData, pendingBudgetId, setPendingBudgetId, setActiveTab, focusToken }) => {
     const esGasto = modo === 'gasto';
     const tipo = esGasto ? 'gasto' : 'ingreso';
     const [digitos, setDigitos] = useState('');
@@ -41,6 +49,7 @@ export const Flujo = ({ modo, setModo, transacciones, cuentas = [], genericAdd, 
         return [...base, ...[...extras].sort((a, b) => a.localeCompare(b))];
     }, [esGasto, tipo, transacciones]);
     const cat = opciones.includes(categoria) ? categoria : opciones[0];
+    const previa = !esGasto && Number(digitos) > 0 ? previaReglas(reglasAhorro, metas, { monto: Number(digitos), categoria: cat }) : [];
 
     // Al cambiar de modo se limpia la categoría elegida.
     useEffect(() => { setCategoria(null); setCreando(false); }, [modo]);
@@ -206,6 +215,12 @@ export const Flujo = ({ modo, setModo, transacciones, cuentas = [], genericAdd, 
                         {guardado ? <><Check size={18} strokeWidth={2.4} aria-hidden="true" /> Guardado</> : (pendingBudgetId ? 'Confirmar pago' : (esGasto ? 'Guardar gasto' : 'Guardar ingreso'))}
                     </button>
                 </div>
+                {!esGasto && previa.length > 0 && (
+                    <p style={{ margin: 0, fontSize: 13, lineHeight: 1.45, color: 'var(--text-2)' }}>
+                        Tu regla de ahorro apartará {previa.map(x => `${fmtCOP(x.monto)} para ${(x.meta.nombre || "").trim()}`).join(' y ')}.
+                        Tu saldo subirá {fmtCOP(Math.max(Number(digitos) - previa.reduce((a, x) => a + x.monto, 0), 0))}.
+                    </p>
+                )}
             </form>
 
             <div className="rise d4" style={{ marginTop: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -275,7 +290,7 @@ export const Flujo = ({ modo, setModo, transacciones, cuentas = [], genericAdd, 
             {editando && (
                 <EditorMovimiento t={editando} opciones={opciones} cuentas={cuentas} onClose={() => setEditando(null)}
                     onGuardar={async (cambios) => { await genericUpdate('transacciones', editando.id, cambios); setEditando(null); }}
-                    onEliminar={async () => { if (window.confirm(`¿Eliminar "${editando.concepto}"?`)) { await genericDelete('transacciones', editando.id); setEditando(null); } }} />
+                    onEliminar={async () => { if (window.confirm(mensajeBorrar(editando))) { await genericDelete('transacciones', editando.id); setEditando(null); } }} />
             )}
         </div>
     );
