@@ -1,5 +1,10 @@
 import { Capacitor } from '@capacitor/core';
 
+// iOS solo suena si la notificación trae `sound` (el plugin no pone uno por defecto).
+// 'default' no es un archivo de la app, así que iOS usa su sonido estándar de avisos.
+const SONIDO = 'default';
+const conSonido = (n) => ({ ...n, sound: SONIDO });
+
 // Notificación diaria de agenda: cada mañana a esta hora.
 const NOTIF_HORA = 6;   // 6:00 AM
 const NOTIF_MIN = 0;
@@ -120,7 +125,7 @@ export async function programarAgendaDiaria(googleToken) {
         });
     }
 
-    if (notifs.length) await LocalNotifications.schedule({ notifications: notifs });
+    if (notifs.length) await LocalNotifications.schedule({ notifications: notifs.map(conSonido) });
     return notifs.length;
 }
 
@@ -173,7 +178,7 @@ export async function programarRecordatoriosRutina(rutina, activos) {
         };
     });
 
-    if (notifs.length) await LocalNotifications.schedule({ notifications: notifs });
+    if (notifs.length) await LocalNotifications.schedule({ notifications: notifs.map(conSonido) });
     return notifs.length;
 }
 
@@ -216,7 +221,7 @@ export async function enviarAviso({ title, body, tag }) {
     if (Capacitor.isNativePlatform()) {
         const { LocalNotifications } = await import('@capacitor/local-notifications');
         await LocalNotifications.schedule({
-            notifications: [{ id: idDeTag(tag || title), title, body, schedule: { at: new Date(Date.now() + 1500) } }],
+            notifications: [conSonido({ id: idDeTag(tag || title), title, body, schedule: { at: new Date(Date.now() + 1500) } })],
         });
         return;
     }
@@ -243,7 +248,7 @@ export async function programarRecordatoriosPagos(items) {
     const futuros = items.filter(x => x.at && x.at.getTime() > Date.now()).sort((a, b) => a.at - b.at).slice(0, RECORD_MAX);
     if (!futuros.length) return 0;
     await LocalNotifications.schedule({
-        notifications: futuros.map((x, i) => ({ id: RECORD_ID_BASE + i, title: x.title, body: x.body, schedule: { at: x.at, allowWhileIdle: true } })),
+        notifications: futuros.map((x, i) => conSonido({ id: RECORD_ID_BASE + i, title: x.title, body: x.body, schedule: { at: x.at, allowWhileIdle: true } })),
     });
     return futuros.length;
 }
