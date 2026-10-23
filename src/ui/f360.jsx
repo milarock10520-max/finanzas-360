@@ -1,7 +1,7 @@
 // Componentes base del sistema de diseño F360 (ver design/HANDOFF.md).
 import React, { useState, useEffect, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { Sun, Moon, ChevronLeft, Home, ArrowLeftRight, Plus, BarChart3, Target } from 'lucide-react';
+import { Sun, Moon, ChevronLeft, Home, ArrowLeftRight, Plus, BarChart3, Target, Mic } from 'lucide-react';
 
 // --- TEMA ---
 const THEME_KEY = 'f360-theme';
@@ -114,7 +114,7 @@ export const ScreenHeader = ({ title, onBack, right, className = '' }) => (
 
 // --- BARRA INFERIOR FLOTANTE ---
 // Inicio · Flujo · [+] · Análisis · Metas
-export const BottomNav = ({ active, onNavigate, onAdd }) => {
+export const BottomNav = ({ active, onNavigate, onAdd, onVoz }) => {
     const item = (id, Icon, label) => (
         <button type="button" className={`nav-item ${active === id ? 'on' : ''}`} onClick={() => onNavigate(id)} aria-current={active === id ? 'page' : undefined}>
             <Icon size={22} strokeWidth={1.9} aria-hidden="true" />{label}
@@ -122,6 +122,11 @@ export const BottomNav = ({ active, onNavigate, onAdd }) => {
     );
     return (
         <nav className="nav" aria-label="Principal">
+            {onVoz && (
+                <button type="button" className="nav-voz" onClick={onVoz} aria-label="Hablar con la IA">
+                    <Mic size={24} strokeWidth={2.2} aria-hidden="true" />
+                </button>
+            )}
             {item('midia', Home, 'Inicio')}
             {item('flujo', ArrowLeftRight, 'Flujo')}
             <button type="button" className="nav-item" onClick={onAdd} aria-label="Registrar movimiento">
