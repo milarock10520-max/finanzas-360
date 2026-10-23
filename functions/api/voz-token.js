@@ -64,7 +64,8 @@ export async function onRequestPost({ request, env }) {
             uses: 1,
             expireTime: new Date(ahora + 30 * 60 * 1000).toISOString(),
             newSessionExpireTime: new Date(ahora + 2 * 60 * 1000).toISOString(),
-            liveConnectConstraints: { model: `models/${MODELO}` },
+            // Sin bidiGenerateContentSetup (no se puede combinar con `uses`): la
+            // configuración la envía la app en el mensaje setup del WebSocket.
         }),
     });
     const data = await res.json().catch(() => ({}));
