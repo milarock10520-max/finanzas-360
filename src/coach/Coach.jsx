@@ -638,8 +638,6 @@ ${perfilIA?.texto || '(Aún no generado.)'}`;
         }
     };
 
-    ejecutarRef.current = ejecutarHerramienta;
-
     // Llama al backend en modo agéntico. Devuelve { reply, content, stop_reason }.
     // Contexto completo (fecha, calendario resuelto y datos financieros), compartido por el
     // chat y el asistente de voz.
@@ -657,6 +655,7 @@ ${perfilIA?.texto || '(Aún no generado.)'}`;
     const contextoRef = useRef(contextoConFecha);
     contextoRef.current = contextoConFecha;
     const ejecutarRef = useRef(null);
+    ejecutarRef.current = ejecutarHerramienta;
     const obtenerContextoVoz = useCallback(() => contextoRef.current(), []);
     const ejecutarVoz = useCallback((tu) => ejecutarRef.current(tu), []);
 
