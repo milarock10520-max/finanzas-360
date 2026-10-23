@@ -122,16 +122,17 @@ export const BottomNav = ({ active, onNavigate, onAdd, onVoz }) => {
     );
     return (
         <nav className="nav" aria-label="Principal">
-            {onVoz && (
-                <button type="button" className="nav-voz" onClick={onVoz} aria-label="Hablar con la IA">
-                    <Mic size={24} strokeWidth={2.2} aria-hidden="true" />
-                </button>
-            )}
             {item('midia', Home, 'Inicio')}
             {item('flujo', ArrowLeftRight, 'Flujo')}
-            <button type="button" className="nav-item" onClick={onAdd} aria-label="Registrar movimiento">
-                <span className="add"><Plus size={24} strokeWidth={2.4} aria-hidden="true" /></span>
-            </button>
+            {onVoz ? (
+                <button type="button" className="nav-item" onClick={onVoz} aria-label="Hablar con la IA">
+                    <span className="add add-voz"><Mic size={25} strokeWidth={2.2} aria-hidden="true" /></span>
+                </button>
+            ) : (
+                <button type="button" className="nav-item" onClick={onAdd} aria-label="Registrar movimiento">
+                    <span className="add"><Plus size={24} strokeWidth={2.4} aria-hidden="true" /></span>
+                </button>
+            )}
             {item('analisis', BarChart3, 'Análisis')}
             {item('metas', Target, 'Metas')}
         </nav>

@@ -422,22 +422,19 @@
 .voz-btn.off { background: rgba(255,90,120,.18); border-color: rgba(255,120,150,.4); }
 .voz-cerrar { background: rgba(255,255,255,.92); color: #0B1220; border-color: transparent; }
 
-/* Botón del micrófono sobre la barra inferior */
-.nav .nav-voz {
-  position: absolute; right: 10px; top: -74px; width: 56px; height: 56px; border-radius: 50%; border: 0; cursor: pointer;
-  display: grid; place-items: center; color: #fff;
+/* Botón central del micrófono (barra inferior) */
+.nav .add-voz {
+  position: relative; border-radius: 50%; color: #fff;
   background: radial-gradient(circle at 30% 25%, #6EE7FF, #3355FF 55%, #7C3AED);
-  box-shadow: 0 10px 28px -6px rgba(90,90,255,.7), inset 0 0 12px rgba(255,255,255,.35);
-  transition: transform .25s var(--spring);
+  box-shadow: 0 14px 30px -8px rgba(90,90,255,.75), inset 0 0 12px rgba(255,255,255,.35);
 }
-.nav .nav-voz::before, .nav .nav-voz::after {
-  content: ""; position: absolute; inset: -6px; border-radius: 50%; border: 1.5px solid rgba(110,180,255,.55);
+.nav .add-voz::before, .nav .add-voz::after {
+  content: ""; position: absolute; inset: -5px; border-radius: 50%; border: 1.5px solid rgba(110,180,255,.55);
   animation: vozOnda 2.6s ease-out infinite; pointer-events: none;
 }
-.nav .nav-voz::after { animation-delay: 1.3s; }
-.nav .nav-voz:active { transform: scale(.9); }
-@keyframes vozOnda { from { transform: scale(.9); opacity: .9; } to { transform: scale(1.5); opacity: 0; } }
+.nav .add-voz::after { animation-delay: 1.3s; }
+@keyframes vozOnda { from { transform: scale(.9); opacity: .9; } to { transform: scale(1.45); opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .voz, .voz-grid, .voz-scan, .voz-ia span, .nav .nav-voz::before, .nav .nav-voz::after { animation: none; }
+  .voz, .voz-grid, .voz-scan, .voz-ia span, .nav .add-voz::before, .nav .add-voz::after { animation: none; }
 }
