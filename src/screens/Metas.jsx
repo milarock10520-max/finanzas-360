@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { TrendingUp, Target, Plus, Trash2, Calendar, CheckCircle2, Edit2, AlertTriangle, Sparkles, Coins, X, StickyNote, MessageSquarePlus, Link2, Flame, CalendarClock, ChevronLeft, ChevronRight, Check, Zap } from 'lucide-react';
 import { ScreenHeader, fmtCOP } from '../ui/f360.jsx';
 import { MontoInput, PlusToggle, Switch } from '../components/comunes';
-import { PLAZOS_METAS, aporteSugeridoMeta, capacidadAhorroMensual, dateKey, diasHasta, estadoMeta, periodosRestantesMeta, CATEGORIAS_INGRESOS } from '../lib/finanzas';
+import { PLAZOS_METAS, aporteSugeridoMeta, capacidadAhorroMensual, dateKey, diasHasta, estadoMeta, periodosRestantesMeta, CATEGORIAS_INGRESOS, formatMoney } from '../lib/finanzas';
 import { describirRegla } from '../lib/reglas';
+import { aportesDe } from '../lib/inversiones';
 
-export const MetaItem = ({ meta, metasFinancieras = [], onAhorrar, onEditarPlan, onToggleCompletada, onDelete, onAddNote, onDeleteNote, onAddChecklistItem, onToggleChecklistItem, onDeleteChecklistItem, onLinkMetaFinanciera, onToggleDia, onToggleSeguimiento, delay = 0 }) => {
+export const MetaItem = ({ meta, metasFinancieras = [], inversiones = [], onVincularInversion, onAportarInversion, onAhorrar, onEditarPlan, onToggleCompletada, onDelete, onAddNote, onDeleteNote, onAddChecklistItem, onToggleChecklistItem, onDeleteChecklistItem, onLinkMetaFinanciera, onToggleDia, onToggleSeguimiento, delay = 0 }) => {
     const [aporte, setAporte] = useState('');
     const [aportando, setAportando] = useState(false);
     const [descontarSaldo, setDescontarSaldo] = useState(true);
@@ -16,6 +17,7 @@ export const MetaItem = ({ meta, metasFinancieras = [], onAhorrar, onEditarPlan,
     const [newNote, setNewNote] = useState('');
     const [newChecklistItem, setNewChecklistItem] = useState('');
     const [showLinkSelect, setShowLinkSelect] = useState(false);
+    const [invElegida, setInvElegida] = useState(meta.inversionId || '');
     const [weekOffset, setWeekOffset] = useState(0); // 0 = semana actual; -1 = anterior...
 
     const notas = meta.notas || [];
@@ -248,7 +250,12 @@ export const MetaItem = ({ meta, metasFinancieras = [], onAhorrar, onEditarPlan,
     const sugerido = tienePlan ? aporteSugeridoMeta(meta) : 0;
     const periodos = tienePlan ? periodosRestantesMeta(meta) : 0;
     const nombrePeriodo = (meta.frecuencia === 'mensual') ? 'mes' : 'quincena';
-    const ultimosAportes = (meta.aportes || []).slice(-3).reverse();
+    // Vinculada a una inversión: el ahorro es su valor actual y se aporta a la inversión.
+    const inv = meta.inversion || null;
+    const invUSD = inv?.moneda === 'USD';
+    const ultimosAportes = inv
+        ? aportesDe(inv).slice(-3).reverse().map(a => ({ texto: formatMoney(a.monto, inv.moneda), fecha: a.fecha }))
+        : (meta.aportes || []).slice(-3).reverse().map(a => ({ texto: fmtCOP(a.monto), fecha: a.fecha }));
 
     const ESTADOS = {
         completada: { txt: 'Completada', color: 'var(--income)', soft: 'var(--income-soft)' },
@@ -265,12 +272,25 @@ export const MetaItem = ({ meta, metasFinancieras = [], onAhorrar, onEditarPlan,
         setEditandoPlan(false);
     };
 
-    const enviarAporte = (e) => {
+    const enviarAporte = async (e) => {
         e.preventDefault();
         if (!aporte) return;
-        onAhorrar(meta, aporte, descontarSaldo);
+        if (inv) {
+            const valor = parseFloat(String(aporte).replace(',', '.'));
+            try { await onAportarInversion(inv, { monto: valor, descontar: invUSD && descontarSaldo }); }
+            catch (err) { alert(err.message || 'No se pudo registrar el aporte.'); return; }
+        } else {
+            onAhorrar(meta, aporte, descontarSaldo);
+        }
         setAporte('');
         setAportando(false);
+    };
+
+    const guardarVinculo = () => {
+        const elegida = inversiones.find(i => i.id === invElegida);
+        if (elegida && !window.confirm(`La meta tomará el valor real de "${elegida.concepto}" y los aportes se harán a esa inversión. El ahorro registrado solo en la meta se reemplaza. ¿Vincular?`)) return;
+        onVincularInversion(meta, invElegida || null);
+        setEditandoPlan(false);
     };
 
     return (
@@ -309,6 +329,13 @@ export const MetaItem = ({ meta, metasFinancieras = [], onAhorrar, onEditarPlan,
                     <span className="num" style={{ letterSpacing: 0 }}><b style={{ color: 'var(--text)' }}>{fmtCOP(actual)}</b> ahorrado</span>
                     <span className="num" style={{ letterSpacing: 0 }}>Meta {fmtCOP(objetivo)}</span>
                 </div>
+                {inv && (
+                    <span style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.45 }}>
+                        <Link2 size={12} aria-hidden="true" style={{ verticalAlign: '-2px' }} /> {inv.concepto}: depositado {formatMoney(Number(inv.monto) || 0, inv.moneda)} · utilidad{' '}
+                        <b style={{ color: (Number(inv.utilidad) || 0) >= 0 ? 'var(--income)' : 'var(--expense)' }}>{(Number(inv.utilidad) || 0) >= 0 ? '+' : '−'}{formatMoney(Math.abs(Number(inv.utilidad) || 0), inv.moneda)}</b>
+                        {invUSD ? ' · en pesos con la tasa de hoy' : ''}
+                    </span>
+                )}
             </div>
 
             {estado.id === 'completada' && (
@@ -327,6 +354,16 @@ export const MetaItem = ({ meta, metasFinancieras = [], onAhorrar, onEditarPlan,
                         <button type="button" className={planFrecuencia === 'mensual' ? 'on' : ''} onClick={() => setPlanFrecuencia('mensual')}>Mensual</button>
                     </div>
                     <button type="button" className="btn btn-primary" onClick={guardarPlan} disabled={!planFecha}>Guardar plan</button>
+                    {inversiones.length > 0 && (
+                        <>
+                            <span className="eyebrow" style={{ marginTop: 4 }}>Vincular a una inversión</span>
+                            <select className="input" value={invElegida} onChange={e => setInvElegida(e.target.value)} aria-label="Inversión vinculada" style={{ background: 'var(--surface)' }}>
+                                <option value="">Sin vincular (ahorro propio)</option>
+                                {inversiones.map(i => <option key={i.id} value={i.id}>{i.concepto} · {formatMoney((Number(i.monto) || 0) + (Number(i.utilidad) || 0), i.moneda)}</option>)}
+                            </select>
+                            <button type="button" className="btn btn-outline" onClick={guardarVinculo} disabled={invElegida === (meta.inversionId || '')}>Guardar vínculo</button>
+                        </>
+                    )}
                 </div>
             ) : estado.id === 'completada' ? null : !tienePlan ? (
                 <button type="button" className="btn btn-ghost" onClick={() => setEditandoPlan(true)} style={{ color: 'var(--primary)' }}>
@@ -349,13 +386,19 @@ export const MetaItem = ({ meta, metasFinancieras = [], onAhorrar, onEditarPlan,
             {estado.id !== 'completada' && (aportando || !tienePlan) && !editandoPlan && (
                 <form onSubmit={enviarAporte} className="rise" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     <div style={{ display: 'flex', gap: 8 }}>
-                        <MontoInput value={aporte} onChange={setAporte} placeholder="+ Ahorro" aria-label={`Aporte a ${meta.nombre}`} autoFocus={aportando} style={{ height: 48, flex: 1, minWidth: 0 }} />
+                        {invUSD
+                            ? <input className="input num" type="number" inputMode="decimal" step="any" min="0" placeholder="+ US$" value={aporte} onChange={e => setAporte(e.target.value)} aria-label={`Aporte en dólares a ${meta.nombre}`} autoFocus={aportando} style={{ height: 48, flex: 1, minWidth: 0 }} />
+                            : <MontoInput value={aporte} onChange={setAporte} placeholder={inv ? '+ Aporte' : '+ Ahorro'} aria-label={`Aporte a ${meta.nombre}`} autoFocus={aportando} style={{ height: 48, flex: 1, minWidth: 0 }} />}
                         <button type="submit" className="btn btn-primary btn-sm" disabled={!aporte} style={{ height: 48 }}>Aportar</button>
                     </div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--text-2)', cursor: 'pointer', minHeight: 32 }}>
-                        <input type="checkbox" checked={descontarSaldo} onChange={e => setDescontarSaldo(e.target.checked)} style={{ width: 20, height: 20, accentColor: 'var(--primary)' }} />
-                        Descontar de mi saldo
-                    </label>
+                    {inv && !invUSD ? (
+                        <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Se suma a "{inv.concepto}"{inv.afectaBalance !== false ? ' y se descuenta de tu saldo.' : ' (no toca tu saldo).'}</span>
+                    ) : (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--text-2)', cursor: 'pointer', minHeight: 32 }}>
+                            <input type="checkbox" checked={descontarSaldo} onChange={e => setDescontarSaldo(e.target.checked)} style={{ width: 20, height: 20, accentColor: 'var(--primary)' }} />
+                            Descontar de mi saldo{inv ? ` · se suma a "${inv.concepto}"` : ''}
+                        </label>
+                    )}
                 </form>
             )}
 
@@ -363,7 +406,7 @@ export const MetaItem = ({ meta, metasFinancieras = [], onAhorrar, onEditarPlan,
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {ultimosAportes.map((a, i) => (
                         <span key={i} className="num" style={{ fontSize: 12, color: 'var(--text-3)', letterSpacing: 0 }}>
-                            <span style={{ color: 'var(--income)', fontWeight: 700 }}>+ {fmtCOP(a.monto)}</span> · {a.fecha}
+                            <span style={{ color: 'var(--income)', fontWeight: 700 }}>+ {a.texto}</span> · {a.fecha}
                         </span>
                     ))}
                 </div>
@@ -374,7 +417,7 @@ export const MetaItem = ({ meta, metasFinancieras = [], onAhorrar, onEditarPlan,
     );
 };
 
-export const GoalTracker = ({ metas, transacciones = [], habitos = [], reglas = [], setActiveTab, genericAdd, genericUpdate, genericDelete }) => {
+export const GoalTracker = ({ metas, inversiones = [], onAportarInversion, transacciones = [], habitos = [], reglas = [], setActiveTab, genericAdd, genericUpdate, genericDelete }) => {
     const [viewMode, setViewMode] = useState('financieras'); // 'financieras' | 'personales'
     const [formOpen, setFormOpen] = useState(false);
 
@@ -460,6 +503,11 @@ export const GoalTracker = ({ metas, transacciones = [], habitos = [], reglas = 
     };
 
     // Vincular / desvincular una meta financiera a una meta personal
+    // Al vincular, la meta deja su ahorro propio: su valor pasa a ser el de la inversión.
+    const vincularInversion = async (meta, inversionId) => {
+        await genericUpdate('metas', meta.id, inversionId ? { inversionId, ahorroActual: 0, aportes: [] } : { inversionId: null });
+    };
+
     const linkMetaFinanciera = async (meta, id) => {
         await genericUpdate('metas', meta.id, { metaFinancieraId: id || null });
     };
@@ -622,6 +670,9 @@ export const GoalTracker = ({ metas, transacciones = [], habitos = [], reglas = 
                             meta={meta}
                             delay={0.19 + i * 0.07}
                             metasFinancieras={metasFinancieras}
+                            inversiones={inversiones}
+                            onVincularInversion={vincularInversion}
+                            onAportarInversion={onAportarInversion}
                             onAhorrar={actualizarAhorro}
                             onEditarPlan={editarPlanMeta}
                             onToggleCompletada={toggleCompletada}
@@ -698,7 +749,7 @@ const ReglasAhorro = ({ reglas = [], metasFinancieras = [], categoriasIngreso = 
                     <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, borderRadius: 14, background: 'var(--surface-2)', opacity: activa ? 1 : .6 }}>
                         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
                             <span style={{ fontSize: 14, fontWeight: 700 }}>{describirRegla(r, meta)}</span>
-                            <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{r.auto ? 'Se aparta sola' : 'Te pregunto antes de apartar'}</span>
+                            <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{(r.auto ? 'Se aparta sola' : 'Te pregunto antes de apartar') + (meta?.inversionId ? ' · como aporte a la inversión' : '')}</span>
                         </div>
                         <button type="button" onClick={() => genericUpdate('reglas_ahorro', r.id, { activa: !activa })} aria-pressed={activa} aria-label={activa ? 'Pausar regla' : 'Activar regla'}
                             style={{ background: 'none', border: 0, padding: 4, cursor: 'pointer' }}><Switch on={activa} /></button>

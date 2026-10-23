@@ -12,9 +12,12 @@
 
 import { saldoDeuda } from './deudas';
 import { aCOP } from './moneda';
+import { esPosicionInversion } from './inversiones';
 
 const monto = (t) => Number(t.monto) || 0;
-const esInversion = (t) => t.categoria === 'Aporte Inversión' || t.esInversion === true;
+// Solo las posiciones: el gasto en pesos de un aporte en USD ya resta del disponible y su
+// valor está dentro de la inversión.
+const esInversion = esPosicionInversion;
 const finDeMes = (ym) => { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m, 0); return `${ym}-${String(d.getDate()).padStart(2, '0')}`; };
 const ymMas = (ym, n) => { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
 

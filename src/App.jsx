@@ -5,9 +5,10 @@ import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { programarAgendaDiaria, programarRecordatoriosRutina, estadoPermisoAvisos, pedirPermisoAvisos, enviarAviso, programarRecordatoriosPagos } from './native/notificaciones';
 import { recordatoriosPagos, pagosProximos } from './lib/pagos';
 import { actualizarWidget, limpiarWidget } from './native/widget';
-import { useTasaUSD, aCOP } from './lib/moneda';
+import { useTasaUSD, aCOP, valorInversionCOP } from './lib/moneda';
 import { patrimonioActual } from './lib/patrimonio';
 import { pendientesDeReglas, indiceAporte } from './lib/reglas';
+import { esPosicionInversion, aportesDe, nuevoIdAporte } from './lib/inversiones';
 import { iniciarRecordatoriosRutina, recordatoriosActivos, setRecordatoriosActivos } from './native/recordatoriosRutina';
 import { collection, updateDoc, deleteDoc, doc, onSnapshot, setDoc, runTransaction, writeBatch, arrayUnion } from 'firebase/firestore';
 import { Capacitor } from '@capacitor/core';
@@ -469,7 +470,31 @@ export default function App() {
         const base = `artifacts/${appId}/users/${user.uid}`;
         const mov = transacciones.find(t => t.id === id);
         const aportes = mov?.tipo === 'ingreso' ? transacciones.filter(t => t.esAhorro && t.origenIngreso === id) : mov?.esAhorro ? [mov] : [];
+        // Aportes que sus reglas hicieron a inversiones vinculadas.
+        const aportesInv = mov?.tipo === 'ingreso' ? transacciones.filter(t => t.inversionId && t.origenIngreso === id) : [];
         const lote = writeBatch(db);
+        // Inversión: se van con ella sus gastos en pesos hijos y se desvincula su meta.
+        if (mov && esPosicionInversion(mov)) {
+            transacciones.filter(t => t.inversionId === id).forEach(t => lote.delete(doc(db, `${base}/transacciones`, t.id)));
+            metas.filter(m => m.inversionId === id).forEach(m => lote.update(doc(db, `${base}/metas`, m.id), { inversionId: null }));
+        }
+        // Gasto en pesos de un aporte a una inversión: se quita también ese aporte de la inversión.
+        const hijos = mov?.inversionId ? [mov] : aportesInv;
+        const padres = new Map();
+        hijos.forEach(h => {
+            const padre = padres.get(h.inversionId) || transacciones.find(t => t.id === h.inversionId);
+            if (!padre) return;
+            padres.set(padre.id, { ...padre, aportes: aportesDe(padre).filter(a => a.id !== h.aporteId) });
+            if (h.id !== id) lote.delete(doc(db, `${base}/transacciones`, h.id));
+        });
+        // Aportes en pesos que no crearon gasto hijo (la inversión ya descuenta el saldo).
+        if (mov?.tipo === 'ingreso') {
+            transacciones.filter(t => esPosicionInversion(t) && (t.aportes || []).some(a => a.origenIngreso === id && !a.txId)).forEach(inv => {
+                const base0 = padres.get(inv.id) || { ...inv, aportes: aportesDe(inv) };
+                padres.set(inv.id, { ...base0, aportes: base0.aportes.filter(a => !(a.origenIngreso === id && !a.txId)) });
+            });
+        }
+        padres.forEach(pd => { if (pd.aportes.length) lote.update(doc(db, `${base}/transacciones`, pd.id), { aportes: pd.aportes, monto: pd.aportes.reduce((a, x) => a + (Number(x.monto) || 0), 0) }); });
         const metasCambiadas = new Map();
         aportes.forEach(a => {
             const meta = metasCambiadas.get(a.metaId) || metas.find(m => m.id === a.metaId)
@@ -550,8 +575,57 @@ export default function App() {
     const totalDeudaPendiente = deudas.reduce((acc, curr) => acc + (Number(curr.montoTotal || 0) - Number(curr.montoPagado || 0)), 0);
     const tasaUSD = useTasaUSD();
     const totalInvertido = transacciones
-        .filter(t => t.categoria === 'Aporte Inversión' || t.esInversion === true)
+        .filter(esPosicionInversion)
         .reduce((a, c) => a + (aCOP(Number(c.monto) || 0, c.moneda, tasaUSD?.tasa) ?? 0), 0);
+
+    // Metas vinculadas a una inversión: su ahorro es el valor actual de esa inversión en pesos
+    // (lo depositado + la utilidad). Se aporta a la inversión y la meta se actualiza sola.
+    const metasVista = useMemo(() => metas.map(m => {
+        if (!m.inversionId) return m;
+        const inv = transacciones.find(t => t.id === m.inversionId && esPosicionInversion(t));
+        if (!inv) return m;
+        const valor = valorInversionCOP(inv, tasaUSD?.tasa || null);
+        return { ...m, ahorroActual: valor ?? (Number(m.ahorroActual) || 0), inversion: inv };
+    }), [metas, transacciones, tasaUSD]);
+
+    // Aporte a una inversión (desde Inversiones o desde su meta vinculada). En COP el saldo lo
+    // descuenta la propia inversión si "afecta saldo"; en USD, si `descontar`, se crea un gasto
+    // en pesos hijo con la tasa del día.
+    const agregarAporteInversion = async (inv, { monto, fecha = dateKey(), descontar = false }) => {
+        const valor = Number(monto) || 0;
+        if (!user || valor <= 0) return;
+        const base = `artifacts/${appId}/users/${user.uid}`;
+        const tasa = tasaUSD?.tasa || null;
+        const aporte = { id: nuevoIdAporte(), monto: valor, fecha };
+        const lote = writeBatch(db);
+        if (inv.moneda === 'USD' && descontar) {
+            if (!tasa) throw new Error('Sin la tasa del dólar no puedo descontar el aporte de tu saldo.');
+            const cop = Math.round(valor * tasa);
+            const hijo = doc(collection(db, `${base}/transacciones`));
+            Object.assign(aporte, { tasa, cop, txId: hijo.id });
+            lote.set(hijo, {
+                tipo: 'gasto', esInversion: true, afectaBalance: true, moneda: 'COP', monto: cop,
+                concepto: `Aporte → ${inv.concepto} (US$${valor})`, categoria: 'Aporte Inversión',
+                inversionId: inv.id, aporteId: aporte.id, fecha, createdAt: new Date().toISOString(),
+            });
+        }
+        const aportes = [...aportesDe(inv), aporte];
+        lote.update(doc(db, `${base}/transacciones`, inv.id), { aportes, monto: aportes.reduce((a, x) => a + (Number(x.monto) || 0), 0) });
+        await sinEsperarServidor(lote.commit());
+    };
+
+    const quitarAporteInversion = async (inv, aporteId) => {
+        if (!user) return;
+        const base = `artifacts/${appId}/users/${user.uid}`;
+        const lista = aportesDe(inv);
+        const quitado = lista.find(a => a.id === aporteId);
+        if (!quitado || lista.length < 2) return;
+        const aportes = lista.filter(a => a.id !== aporteId);
+        const lote = writeBatch(db);
+        lote.update(doc(db, `${base}/transacciones`, inv.id), { aportes, monto: aportes.reduce((a, x) => a + (Number(x.monto) || 0), 0) });
+        if (quitado.txId) lote.delete(doc(db, `${base}/transacciones`, quitado.txId));
+        await sinEsperarServidor(lote.commit());
+    };
 
     // Patrimonio neto: foto del mes en curso (colección patrimonio/YYYY-MM), para la historia exacta.
     const patrimonioHoy = useMemo(() => patrimonioActual({ transacciones, deudas, tasaUSD: tasaUSD?.tasa || null }), [transacciones, deudas, tasaUSD]);
@@ -632,6 +706,29 @@ export default function App() {
                 tx.update(ingresoRef, { reglasProcesadas: arrayUnion(p.regla.id) });
                 if (!aceptar || !meta.exists()) return false;
                 const m = meta.data();
+                // Meta vinculada a una inversión: el aporte va a la inversión (en USD se convierte
+                // con la tasa del día y un gasto en pesos hijo lo descuenta del saldo).
+                if (m.inversionId) {
+                    const invRef = doc(db, `${base}/transacciones`, m.inversionId);
+                    const invSnap = await tx.get(invRef);
+                    if (!invSnap.exists()) return false;
+                    const inv = { id: invSnap.id, ...invSnap.data() };
+                    const usd = inv.moneda === 'USD';
+                    const tasa = tasaUSD?.tasa || null;
+                    if (usd && !tasa) throw new Error('sin-tasa');
+                    const aporte = { id: nuevoIdAporte(), monto: usd ? Math.round((p.monto / tasa) * 100) / 100 : p.monto, fecha: dateKey(), regla: p.regla.id, origenIngreso: p.ingreso.id };
+                    if (usd || inv.afectaBalance === false) {
+                        Object.assign(aporte, usd ? { tasa, cop: p.monto, txId: aporteRef.id } : { txId: aporteRef.id });
+                        tx.set(aporteRef, {
+                            tipo: 'gasto', esInversion: true, afectaBalance: true, moneda: 'COP', monto: p.monto,
+                            concepto: `Aporte → ${inv.concepto}${usd ? ` (US$${aporte.monto})` : ''}`, categoria: 'Aporte Inversión',
+                            inversionId: inv.id, aporteId: aporte.id, origenIngreso: p.ingreso.id, reglaId: p.regla.id, fecha: dateKey(), createdAt: new Date().toISOString(),
+                        });
+                    }
+                    const aportes = [...aportesDe(inv), aporte];
+                    tx.update(invRef, { aportes, monto: aportes.reduce((a, x) => a + (Number(x.monto) || 0), 0) });
+                    return true;
+                }
                 const nuevo = (Number(m.ahorroActual) || 0) + p.monto;
                 const objetivo = Number(m.montoObjetivo) || 0;
                 tx.update(metaRef, {
@@ -842,7 +939,7 @@ export default function App() {
                         <FinancialAnalysis transacciones={transacciones} limites={limites} onAjustarTopes={() => setActiveTab('presupuesto')} />
                     )}
                     {activeTab === 'metas' && (
-                        <GoalTracker metas={metas} transacciones={transacciones} habitos={habitos} reglas={reglasAhorro} setActiveTab={setActiveTab} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} />
+                        <GoalTracker metas={metasVista} inversiones={transacciones.filter(esPosicionInversion)} onAportarInversion={agregarAporteInversion} transacciones={transacciones} habitos={habitos} reglas={reglasAhorro} setActiveTab={setActiveTab} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} />
                     )}
                     {TITULOS_MODULO[activeTab] && (
                         <>
@@ -853,7 +950,7 @@ export default function App() {
                                 {activeTab === 'proyectos' && <ProyectosSection proyectos={proyectos} proyectoItems={proyectoItems} proyectoCredenciales={proyectoCredenciales} vault={vault} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} onBack={volverTodo} />}
                                 {activeTab === 'dashboard' && <DashboardView saldoActual={saldoActual} totalIngresos={totalIngresos} totalGastos={totalGastos} totalDeudaPendiente={totalDeudaPendiente} transacciones={transacciones} />}
                                 {activeTab === 'presupuesto' && <BudgetPlanner presupuestoItems={presupuestoItems} limites={limites} transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} onEjecutarPago={handleEjecutarPago} notifPermiso={notifPermiso} onActivarNotif={activarNotificaciones} onBack={volverTodo} />}
-                                {activeTab === 'inversiones' && <InvestmentPortfolio transacciones={transacciones} totalInvertido={totalInvertido} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} prefillData={prefillData} setPrefillData={setPrefillData} activeTab={activeTab} pendingBudgetId={pendingBudgetId} setPendingBudgetId={setPendingBudgetId} setActiveTab={setActiveTab} onBack={volverTodo} />}
+                                {activeTab === 'inversiones' && <InvestmentPortfolio transacciones={transacciones} metas={metas} onAgregarAporte={agregarAporteInversion} onQuitarAporte={quitarAporteInversion} totalInvertido={totalInvertido} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} prefillData={prefillData} setPrefillData={setPrefillData} activeTab={activeTab} pendingBudgetId={pendingBudgetId} setPendingBudgetId={setPendingBudgetId} setActiveTab={setActiveTab} onBack={volverTodo} />}
                                 {activeTab === 'patrimonio' && <PatrimonioView transacciones={transacciones} deudas={deudas} fotos={fotosPatrimonio} onBack={volverTodo} />}
                                 {activeTab === 'cuentas' && <CuentasView cuentas={cuentas} transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} onBack={volverTodo} />}
                                 {activeTab === 'deudas' && <DebtManager deudas={deudas} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} onBack={volverTodo} />}
@@ -886,7 +983,7 @@ export default function App() {
 
             <BottomNav active={navActivo} onNavigate={setActiveTab} onAdd={() => abrirFlujo('gasto', true)} />
 
-            <AICoach transacciones={transacciones} deudas={deudas} metas={metas} presupuestoItems={presupuestoItems} limites={limites} habitos={habitos} diario={diario} googleToken={googleToken} coachMensajes={coachMensajes} coachPerfil={coachPerfil} coachMemoria={coachMemoria} cuentas={cuentas} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete}
+            <AICoach transacciones={transacciones} deudas={deudas} metas={metasVista} presupuestoItems={presupuestoItems} limites={limites} habitos={habitos} diario={diario} googleToken={googleToken} coachMensajes={coachMensajes} coachPerfil={coachPerfil} coachMemoria={coachMemoria} cuentas={cuentas} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete}
                 chatOpen={coachChat} setChatOpen={setCoachChat} sheetOpen={coachSheet} setSheetOpen={setCoachSheet} />
         </div>
     );

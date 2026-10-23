@@ -5,6 +5,7 @@ import { MontoInput } from '../components/comunes';
 import { TIPOS_INVERSION, dateKey, formatCurrency, formatMoney } from '../lib/finanzas';
 import { API_BASE } from '../lib/firebase';
 import { useTasaUSD, aCOP } from '../lib/moneda';
+import { esPosicionInversion, aportesDe, utilidadRentaFija, utilidadMercado } from '../lib/inversiones';
 
 // --- Iconos y colores por tipo de inversión ---
 export const INVERSION_CONFIG = {
@@ -118,7 +119,7 @@ export const normalizarTicker = (raw, subTipo) => {
 };
 
 // --- Tarjeta individual de inversión ---
-export const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBalance, genericUpdate, totalGastosMensuales }) => {
+export const InvestmentCard = ({ inv, metaVinculada, tasa, onAgregarAporte, onQuitarAporte, onRegistrarUtilidad, onDelete, onToggleBalance, genericUpdate, totalGastosMensuales }) => {
     const [editingUtilidad, setEditingUtilidad] = useState(false);
     const [utilidadInput, setUtilidadInput] = useState('');
     const [editingMonto, setEditingMonto] = useState(false);
@@ -127,6 +128,14 @@ export const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBal
     const [valorEditInput, setValorEditInput] = useState('');
     const [historyData, setHistoryData] = useState([]);
     const [currentTickerPrice, setCurrentTickerPrice] = useState(null);
+
+    const [aportando, setAportando] = useState(false);
+    const [aporteMonto, setAporteMonto] = useState('');
+    const [aporteFecha, setAporteFecha] = useState(dateKey());
+    const [aporteDescontar, setAporteDescontar] = useState(true);
+    const [verAportes, setVerAportes] = useState(false);
+    const aportes = aportesDe(inv);
+    const firmaAportes = aportes.map(a => `${a.monto}@${a.fecha}`).join('|');
 
     const prevUtilidadRef = useRef(Number(inv.utilidad) || 0);
     useEffect(() => { prevUtilidadRef.current = Number(inv.utilidad) || 0; }, [inv.utilidad]);
@@ -146,16 +155,8 @@ export const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBal
         };
 
         if ((inv.subTipo === 'Fondo de Emergencia' || inv.subTipo === 'CDT / Renta Fija') && inv.fecha) {
-            const startDate = new Date(`${inv.fecha}T00:00:00`);
-            const today = new Date();
-            const diffTime = today - startDate;
-            const diffDays = Math.max(0, diffTime / (1000 * 60 * 60 * 24));
-            
-            const montoInv = Number(inv.monto) || 0;
-            const tasa = Number(inv.tasaInteres) || 9; // 9% fallback
-            const nuevaUtilidad = montoInv * (Math.pow(1 + (tasa / 100), diffDays / 365) - 1);
-            
-            updateUtilidadIfChanged(nuevaUtilidad);
+            // Cada aporte rinde desde su propia fecha.
+            updateUtilidadIfChanged(utilidadRentaFija(inv));
             
         } else if (inv.subTipo === 'Acciones / Bolsa' || inv.subTipo === 'Criptomonedas') {
             // Detección amplia del S&P 500 por el nombre (S&P 500, SP500, SYP500, SPY, VOO, IVV…).
@@ -167,7 +168,6 @@ export const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBal
             if (tickerToUse) {
                 const fetchTickerData = async () => {
                     try {
-                        const montoInv = Number(inv.monto) || 0;
                         // Datos de mercado a través de nuestro propio Worker (sin CORS ni proxies de terceros).
                         const res = await fetch(`${API_BASE}/api/market?ticker=${encodeURIComponent(tickerToUse)}&range=5y&interval=1d`);
 
@@ -184,21 +184,6 @@ export const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBal
                             currentPrice = closePrices[closePrices.length - 2];
                         }
 
-                        let originalPrice = currentPrice;
-                        if (inv.fecha) {
-                            const purchaseTimestamp = new Date(`${inv.fecha}T00:00:00Z`).getTime() / 1000;
-                            let purchaseIdx = -1;
-                            for (let i = 0; i < timestamps.length; i++) {
-                                if (timestamps[i] >= purchaseTimestamp - 172800) {
-                                    if (closePrices[i] !== null && closePrices[i] !== undefined) {
-                                        purchaseIdx = i; break;
-                                    }
-                                }
-                            }
-                            if (purchaseIdx !== -1) originalPrice = closePrices[purchaseIdx];
-                            else originalPrice = closePrices[0];
-                        }
-
                         const historyBuffer = [];
                         for (let i = Math.max(0, closePrices.length - 120); i < closePrices.length; i++) {
                             if (closePrices[i] !== null && closePrices[i] !== undefined) {
@@ -211,11 +196,8 @@ export const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBal
                             setCurrentTickerPrice(currentPrice);
                         }
 
-                        const percentChange = (currentPrice / originalPrice) - 1;
-                        if (percentChange !== undefined) {
-                            const nuevaUtilidad = montoInv * percentChange;
-                            updateUtilidadIfChanged(nuevaUtilidad);
-                        }
+                        // Cada aporte gana o pierde desde el precio del día en que entró.
+                        if (currentPrice) updateUtilidadIfChanged(utilidadMercado(inv, timestamps, closePrices, currentPrice));
                     } catch (error) {
                         console.error('Error fetching market data', error);
                     }
@@ -225,7 +207,8 @@ export const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBal
         }
         
         return () => { isMounted = false; };
-    }, [inv.subTipo, inv.fecha, inv.monto, inv.concepto, inv.ticker, inv.tasaInteres, inv.id, inv.valorManual, genericUpdate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [inv.subTipo, inv.fecha, inv.monto, firmaAportes, inv.concepto, inv.ticker, inv.tasaInteres, inv.id, inv.valorManual, genericUpdate]);
 
     const utilidad = Number(inv.utilidad) || 0;
     const montoInv = Number(inv.monto) || 0;
@@ -261,6 +244,20 @@ export const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBal
 
     const handleReactivarAuto = async () => {
         await genericUpdate('transacciones', inv.id, { valorManual: false });
+    };
+
+    const esUSD = inv.moneda === 'USD';
+    const enviarAporte = async (e) => {
+        e.preventDefault();
+        const valor = parseFloat(String(aporteMonto).replace(',', '.'));
+        if (!valor || valor <= 0) return;
+        try {
+            await onAgregarAporte(inv, { monto: valor, fecha: aporteFecha || dateKey(), descontar: esUSD && aporteDescontar });
+            setAporteMonto(''); setAporteFecha(dateKey()); setAportando(false); setVerAportes(true);
+        } catch (err) { alert(err.message || 'No se pudo registrar el aporte.'); }
+    };
+    const quitarAporte = (a) => {
+        if (window.confirm(`¿Quitar el aporte de ${formatMoney(a.monto, inv.moneda)} del ${a.fecha}?${a.txId ? ' Se devuelve también a tu saldo.' : ''}`)) onQuitarAporte(inv, a.id);
     };
 
     // Cálculo dinámico de renta fija (Fondo de Emergencia / CDT)
@@ -438,8 +435,10 @@ export const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBal
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
                 <div style={mini}>
-                    <span className="eyebrow" style={{ fontSize: 10 }}>Invertido</span>
-                    {editingMonto ? (
+                    <span className="eyebrow" style={{ fontSize: 10 }}>Depositado</span>
+                    {inv.aportes?.length ? (
+                        <span className="num" style={{ fontSize: 13, fontWeight: 700, color: 'var(--violet)', letterSpacing: 0 }}>{formatMoney(montoInv, inv.moneda)}</span>
+                    ) : editingMonto ? (
                         <div style={{ display: 'flex', gap: 4 }}>
                             <input className="input num" type="number" inputMode="decimal" value={montoEditInput} onChange={e => setMontoEditInput(e.target.value)} aria-label="Monto invertido" style={{ width: 80, height: 34, padding: '0 6px', fontSize: 13, textAlign: 'center' }} autoFocus />
                             <button type="button" onClick={handleEditMonto} aria-label="Guardar monto" style={{ width: 34, height: 34, borderRadius: 10, border: 0, background: 'var(--violet)', color: 'var(--on-accent)', display: 'grid', placeItems: 'center' }}><Check size={14} aria-hidden="true" /></button>
@@ -461,6 +460,62 @@ export const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBal
                         {rentabilidad >= 0 ? <ArrowUp size={12} strokeWidth={2.4} aria-hidden="true" /> : <ArrowDown size={12} strokeWidth={2.4} aria-hidden="true" />}{Math.abs(rentabilidad).toFixed(1)}%
                     </span>
                 </div>
+            </div>
+
+            {metaVinculada && (
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--primary)' }}>
+                    Vinculada a la meta "{metaVinculada.nombre.trim()}" · {Math.round(((esUSD && tasa ? valorActual * tasa : valorActual) / (Number(metaVinculada.montoObjetivo) || 1)) * 100)}%
+                </span>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, borderRadius: 14, background: 'var(--surface-2)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <button type="button" onClick={() => setVerAportes(v => !v)} aria-expanded={verAportes}
+                        style={{ background: 'none', border: 0, padding: 0, fontSize: 13, fontWeight: 800, color: 'var(--text)', cursor: 'pointer' }}>
+                        {aportes.length} aporte{aportes.length === 1 ? '' : 's'} {verAportes ? '▴' : '▾'}
+                    </button>
+                    {!aportando && (
+                        <button type="button" onClick={() => setAportando(true)} style={{ ...accionMini, height: 34, color: 'var(--violet)' }}>
+                            <Plus size={14} aria-hidden="true" /> Aporte
+                        </button>
+                    )}
+                </div>
+                {verAportes && aportes.slice().reverse().map(a => (
+                    <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                        <span className="num" style={{ flex: 1, letterSpacing: 0 }}>
+                            <b style={{ color: 'var(--income)' }}>+ {formatMoney(a.monto, inv.moneda)}</b>
+                            <span style={{ color: 'var(--text-3)' }}> · {a.fecha}{a.cop ? ` · ${fmtCOP(a.cop)} de tu saldo` : ''}</span>
+                        </span>
+                        {aportes.length > 1 && (
+                            <button type="button" onClick={() => quitarAporte(a)} aria-label={`Quitar aporte del ${a.fecha}`}
+                                style={{ width: 30, height: 30, border: 0, background: 'transparent', color: 'var(--text-3)', display: 'grid', placeItems: 'center' }}>
+                                <X size={14} aria-hidden="true" />
+                            </button>
+                        )}
+                    </div>
+                ))}
+                {aportando && (
+                    <form onSubmit={enviarAporte} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            {esUSD
+                                ? <input className="input num" type="number" inputMode="decimal" step="any" min="0" placeholder="US$ 0" value={aporteMonto} onChange={e => setAporteMonto(e.target.value)} aria-label="Monto del aporte en dólares" style={{ flex: 1, minWidth: 0, height: 44, background: 'var(--surface)' }} autoFocus />
+                                : <MontoInput value={aporteMonto} onChange={setAporteMonto} placeholder="+ Aporte" aria-label="Monto del aporte" style={{ flex: 1, minWidth: 0, height: 44, background: 'var(--surface)' }} autoFocus />}
+                            <input className="input" type="date" max={dateKey()} value={aporteFecha} onChange={e => setAporteFecha(e.target.value)} aria-label="Fecha del aporte" style={{ width: 150, height: 44, background: 'var(--surface)' }} />
+                        </div>
+                        {esUSD ? (
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--text-2)', cursor: 'pointer' }}>
+                                <input type="checkbox" checked={aporteDescontar} onChange={e => setAporteDescontar(e.target.checked)} style={{ width: 20, height: 20, accentColor: 'var(--violet)' }} />
+                                Descontar de mi saldo{tasa && Number(aporteMonto) > 0 ? ` (≈ ${fmtCOP(Number(aporteMonto) * tasa)})` : ''}
+                            </label>
+                        ) : (
+                            <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{afectaBalance ? 'Se descuenta de tu saldo.' : 'No toca tu saldo (solo patrimonio).'}</span>
+                        )}
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <button type="submit" className="btn btn-sm" disabled={!aporteMonto} style={{ flex: 1, height: 42, background: 'var(--violet)', color: 'var(--on-accent)' }}>Agregar aporte</button>
+                            <button type="button" className="btn btn-sm btn-outline" onClick={() => { setAportando(false); setAporteMonto(''); }} style={{ height: 42 }}>Cancelar</button>
+                        </div>
+                    </form>
+                )}
             </div>
 
             {renderTypeMetrics()}
@@ -496,7 +551,7 @@ export const InvestmentCard = ({ inv, onRegistrarUtilidad, onDelete, onToggleBal
 };
 
 
-export const InvestmentPortfolio = ({ transacciones, totalInvertido, genericAdd, genericUpdate, genericDelete, prefillData, setPrefillData, activeTab, pendingBudgetId, setPendingBudgetId, setActiveTab, onBack }) => {
+export const InvestmentPortfolio = ({ transacciones, metas = [], onAgregarAporte, onQuitarAporte, totalInvertido, genericAdd, genericUpdate, genericDelete, prefillData, setPrefillData, activeTab, pendingBudgetId, setPendingBudgetId, setActiveTab, onBack }) => {
     const [concepto, setConcepto] = useState('');
     const [monto, setMonto] = useState('');
     const [tipoInv, setTipoInv] = useState(TIPOS_INVERSION[0]);
@@ -564,7 +619,9 @@ export const InvestmentPortfolio = ({ transacciones, totalInvertido, genericAdd,
         await genericUpdate('transacciones', inv.id, { afectaBalance: nuevoAfecta, tipo: nuevoTipo });
     };
 
-    const inversionesList = transacciones.filter(t => t.categoria === 'Aporte Inversión' || t.esInversion === true);
+    const inversionesList = transacciones.filter(esPosicionInversion);
+    // Gastos en pesos de aportes en USD: descuentan el saldo pero no son otra inversión.
+    const pagosUSD = transacciones.filter(t => t.esInversion && t.inversionId);
 
     // Calcular totales
     // Totales en pesos: las inversiones en USD se convierten con la tasa del día.
@@ -573,7 +630,8 @@ export const InvestmentPortfolio = ({ transacciones, totalInvertido, genericAdd,
     const hayUSD = inversionesList.some(i => i.moneda === 'USD');
     const cop = (valor, inv) => aCOP(valor, inv.moneda, tasa) ?? 0;
     const totalUtilidad = inversionesList.reduce((acc, inv) => acc + cop(Number(inv.utilidad) || 0, inv), 0);
-    const totalEnBalance = inversionesList.filter(i => i.afectaBalance !== false).reduce((a, c) => a + cop(Number(c.monto) || 0, c), 0);
+    const totalEnBalance = inversionesList.filter(i => i.afectaBalance !== false).reduce((a, c) => a + cop(Number(c.monto) || 0, c), 0)
+        + pagosUSD.reduce((a, c) => a + (Number(c.monto) || 0), 0);
     const totalPatrimonio = inversionesList.reduce((a, c) => a + cop((Number(c.monto) || 0) + (Number(c.utilidad) || 0), c), 0);
 
     // Calcular gastos mensuales promedio (para fondo de emergencia)
@@ -696,7 +754,8 @@ export const InvestmentPortfolio = ({ transacciones, totalInvertido, genericAdd,
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>
                                 {inversiones.map(inv => (
-                                    <InvestmentCard key={inv.id} inv={inv} onRegistrarUtilidad={registrarUtilidad} onDelete={(id) => genericDelete('transacciones', id)}
+                                    <InvestmentCard key={inv.id} inv={inv} tasa={tasa} metaVinculada={metas.find(m => m.inversionId === inv.id)}
+                                        onAgregarAporte={onAgregarAporte} onQuitarAporte={onQuitarAporte} onRegistrarUtilidad={registrarUtilidad} onDelete={(id) => genericDelete('transacciones', id)}
                                         onToggleBalance={toggleBalance} genericUpdate={genericUpdate} totalGastosMensuales={totalGastosMensuales} />
                                 ))}
                             </div>
