@@ -5,6 +5,7 @@ import { BottomSheet, fmtCOP } from '../ui/f360.jsx';
 import { memoriaTexto } from './memoria.js';
 import { cuentasTexto } from '../lib/cuentas';
 import { aCOP, tasaUSDGuardada } from '../lib/moneda';
+import { esPosicionInversion } from '../lib/inversiones';
 import { CATEGORIAS_GASTOS, CATEGORIAS_INGRESOS, MOODS, calcStreak, dateKey, formatCurrency, formatUSD, proximaFechaPago } from '../lib/finanzas';
 import { API_BASE, app, auth } from '../lib/firebase';
 
@@ -302,7 +303,7 @@ export const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limite
         const ingresosMes = transacciones.filter(t => t.tipo === 'ingreso' && esEsteMes(t.fecha)).reduce((acc, t) => acc + t.monto, 0);
         const gastosMes = transacciones.filter(t => t.tipo === 'gasto' && !t.esInversion && !t.esAhorro && esEsteMes(t.fecha)).reduce((acc, t) => acc + t.monto, 0);
         const deudasPendientes = deudas.reduce((acc, d) => acc + (Number(d.montoTotal || 0) - Number(d.montoPagado || 0)), 0);
-        const inversiones = transacciones.filter(t => t.esInversion || t.categoria === 'Aporte Inversión');
+        const inversiones = transacciones.filter(esPosicionInversion);
         const tasaUSD = tasaUSDGuardada();
         const inversionesTotales = inversiones.reduce((acc, t) => acc + (aCOP(Number(t.monto) || 0, t.moneda, tasaUSD) ?? 0), 0);
 
