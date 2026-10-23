@@ -337,90 +337,93 @@
 .sin-conexion.aviso-ahorro { top: auto; bottom: calc(var(--sab) + 104px); background: var(--income); color: #fff; }
 
 /* =============================================
-   ASISTENTE DE VOZ (Gemini Live)
+   ASISTENTE DE VOZ (Gemini Live) — estilo Siri:
+   la interfaz sigue visible, el borde de la pantalla se ilumina y la esfera
+   aparece abajo, sobre el botón del micrófono.
    ============================================= */
-.voz {
-  position: fixed; inset: 0; z-index: 90; color: #EAF2FF; overflow: hidden;
-  display: flex; flex-direction: column; align-items: center;
-  padding: calc(var(--sat) + 14px) 20px calc(var(--sab) + 22px);
-  background: radial-gradient(120% 80% at 50% 38%, #101a3d 0%, #060914 55%, #020308 100%);
-  animation: vozEntrar .55s var(--spring) both;
-  font-family: 'Manrope', system-ui, sans-serif;
+@property --voz-giro { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.voz { position: fixed; inset: 0; z-index: 90; font-family: 'Manrope', system-ui, sans-serif; pointer-events: none; }
+.voz-velo {
+  position: absolute; inset: 0; border: 0; padding: 0; pointer-events: auto; cursor: default;
+  background: linear-gradient(to top, rgba(4,6,18,.62), rgba(4,6,18,.18) 60%, rgba(4,6,18,.05));
+  -webkit-backdrop-filter: blur(1.5px); backdrop-filter: blur(1.5px);
+  animation: vozVelo .4s var(--ease) both;
 }
-@keyframes vozEntrar {
-  from { clip-path: circle(0% at 86% 92%); opacity: .4; }
-  to { clip-path: circle(150% at 86% 92%); opacity: 1; }
-}
-.voz-fondo { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
-.voz-grid {
-  position: absolute; left: -50%; right: -50%; bottom: -10%; height: 55%;
-  background-image: linear-gradient(rgba(90,160,255,.18) 1px, transparent 1px), linear-gradient(90deg, rgba(90,160,255,.18) 1px, transparent 1px);
-  background-size: 44px 44px; transform: perspective(420px) rotateX(62deg); transform-origin: top;
-  -webkit-mask-image: linear-gradient(to top, #000 10%, transparent 85%); mask-image: linear-gradient(to top, #000 10%, transparent 85%);
-  animation: vozGrid 6s linear infinite;
-}
-@keyframes vozGrid { to { background-position: 0 44px, 0 0; } }
-.voz-scan {
-  position: absolute; left: 0; right: 0; height: 120px; top: -120px;
-  background: linear-gradient(to bottom, transparent, rgba(110,200,255,.07), transparent);
-  animation: vozScan 5.5s ease-in-out infinite;
-}
-@keyframes vozScan { to { top: 110%; } }
+@keyframes vozVelo { from { opacity: 0; } }
 
-.voz-top { position: relative; width: 100%; max-width: 520px; display: flex; justify-content: space-between; align-items: center; }
-.voz-estado {
-  display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px;
-  font-size: 13px; font-weight: 800; letter-spacing: .02em;
-  background: rgba(120,170,255,.1); border: 1px solid rgba(140,190,255,.22); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+/* Borde luminoso que recorre la pantalla */
+.voz-borde {
+  position: absolute; inset: 0; pointer-events: none; padding: 3px; border-radius: 48px;
+  background: conic-gradient(from var(--voz-giro), #22D3EE, #3355FF, #A855F7, #F472B6, #F59E0B, #22D3EE);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  filter: blur(2px) drop-shadow(0 0 14px rgba(120,120,255,.8));
+  animation: vozGiro 4s linear infinite, vozVelo .5s var(--ease) both;
 }
-.voz-estado i { width: 8px; height: 8px; border-radius: 50%; background: #3EE6FF; box-shadow: 0 0 12px #3EE6FF; animation: vozPunto 1.4s ease-in-out infinite; }
-.voz-hablando .voz-estado i { background: #B47CFF; box-shadow: 0 0 12px #B47CFF; }
-.voz-error .voz-estado i, .voz-silencio .voz-estado i { background: #FF6B8A; box-shadow: 0 0 12px #FF6B8A; animation: none; }
-.voz-confirmar .voz-estado i { background: #FFC857; box-shadow: 0 0 12px #FFC857; }
+.voz-hablando .voz-borde { animation-duration: 1.8s, .5s; }
+.voz-error .voz-borde { background: linear-gradient(#FF6B8A, #FF6B8A); }
+@keyframes vozGiro { to { --voz-giro: 360deg; } }
+
+.voz-panel {
+  position: absolute; left: 12px; right: 12px; bottom: calc(var(--sab) + 6px);
+  display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: none;
+  max-width: 520px; margin: 0 auto;
+}
+.voz-panel > * { pointer-events: auto; }
+
+.voz-burbuja {
+  width: 100%; padding: 14px 16px 12px; border-radius: 26px; color: #EEF3FF;
+  background: rgba(10,14,32,.78); border: 1px solid rgba(150,180,255,.22);
+  -webkit-backdrop-filter: blur(22px) saturate(1.5); backdrop-filter: blur(22px) saturate(1.5);
+  box-shadow: 0 18px 48px -12px rgba(30,40,120,.6);
+  display: flex; flex-direction: column; gap: 8px;
+  animation: vozBurbuja .45s var(--spring) both; transform-origin: bottom center;
+}
+@keyframes vozBurbuja { from { opacity: 0; transform: translateY(16px) scale(.94); } }
+.voz-estado { align-self: flex-start; display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: rgba(200,215,250,.7); }
+.voz-estado i { width: 7px; height: 7px; border-radius: 50%; background: #3EE6FF; box-shadow: 0 0 10px #3EE6FF; animation: vozPunto 1.4s ease-in-out infinite; }
+.voz-hablando .voz-estado i { background: #B47CFF; box-shadow: 0 0 10px #B47CFF; }
+.voz-error .voz-estado i, .voz-silencio .voz-estado i { background: #FF6B8A; box-shadow: 0 0 10px #FF6B8A; animation: none; }
+.voz-confirmar .voz-estado i { background: #FFC857; box-shadow: 0 0 10px #FFC857; }
 @keyframes vozPunto { 50% { transform: scale(.6); opacity: .5; } }
-.voz-marca { font-size: 10px; font-weight: 800; letter-spacing: .28em; color: rgba(200,220,255,.45); }
 
-.voz-centro { position: relative; flex: 1; min-height: 0; width: 100%; display: grid; place-items: center; }
-.voz-esfera { width: min(86vw, 380px); aspect-ratio: 1; }
-
-.voz-texto {
-  position: relative; width: 100%; max-width: 520px; max-height: 32dvh; overflow-y: auto; text-align: center;
-  padding: 4px 4px 12px; scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 18px); mask-image: linear-gradient(to bottom, transparent, #000 18px);
-}
+.voz-texto { max-height: 30dvh; overflow-y: auto; scrollbar-width: none; }
 .voz-texto::-webkit-scrollbar { display: none; }
-.voz-tu { margin: 0 0 12px; font-size: 15px; line-height: 1.45; color: rgba(190,210,240,.62); font-style: italic; }
-.voz-ia { margin: 0; font-size: 21px; line-height: 1.45; font-weight: 600; letter-spacing: -.005em; text-wrap: pretty; }
-.voz-ia span { animation: vozPalabra .5s var(--ease) both; text-shadow: 0 0 18px rgba(150,120,255,.35); }
+.voz-tu { margin: 0 0 6px; font-size: 14px; line-height: 1.45; color: rgba(190,205,240,.62); font-style: italic; }
+.voz-ia { margin: 0; font-size: 18px; line-height: 1.45; font-weight: 600; text-wrap: pretty; }
+.voz-ia span { animation: vozPalabra .5s var(--ease) both; }
 @keyframes vozPalabra { from { opacity: 0; filter: blur(6px); } to { opacity: 1; filter: blur(0); } }
-.voz-sugerencia { margin: 0; font-size: 15px; line-height: 1.5; color: rgba(190,210,240,.55); }
-.voz-error { margin: 0; font-size: 16px; line-height: 1.5; color: #FFB3C2; }
+.voz-sugerencia { margin: 0; font-size: 14px; line-height: 1.5; color: rgba(200,215,245,.62); }
+.voz-error { margin: 0; font-size: 15px; line-height: 1.5; color: #FFB3C2; }
 
 .voz-accion {
-  position: relative; width: 100%; max-width: 520px; margin-top: 10px; display: flex; align-items: center; gap: 12px;
-  padding: 14px; border-radius: 22px; background: rgba(255,255,255,.07); border: 1px solid rgba(255,200,90,.35);
-  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); box-shadow: 0 0 30px rgba(255,190,80,.12);
-  animation: rise .4s var(--spring) both;
+  width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 14px; border-radius: 22px; color: #EEF3FF;
+  background: rgba(10,14,32,.82); border: 1px solid rgba(255,200,90,.4);
+  -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); box-shadow: 0 0 30px rgba(255,190,80,.15);
+  animation: vozBurbuja .4s var(--spring) both;
 }
-.voz-accion-icono { font-size: 26px; }
+.voz-accion-icono { font-size: 24px; }
 .voz-accion strong { display: block; font-size: 15px; }
 .voz-accion span { display: block; font-size: 13px; color: rgba(220,230,250,.75); overflow-wrap: anywhere; }
 .voz-accion-botones { display: flex; gap: 8px; }
 .voz-accion-botones button {
-  width: 46px; height: 46px; border-radius: 15px; display: grid; place-items: center; cursor: pointer;
+  width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; cursor: pointer;
   border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.06); color: #fff;
 }
 .voz-accion-botones button.si { background: linear-gradient(135deg, #22D3EE, #7C5CFF); border-color: transparent; box-shadow: 0 8px 24px -8px #7C5CFF; }
 
-.voz-controles { position: relative; display: flex; gap: 22px; margin-top: 16px; }
+/* Esfera sobre el botón del micrófono, con los controles a los lados */
+.voz-fila { display: flex; align-items: center; justify-content: center; gap: 4px; }
+.voz-esfera { width: 168px; height: 168px; margin: -22px -14px -18px; animation: vozEsfera .55s var(--spring) both; }
+@keyframes vozEsfera { from { opacity: 0; transform: translateY(30px) scale(.4); } }
 .voz-btn {
-  width: 62px; height: 62px; border-radius: 50%; display: grid; place-items: center; cursor: pointer; color: #EAF2FF;
-  background: rgba(130,170,255,.1); border: 1px solid rgba(150,190,255,.25); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-  transition: transform .25s var(--spring), background .3s var(--ease);
+  width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; cursor: pointer; color: #EEF3FF;
+  background: rgba(10,14,32,.7); border: 1px solid rgba(150,190,255,.25);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  transition: transform .25s var(--spring); animation: vozVelo .5s var(--ease) .15s both;
 }
 .voz-btn:active { transform: scale(.9); }
-.voz-btn.off { background: rgba(255,90,120,.18); border-color: rgba(255,120,150,.4); }
-.voz-cerrar { background: rgba(255,255,255,.92); color: #0B1220; border-color: transparent; }
+.voz-btn.off { background: rgba(255,90,120,.3); border-color: rgba(255,120,150,.45); }
 
 /* Botón central del micrófono (barra inferior) */
 .nav .add-voz {
@@ -436,5 +439,5 @@
 @keyframes vozOnda { from { transform: scale(.9); opacity: .9; } to { transform: scale(1.45); opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .voz, .voz-grid, .voz-scan, .voz-ia span, .nav .add-voz::before, .nav .add-voz::after { animation: none; }
+  .voz-velo, .voz-borde, .voz-burbuja, .voz-esfera, .voz-ia span, .nav .add-voz::before, .nav .add-voz::after { animation: none; }
 }
