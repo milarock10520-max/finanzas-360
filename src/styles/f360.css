@@ -249,6 +249,16 @@
   max-width: 640px; margin: 0 auto;
 }
 .grabber { width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: 10px auto 0; }
+/* Escritorio: la hoja se vuelve un diálogo centrado (no hay pulgar que la arrastre). */
+@media (min-width: 768px) {
+  .sheet {
+    top: 0; bottom: 0; height: fit-content; margin: auto; width: calc(100% - 48px); max-width: 600px;
+    max-height: calc(100dvh - 64px); border-radius: 28px; border: 1px solid var(--line);
+    box-shadow: var(--shadow-lg); padding-bottom: 20px; animation: dialogIn .45s var(--spring) both;
+  }
+  .grabber { display: none; }
+}
+@keyframes dialogIn { from { opacity: 0; transform: translateY(24px) scale(.96); } to { opacity: 1; transform: none; } }
 
 /* ---------- Entrada escalonada ---------- */
 .rise { animation: rise .7s var(--ease) both; }
@@ -335,6 +345,18 @@
   box-shadow: 0 6px 20px rgba(0,0,0,.18);
 }
 .sin-conexion.aviso-ahorro { top: auto; bottom: calc(var(--sab) + 104px); background: var(--income); color: #fff; }
+/* Escritorio: sin barra inferior; los avisos se centran en el área de contenido (a la derecha del menú). */
+@media (min-width: 768px) {
+  .sin-conexion { left: calc(50% + 144px); top: 14px; }
+  .sin-conexion.aviso-ahorro { top: auto; bottom: 28px; }
+}
+
+/* Botón de voz al pie del menú lateral (escritorio) */
+.sidebar-voz {
+  margin-top: 12px; width: 100%; color: #fff;
+  background: radial-gradient(circle at 20% 20%, #6EE7FF, #3355FF 55%, #7C3AED);
+  box-shadow: 0 12px 28px -12px rgba(90, 90, 255, .75);
+}
 
 /* =============================================
    ASISTENTE DE VOZ (Gemini Live) — estilo Siri:
@@ -438,6 +460,13 @@
 }
 .nav .add-voz::after { animation-delay: 1.3s; }
 @keyframes vozOnda { from { transform: scale(.9); opacity: .9; } to { transform: scale(1.45); opacity: 0; } }
+
+/* Escritorio: el borde sigue las esquinas de la ventana de Windows y el panel se centra
+   en el área de contenido, a la derecha del menú lateral (w-72 = 288px). */
+@media (min-width: 768px) {
+  .voz-borde { border-radius: 10px; }
+  .voz-panel { left: calc(288px + 24px); right: 24px; bottom: 24px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .voz-velo, .voz-borde, .voz-burbuja, .voz-esfera, .voz-ia span, .nav .add-voz::before, .nav .add-voz::after { animation: none; }

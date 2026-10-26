@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
-import { LayoutDashboard, CreditCard, Target, Loader2, ClipboardList, PieChart, ArrowRightCircle, BarChart3, Lock, ListTodo, Flame, Sun, CalendarClock, FolderKanban, LayoutGrid, Wallet, TrendingUp, CloudOff } from 'lucide-react';
+import { LayoutDashboard, CreditCard, Target, Loader2, ClipboardList, PieChart, ArrowRightCircle, BarChart3, Lock, ListTodo, Flame, Sun, CalendarClock, FolderKanban, LayoutGrid, Wallet, TrendingUp, CloudOff, Bell, Mic } from 'lucide-react';
 import { onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithCredential, signOut } from 'firebase/auth';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { estadoPermisoAvisos, pedirPermisoAvisos, enviarAviso } from './native/notificaciones';
@@ -11,7 +11,7 @@ import { useTasaUSD, aCOP, valorInversionCOP } from './lib/moneda';
 import { patrimonioActual } from './lib/patrimonio';
 import { pendientesDeReglas, indiceAporte } from './lib/reglas';
 import { esPosicionInversion, aportesDe, nuevoIdAporte } from './lib/inversiones';
-import { iniciarRecordatoriosRutina, recordatoriosActivos, setRecordatoriosActivos } from './native/recordatoriosRutina';
+import { recordatoriosActivos, setRecordatoriosActivos } from './native/recordatoriosRutina';
 import { collection, updateDoc, deleteDoc, doc, onSnapshot, setDoc, runTransaction, writeBatch, arrayUnion } from 'firebase/firestore';
 import { Capacitor } from '@capacitor/core';
 import { ThemeToggle, ScreenHeader, BottomNav, BottomSheet, fmtCOP } from './ui/f360.jsx';
@@ -203,13 +203,6 @@ export default function App() {
         return () => { window.removeEventListener('recordatorios:changed', onChange); off?.(); };
     }, []);
 
-    // Escritorio (Electron): cadena de setTimeout en el renderer que dispara
-    // toasts nativos de Windows al inicio de cada bloque de rutina.
-    useEffect(() => {
-        if (!recordatoriosOn) return;
-        return iniciarRecordatoriosRutina(rutina);
-    }, [rutina, recordatoriosOn]);
-
     // Toast de mensajes proactivos del coach (escritorio): cuando el agente
     // programado de Claude escribe en coach_mensajes, la app en la bandeja avisa.
     // Solo mensajes creados DESPUÉS de abrir la app (evita re-avisar el historial)
@@ -245,9 +238,9 @@ export default function App() {
         });
     }, [user, recordatoriosListos, recordatorios]);
 
-    // iOS: UN solo programador para todas las notificaciones (resumen, lectura, recordatorios,
-    // hábitos, rutina y pagos). Se reprograma al cambiar los datos, al volver a la app y
-    // cuando la IA termina de escribir el resumen o las lecturas (evento f360-reprogramar).
+    // iOS y escritorio: UN solo programador para todas las notificaciones (resumen, lectura,
+    // recordatorios, hábitos, rutina y pagos). Se reprograma al cambiar los datos, al volver a
+    // la app y cuando la IA termina de escribir el resumen o las lecturas (evento f360-reprogramar).
     const [reprogramar, setReprogramar] = useState(0);
     useEffect(() => {
         const pedir = () => setReprogramar(n => n + 1);
@@ -257,7 +250,11 @@ export default function App() {
             import('@capacitor/app').then(({ App: CapApp }) => CapApp.addListener('appStateChange', ({ isActive }) => { if (isActive) pedir(); }))
                 .then(h => { quitar = h; }).catch(() => {});
         }
-        return () => { window.removeEventListener('f360-reprogramar', pedir); quitar?.remove(); };
+        // Escritorio: la app pasa días en la bandeja; se reprograma al reanudar el PC
+        // y cada 6 h para que la ventana de 7 días nunca se agote.
+        const offResync = window.desktop?.onRecordatoriosResync?.(pedir);
+        const cada6h = window.desktop?.isElectron ? setInterval(pedir, 6 * 60 * 60 * 1000) : null;
+        return () => { window.removeEventListener('f360-reprogramar', pedir); quitar?.remove(); offResync?.(); clearInterval(cada6h); };
     }, []);
     useEffect(() => {
         if (!user || !recordatoriosListos) return;
@@ -898,6 +895,7 @@ export default function App() {
                 <nav className="space-y-2 flex-1 overflow-y-auto no-scrollbar">
                     <div className="eyebrow px-4 mb-2 mt-2">Mi Vida</div>
                     <NavItem id="midia" icon={Sun} label="Inicio" />
+                    <NavItem id="recordatorios" icon={Bell} label="Asistente" />
                     <NavItem id="habitos" icon={Flame} label="Hábitos" />
                     <NavItem id="rutina" icon={CalendarClock} label="Rutina" />
 
@@ -920,6 +918,10 @@ export default function App() {
                     <NavItem id="passwords" icon={Lock} label="Contraseñas" />
                     <NavItem id="todo" icon={LayoutGrid} label="Todo" />
                 </nav>
+                {/* En móvil el micrófono vive en el centro de la barra inferior; aquí, al pie del menú. */}
+                <button type="button" className="btn btn-sm sidebar-voz" onClick={() => { prepararAudio(); setVozAbierta(true); }} aria-label="Hablar con la IA">
+                    <Mic size={18} strokeWidth={2.2} aria-hidden="true" /> Hablar con la IA
+                </button>
                 <div className="pt-4 mt-4" style={{ borderTop: '1px solid var(--line)' }}>
                     <div className="flex items-center gap-3 px-2">
                         {user.photoURL
