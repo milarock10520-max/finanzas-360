@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CreditCard, Calendar, PieChart, Lock, Copy, Search, Clock, ListChecks, Flame, LogOut, FolderKanban, Wallet, TrendingUp } from 'lucide-react';
+import { CreditCard, Calendar, PieChart, Lock, Copy, Search, Clock, ListChecks, Flame, LogOut, FolderKanban, Wallet, TrendingUp, Bell } from 'lucide-react';
 import { ScreenHeader, fmtCOP } from '../ui/f360.jsx';
 import { dateKey } from '../lib/finanzas';
 import { estadoCuentas } from '../lib/cuentas';
@@ -7,7 +7,7 @@ import { estadoCuentas } from '../lib/cuentas';
 // =============================================
 // === TODO: cuadrícula de módulos ===
 // =============================================
-export const ModulosView = ({ onOpen, onBack, onLogout, user, totalInvertido, totalDeudaPendiente, googleToken, rutina, proyectos, habitos, vault, cuentas = [], transacciones = [], patrimonioNeto = null }) => {
+export const ModulosView = ({ onOpen, onBack, onLogout, user, totalInvertido, totalDeudaPendiente, googleToken, rutina, proyectos, habitos, vault, cuentas = [], recordatorios = [], transacciones = [], patrimonioNeto = null }) => {
     const resumenCuentas = cuentas.length ? estadoCuentas(cuentas, transacciones) : null;
     const [q, setQ] = useState('');
     const hoy = dateKey();
@@ -22,6 +22,7 @@ export const ModulosView = ({ onOpen, onBack, onLogout, user, totalInvertido, to
         { id: 'cuentas', title: 'Cuentas', sub: resumenCuentas ? `${fmtCOP(resumenCuentas.efectivoYBancos)}${resumenCuentas.deudaTarjetas ? ` · TC ${fmtCOP(resumenCuentas.deudaTarjetas)}` : ''}` : 'Efectivo, bancos y tarjetas', Icon: Wallet, color: 'var(--income)', soft: 'var(--income-soft)' },
         { id: 'inversiones', title: 'Inversiones', sub: fmtCOP(totalInvertido), Icon: PieChart, color: 'var(--violet)', soft: 'var(--violet-soft)' },
         { id: 'deudas', title: 'Deudas', sub: totalDeudaPendiente > 0 ? `Debes ${fmtCOP(totalDeudaPendiente)}` : 'Todo pagado', Icon: CreditCard, color: 'var(--expense)', soft: 'var(--expense-soft)' },
+        { id: 'recordatorios', title: 'Asistente', sub: (() => { const n = recordatorios.filter(r => !r.sistema && r.activo !== false).length; return n ? `${n} ${n === 1 ? 'activo' : 'activos'} · asistente` : 'Agua, pausas, lectura…'; })(), Icon: Bell, color: 'var(--violet)', soft: 'var(--violet-soft)' },
         { id: 'agenda', title: 'Agenda', sub: googleToken ? 'Google conectado' : 'Conectar Google', Icon: Calendar, color: 'var(--primary)', soft: 'var(--primary-soft)' },
         { id: 'rutina', title: 'Rutina semanal', sub: `${nombreDia.charAt(0).toUpperCase() + nombreDia.slice(1)} · ${bloquesHoy} bloques`, Icon: Clock, color: 'var(--cyan)', soft: 'var(--income-soft)' },
         { id: 'proyectos', title: 'Proyectos', sub: `${activos} ${activos === 1 ? 'activo' : 'activos'}`, Icon: FolderKanban, color: 'var(--text)', soft: 'var(--surface-2)' },

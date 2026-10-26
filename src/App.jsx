@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 import { LayoutDashboard, CreditCard, Target, Loader2, ClipboardList, PieChart, ArrowRightCircle, BarChart3, Lock, ListTodo, Flame, Sun, CalendarClock, FolderKanban, LayoutGrid, Wallet, TrendingUp, CloudOff } from 'lucide-react';
 import { onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithCredential, signOut } from 'firebase/auth';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
-import { programarAgendaDiaria, programarRecordatoriosRutina, estadoPermisoAvisos, pedirPermisoAvisos, enviarAviso, programarRecordatoriosPagos } from './native/notificaciones';
+import { estadoPermisoAvisos, pedirPermisoAvisos, enviarAviso } from './native/notificaciones';
+import { programarTodo } from './native/programador';
 import { recordatoriosPagos, pagosProximos } from './lib/pagos';
 import { actualizarWidget, limpiarWidget } from './native/widget';
 import { prepararAudio } from './voz/audio';
@@ -27,6 +28,7 @@ import { ModulosView } from './screens/Todo';
 // Pantallas que se cargan al abrirlas. Con el service worker activo se descargan en
 // segundo plano tras el arranque para que también abran sin conexión.
 const PANTALLAS = {
+    Recordatorios: () => import('./screens/Recordatorios'),
     Agenda: () => import('./screens/Agenda'),
     Analisis: () => import('./screens/Analisis'),
     Boveda: () => import('./screens/Boveda'),
@@ -53,6 +55,7 @@ const GoalTracker = lazy(() => PANTALLAS.Metas().then(mod => ({ default: mod.Goa
 const BudgetPlanner = lazy(() => PANTALLAS.Presupuesto().then(mod => ({ default: mod.BudgetPlanner })));
 const ProyectosSection = lazy(() => PANTALLAS.Proyectos().then(mod => ({ default: mod.ProyectosSection })));
 const DashboardView = lazy(() => PANTALLAS.Resumen().then(mod => ({ default: mod.DashboardView })));
+const RecordatoriosView = lazy(() => PANTALLAS.Recordatorios().then(mod => ({ default: mod.RecordatoriosView })));
 const PatrimonioView = lazy(() => PANTALLAS.Patrimonio().then(mod => ({ default: mod.PatrimonioView })));
 const CuentasView = lazy(() => PANTALLAS.Cuentas().then(mod => ({ default: mod.CuentasView })));
 const RutinaSemanal = lazy(() => PANTALLAS.Rutina().then(mod => ({ default: mod.RutinaSemanal })));
@@ -96,6 +99,8 @@ export default function App() {
     const [cuentas, setCuentas] = useState([]);
     const [fotosPatrimonio, setFotosPatrimonio] = useState([]);
     const [reglasAhorro, setReglasAhorro] = useState([]);
+    const [recordatorios, setRecordatorios] = useState([]);
+    const [recordatoriosListos, setRecordatoriosListos] = useState(false);
     // Conexión: sin red la app sigue con los datos en caché y encola los cambios.
     const [enLinea, setEnLinea] = useState(() => typeof navigator === 'undefined' || navigator.onLine !== false);
     useEffect(() => {
@@ -184,15 +189,6 @@ export default function App() {
         return () => { cancelado = true; clearInterval(esperarGis); clearTimeout(timer); };
     }, []);
 
-    // Notificación diaria de agenda (app nativa): reprograma los próximos días a las 6 AM
-    // con las reuniones y tareas reales. Se refresca al iniciar sesión y al conectar Google.
-    useEffect(() => {
-        if (!user) return;
-        programarAgendaDiaria(googleToken)
-            .then((n) => { if (n) console.log(`[agenda] ${n} notificaciones programadas`); })
-            .catch((e) => console.warn('No se pudieron programar notificaciones de agenda:', e));
-    }, [user, googleToken]);
-
     // Recordatorios de rutina: ajuste por dispositivo, espejado desde localStorage.
     // Se actualiza vía CustomEvent (lo disparan la campana del hero y el tray).
     const [recordatoriosOn, setRecordatoriosOn] = useState(recordatoriosActivos());
@@ -214,14 +210,6 @@ export default function App() {
         return iniciarRecordatoriosRutina(rutina);
     }, [rutina, recordatoriosOn]);
 
-    // iOS: notificaciones locales semanales repetitivas por bloque de rutina.
-    useEffect(() => {
-        if (!user) return;
-        programarRecordatoriosRutina(rutina, recordatoriosOn)
-            .then((n) => { if (n) console.log(`[rutina] ${n} recordatorios programados`); })
-            .catch((e) => console.warn('No se pudieron programar recordatorios de rutina:', e));
-    }, [user, rutina, recordatoriosOn]);
-
     // Toast de mensajes proactivos del coach (escritorio): cuando el agente
     // programado de Claude escribe en coach_mensajes, la app en la bandeja avisa.
     // Solo mensajes creados DESPUÉS de abrir la app (evita re-avisar el historial)
@@ -242,16 +230,47 @@ export default function App() {
             });
     }, [coachMensajes]);
 
-    // iOS: recordatorios de pago de tarjetas (corte y fecha límite) y cuotas de deudas.
+    // Asistente proactivo: el resumen de la mañana (6:30) y la lectura del día (21:00)
+    // son recordatorios "del sistema" que se crean una sola vez y el usuario puede ajustar.
     useEffect(() => {
-        if (!user) return;
+        if (!user || !recordatoriosListos) return;
+        const base = `artifacts/${appId}/users/${user.uid}/recordatorios`;
+        const sistema = [
+            { id: 'sistema-resumen', sistema: 'resumen', titulo: 'Resumen de la mañana', emoji: '☀️', hora: '06:30' },
+            { id: 'sistema-lectura', sistema: 'lectura', titulo: 'Lectura del día', emoji: '📖', hora: '21:00' },
+        ];
+        sistema.filter(x => !recordatorios.some(r => r.id === x.id)).forEach(({ id, ...datos }) => {
+            setDoc(doc(db, base, id), { ...datos, activo: true, createdAt: new Date().toISOString() }, { merge: true })
+                .catch(e => console.warn('No se pudo crear el recordatorio del sistema:', e));
+        });
+    }, [user, recordatoriosListos, recordatorios]);
+
+    // iOS: UN solo programador para todas las notificaciones (resumen, lectura, recordatorios,
+    // hábitos, rutina y pagos). Se reprograma al cambiar los datos, al volver a la app y
+    // cuando la IA termina de escribir el resumen o las lecturas (evento f360-reprogramar).
+    const [reprogramar, setReprogramar] = useState(0);
+    useEffect(() => {
+        const pedir = () => setReprogramar(n => n + 1);
+        window.addEventListener('f360-reprogramar', pedir);
+        let quitar = null;
+        if (Capacitor.isNativePlatform()) {
+            import('@capacitor/app').then(({ App: CapApp }) => CapApp.addListener('appStateChange', ({ isActive }) => { if (isActive) pedir(); }))
+                .then(h => { quitar = h; }).catch(() => {});
+        }
+        return () => { window.removeEventListener('f360-reprogramar', pedir); quitar?.remove(); };
+    }, []);
+    useEffect(() => {
+        if (!user || !recordatoriosListos) return;
         const t = setTimeout(() => {
-            programarRecordatoriosPagos(recordatoriosPagos({ deudas, cuentas, transacciones }))
-                .then((n) => { if (n) console.log(`[pagos] ${n} recordatorios programados`); })
-                .catch((e) => console.warn('No se pudieron programar recordatorios de pagos:', e));
-        }, 1500); // espera a que lleguen todas las colecciones
+            programarTodo({
+                recordatorios, habitos, rutina, rutinaOn: recordatoriosOn,
+                pagos: recordatoriosPagos({ deudas, cuentas, transacciones }),
+            }, googleToken)
+                .then((n) => { if (n) console.log(`[notificaciones] ${n} programadas`); })
+                .catch((e) => console.warn('No se pudieron programar las notificaciones:', e));
+        }, 2000); // agrupa cambios seguidos y espera a que lleguen las colecciones
         return () => clearTimeout(t);
-    }, [user, deudas, cuentas, transacciones]);
+    }, [user, recordatoriosListos, recordatorios, habitos, rutina, recordatoriosOn, deudas, cuentas, transacciones, googleToken, reprogramar]);
 
     // Notificaciones (avisos de topes de gasto). En iOS usan notificaciones locales.
     const [notifPermiso, setNotifPermiso] = useState('default');
@@ -413,6 +432,10 @@ export default function App() {
 
         const unsubReglas = onSnapshot(collection(db, `${basePath}/reglas_ahorro`), (snap) =>
             setReglasAhorro(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const unsubRecordatorios = onSnapshot(collection(db, `${basePath}/recordatorios`), (snap) => {
+            setRecordatorios(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            setRecordatoriosListos(true);
+        });
 
         const unsubPatrimonio = onSnapshot(collection(db, `${basePath}/patrimonio`), (snap) =>
             setFotosPatrimonio(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
@@ -423,7 +446,7 @@ export default function App() {
         const unsubCoachMemoria = onSnapshot(collection(db, `${basePath}/coach_memoria`), (snap) =>
             setCoachMemoria(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
-        return () => { unsubTrans(); unsubDeudas(); unsubMetas(); unsubPresupuesto(); unsubLimites(); unsubPasswords(); unsubVaultConfig(); unsubHabitos(); unsubDiario(); unsubRutina(); unsubProyectos(); unsubProyectoItems(); unsubProyectoCredenciales(); unsubCoach(); unsubCoachPerfil(); unsubCoachMemoria(); unsubCuentas(); unsubPatrimonio(); unsubReglas(); };
+        return () => { unsubTrans(); unsubDeudas(); unsubMetas(); unsubPresupuesto(); unsubLimites(); unsubPasswords(); unsubVaultConfig(); unsubHabitos(); unsubDiario(); unsubRutina(); unsubProyectos(); unsubProyectoItems(); unsubProyectoCredenciales(); unsubCoach(); unsubCoachPerfil(); unsubCoachMemoria(); unsubCuentas(); unsubPatrimonio(); unsubReglas(); unsubRecordatorios(); };
     }, [user]);
 
     // --- ACTIONS FIREBASE ---
@@ -774,7 +797,7 @@ export default function App() {
 
         try {
             setLoading(true);
-            const collections = ['transacciones', 'deudas', 'metas', 'presupuesto', 'limites', 'passwords', 'vault_config', 'habitos', 'diario', 'rutina', 'proyectos', 'proyecto_items', 'proyecto_credenciales', 'coach_mensajes', 'coach_perfil', 'coach_memoria', 'cuentas', 'patrimonio', 'reglas_ahorro'];
+            const collections = ['transacciones', 'deudas', 'metas', 'presupuesto', 'limites', 'passwords', 'vault_config', 'habitos', 'diario', 'rutina', 'proyectos', 'proyecto_items', 'proyecto_credenciales', 'coach_mensajes', 'coach_perfil', 'coach_memoria', 'cuentas', 'patrimonio', 'reglas_ahorro', 'recordatorios'];
             const { getDocs, setDoc, doc } = await import('firebase/firestore');
 
             let totalMigrated = 0;
@@ -854,10 +877,10 @@ export default function App() {
     const TITULOS_MODULO = {
         habitos: 'Hábitos', rutina: 'Rutina semanal', proyectos: 'Proyectos', dashboard: 'Resumen',
         presupuesto: 'Presupuesto', inversiones: 'Inversiones', deudas: 'Deudas', passwords: 'Bóveda', agenda: 'Agenda',
-        cuentas: 'Cuentas', patrimonio: 'Patrimonio',
+        cuentas: 'Cuentas', patrimonio: 'Patrimonio', recordatorios: 'Asistente',
     };
     // Pantallas rediseñadas que dibujan su propio encabezado (con acciones propias).
-    const HEADER_PROPIO = new Set(['deudas', 'habitos', 'inversiones', 'presupuesto', 'rutina', 'proyectos', 'passwords', 'agenda', 'cuentas', 'patrimonio']);
+    const HEADER_PROPIO = new Set(['deudas', 'habitos', 'inversiones', 'presupuesto', 'rutina', 'proyectos', 'passwords', 'agenda', 'cuentas', 'patrimonio', 'recordatorios']);
     const volverTodo = volver;
     const navActivo = ['midia', 'flujo', 'analisis', 'metas'].includes(activeTab) ? activeTab : null;
     const flujoProps = { transacciones, cuentas, reglasAhorro, metas, genericAdd, genericUpdate, genericDelete, prefillData, setPrefillData, pendingBudgetId, setPendingBudgetId, setActiveTab };
@@ -935,7 +958,7 @@ export default function App() {
                     {activeTab === 'todo' && (
                         <ModulosView onOpen={setActiveTab} onBack={volver} onLogout={handleLogout} user={user}
                             totalInvertido={totalInvertido} totalDeudaPendiente={totalDeudaPendiente} googleToken={googleToken}
-                            rutina={rutina} proyectos={proyectos} habitos={habitos} vault={vault} cuentas={cuentas} transacciones={transacciones} patrimonioNeto={patrimonioHoy.neto} />
+                            rutina={rutina} proyectos={proyectos} habitos={habitos} vault={vault} cuentas={cuentas} recordatorios={recordatorios} transacciones={transacciones} patrimonioNeto={patrimonioHoy.neto} />
                     )}
                     {activeTab === 'analisis' && (
                         <FinancialAnalysis transacciones={transacciones} limites={limites} onAjustarTopes={() => setActiveTab('presupuesto')} />
@@ -953,6 +976,8 @@ export default function App() {
                                 {activeTab === 'dashboard' && <DashboardView saldoActual={saldoActual} totalIngresos={totalIngresos} totalGastos={totalGastos} totalDeudaPendiente={totalDeudaPendiente} transacciones={transacciones} />}
                                 {activeTab === 'presupuesto' && <BudgetPlanner presupuestoItems={presupuestoItems} limites={limites} transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} onEjecutarPago={handleEjecutarPago} notifPermiso={notifPermiso} onActivarNotif={activarNotificaciones} onBack={volverTodo} />}
                                 {activeTab === 'inversiones' && <InvestmentPortfolio transacciones={transacciones} metas={metas} onAgregarAporte={agregarAporteInversion} onQuitarAporte={quitarAporteInversion} totalInvertido={totalInvertido} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} prefillData={prefillData} setPrefillData={setPrefillData} activeTab={activeTab} pendingBudgetId={pendingBudgetId} setPendingBudgetId={setPendingBudgetId} setActiveTab={setActiveTab} onBack={volverTodo} />}
+                                {activeTab === 'recordatorios' && <RecordatoriosView recordatorios={recordatorios} habitos={habitos} notifPermiso={notifPermiso} onActivarNotif={activarNotificaciones}
+                                    genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} onBack={volverTodo} onHablar={() => { prepararAudio(); setVozAbierta(true); }} />}
                                 {activeTab === 'patrimonio' && <PatrimonioView transacciones={transacciones} deudas={deudas} fotos={fotosPatrimonio} onBack={volverTodo} />}
                                 {activeTab === 'cuentas' && <CuentasView cuentas={cuentas} transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} onBack={volverTodo} />}
                                 {activeTab === 'deudas' && <DebtManager deudas={deudas} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} onBack={volverTodo} />}
@@ -985,7 +1010,7 @@ export default function App() {
 
             <BottomNav active={navActivo} onNavigate={setActiveTab} onAdd={() => abrirFlujo('gasto', true)} onVoz={() => { prepararAudio(); setVozAbierta(true); }} />
 
-            <AICoach transacciones={transacciones} deudas={deudas} metas={metasVista} presupuestoItems={presupuestoItems} limites={limites} habitos={habitos} diario={diario} googleToken={googleToken} coachMensajes={coachMensajes} coachPerfil={coachPerfil} coachMemoria={coachMemoria} cuentas={cuentas} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete}
+            <AICoach transacciones={transacciones} deudas={deudas} metas={metasVista} presupuestoItems={presupuestoItems} limites={limites} habitos={habitos} diario={diario} googleToken={googleToken} coachMensajes={coachMensajes} coachPerfil={coachPerfil} coachMemoria={coachMemoria} cuentas={cuentas} recordatorios={recordatorios} rutina={rutina} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete}
                 chatOpen={coachChat} setChatOpen={setCoachChat} sheetOpen={coachSheet} setSheetOpen={setCoachSheet} vozOpen={vozAbierta} setVozOpen={setVozAbierta} />
         </div>
     );

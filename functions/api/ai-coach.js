@@ -87,6 +87,69 @@ export const TOOLS = [
             },
             required: ['nombre', 'tipo']
         }
+    },
+    {
+        name: 'crear_recordatorio',
+        description: 'Crea un recordatorio que llega como notificación al celular. Úsalo para hábitos y rutinas personales: tomar agua, pausas activas, leer, medicamentos, estirarse, o cualquier "recuérdame…". Tipos: "hora" (todos los días o ciertos días a una hora), "intervalo" (cada N minutos entre dos horas, p. ej. agua cada 2 horas de 8 a 18) y "unico" (una sola vez en una fecha y hora).',
+        input_schema: {
+            type: 'object',
+            properties: {
+                titulo: { type: 'string', description: 'Texto corto del aviso (ej: "Toma agua", "Pausa activa: estírate 3 minutos")' },
+                emoji: { type: 'string', description: 'Un emoji que lo represente (ej: "💧", "🧘", "📚")' },
+                tipo: { type: 'string', enum: ['hora', 'intervalo', 'unico'], description: 'hora | intervalo | unico' },
+                hora: { type: 'string', description: 'HH:MM en 24h. Para tipo hora y unico.' },
+                desde: { type: 'string', description: 'HH:MM de inicio (solo intervalo)' },
+                hasta: { type: 'string', description: 'HH:MM de fin (solo intervalo)' },
+                cada_min: { type: 'number', description: 'Minutos entre avisos (solo intervalo; mínimo 15)' },
+                dias: { type: 'string', description: 'Días en que aplica: "todos", "laborales" (lunes a viernes), "fin_de_semana" o una lista como "lunes,miércoles,viernes". Por defecto todos.' },
+                fecha: { type: 'string', description: 'YYYY-MM-DD (solo tipo unico)' },
+                mensaje: { type: 'string', description: 'Texto opcional bajo el título del aviso' },
+                habito_id: { type: 'string', description: 'Si el recordatorio es de uno de sus HÁBITOS, su id: así no le avisa los días que ya lo marcó.' }
+            },
+            required: ['titulo', 'tipo']
+        }
+    },
+    {
+        name: 'eliminar_recordatorio',
+        description: 'Elimina un recordatorio del usuario. Usa el id que aparece en su lista de RECORDATORIOS.',
+        input_schema: { type: 'object', properties: { recordatorio_id: { type: 'string', description: 'id del recordatorio' } }, required: ['recordatorio_id'] }
+    },
+    {
+        name: 'pausar_recordatorio',
+        description: 'Pausa o reactiva un recordatorio (incluye el resumen de la mañana y la lectura del día). También sirve para cambiarle la hora.',
+        input_schema: {
+            type: 'object',
+            properties: {
+                recordatorio_id: { type: 'string', description: 'id del recordatorio' },
+                activo: { type: 'boolean', description: 'false para pausar, true para reactivar' },
+                hora: { type: 'string', description: 'Nueva hora HH:MM (opcional)' }
+            },
+            required: ['recordatorio_id']
+        }
+    },
+    {
+        name: 'mover_evento_calendar',
+        description: 'Cambia la fecha/hora de un evento existente de Google Calendar. Usa el id del evento de su AGENDA.',
+        input_schema: {
+            type: 'object',
+            properties: {
+                evento_id: { type: 'string', description: 'id del evento' },
+                fecha: { type: 'string', description: 'Nueva fecha YYYY-MM-DD' },
+                hora: { type: 'string', description: 'Nueva hora de inicio HH:MM (24h)' },
+                duracion_min: { type: 'number', description: 'Duración en minutos; si se omite, conserva la actual' }
+            },
+            required: ['evento_id', 'fecha', 'hora']
+        }
+    },
+    {
+        name: 'eliminar_evento_calendar',
+        description: 'Elimina un evento de Google Calendar. Usa el id del evento de su AGENDA.',
+        input_schema: { type: 'object', properties: { evento_id: { type: 'string', description: 'id del evento' } }, required: ['evento_id'] }
+    },
+    {
+        name: 'completar_tarea',
+        description: 'Marca como hecha una tarea de Google Tasks. Usa el id de la tarea de su lista de TAREAS.',
+        input_schema: { type: 'object', properties: { tarea_id: { type: 'string', description: 'id de la tarea' } }, required: ['tarea_id'] }
     }
 ];
 
@@ -188,4 +251,12 @@ REGLAS DE LAS ACCIONES:
 - Usa la FECHA Y HORA ACTUAL que aparece en el contexto para resolver fechas relativas como "mañana", "el viernes", "en la tarde".
 - Para montos en lenguaje natural convierte a número: "50 mil" = 50000, "2 millones" = 2000000.
 - No anuncies largamente lo que vas a hacer: una frase breve basta; el usuario verá una confirmación antes de que se ejecute.
-- Puedes encadenar varias acciones si el usuario lo pide (ej: crear un evento y una tarea a la vez).`;
+- Puedes encadenar varias acciones si el usuario lo pide (ej: crear un evento y una tarea a la vez).
+
+ERES SU ASISTENTE PERSONAL (no solo financiero):
+- Tienes su AGENDA de Google Calendar (próximos días, con id), sus TAREAS de Google Tasks (con id), sus RECORDATORIOS, HÁBITOS y RUTINA. Si Google aparece como NO conectado, dile que vaya a Todo → Agenda → "Conectar Google" (una sola vez) y que tú no puedes verla hasta entonces.
+- "Organízame el día / planéame la semana": revisa agenda, tareas con fecha, rutina, hábitos y pagos próximos. Propón un horario concreto (bloques con hora de inicio y fin), sin chocar con lo que ya tiene, con pausas y comidas. Si acepta, crea los bloques con crear_evento_calendar y los avisos con crear_recordatorio.
+- Recordatorios: "recuérdame tomar agua", "pausas activas", "leer", "tomar la pastilla"… → crear_recordatorio. Si no dice la hora o el intervalo, propón uno razonable (agua: cada 2 horas de 8:00 a 18:00; pausas activas: cada hora de 9:00 a 17:00 en días laborales) y créalo.
+- Para cambiar o quitar algo usa su id: pausar_recordatorio, eliminar_recordatorio, mover_evento_calendar, eliminar_evento_calendar, completar_tarea.
+- Cada mañana le llega un resumen escrito por ti y cada noche una lectura del día; puede cambiarles la hora o pausarlos con pausar_recordatorio (ids "sistema-resumen" y "sistema-lectura").
+- Sé proactivo: si ves una reunión sin preparar, un pago cercano o un hábito descuidado, menciónalo y ofrece crear el recordatorio o el bloque.`;

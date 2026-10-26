@@ -6,6 +6,7 @@ import { memoriaTexto } from './memoria.js';
 import { cuentasTexto } from '../lib/cuentas';
 import { aCOP, tasaUSDGuardada } from '../lib/moneda';
 import { esPosicionInversion } from '../lib/inversiones';
+import { leerResumen, leerLecturas, CLAVE_RESUMEN, CLAVE_LECTURAS } from '../native/programador';
 import { CATEGORIAS_GASTOS, CATEGORIAS_INGRESOS, MOODS, calcStreak, dateKey, formatCurrency, formatUSD, proximaFechaPago } from '../lib/finanzas';
 import { API_BASE, app, auth } from '../lib/firebase';
 
@@ -92,7 +93,7 @@ export const mdLite = (txt) => String(txt || '')
 // =============================================
 // === COMPONENTE: AI COACH (CLAUDE OPUS 4.8) ===
 // =============================================
-export const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, habitos = [], diario = [], googleToken = null, coachMensajes = [], coachPerfil = [], coachMemoria = [], cuentas = [], genericAdd, genericUpdate, genericDelete, chatOpen = false, setChatOpen = () => {}, sheetOpen = false, setSheetOpen = () => {}, vozOpen = false, setVozOpen = () => {} }) => {
+export const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limites, habitos = [], diario = [], googleToken = null, coachMensajes = [], coachPerfil = [], coachMemoria = [], cuentas = [], recordatorios = [], rutina = [], genericAdd, genericUpdate, genericDelete, chatOpen = false, setChatOpen = () => {}, sheetOpen = false, setSheetOpen = () => {}, vozOpen = false, setVozOpen = () => {} }) => {
     // El chat y la hoja "Tu coach hoy" se controlan desde App (tarjeta de Inicio).
     const isOpen = chatOpen;
     const setIsOpen = setChatOpen;
@@ -415,7 +416,7 @@ export const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limite
                 d.setDate(d.getDate() - i);
                 if (hist.includes(dateKey(d))) ultimos7++;
             }
-            return `- ${h.emoji || ''} ${h.nombre}: racha de ${streak} día(s)${hoy ? ' (✅ hecho hoy)' : ' (⬜ pendiente hoy)'}, ${ultimos7}/7 últimos días`;
+            return `- [id ${h.id}] ${h.emoji || ''} ${h.nombre}: racha de ${streak} día(s)${hoy ? ' (✅ hecho hoy)' : ' (⬜ pendiente hoy)'}, ${ultimos7}/7 últimos días`;
         }).join('\n');
 
         // --- Diario / estado de ánimo (últimas 7 entradas) ---
@@ -431,22 +432,50 @@ export const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limite
             ? (animosValidos.reduce((a, c) => a + c, 0) / animosValidos.length).toFixed(1)
             : null;
 
-        // --- Google Tasks (lista @default) ---
+        // --- Google: agenda (7 días) y tareas, con id para poder moverlas o completarlas ---
         let googleTasksTxt = '';
+        let agendaTxt = '';
         if (googleToken) {
+            const auth = { headers: { Authorization: `Bearer ${googleToken}` } };
+            const desde = new Date(); desde.setHours(0, 0, 0, 0);
+            const hasta = new Date(desde); hasta.setDate(hasta.getDate() + 8);
+            const [tareasRes, eventosRes] = await Promise.all([
+                fetch('https://tasks.googleapis.com/tasks/v1/lists/@default/tasks?showCompleted=false&maxResults=50', auth).catch(() => null),
+                fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${desde.toISOString()}&timeMax=${hasta.toISOString()}&singleEvents=true&orderBy=startTime&maxResults=60`, auth).catch(() => null),
+            ]);
             try {
-                const gres = await fetch('https://tasks.googleapis.com/tasks/v1/lists/@default/tasks?showCompleted=false&maxResults=50', {
-                    headers: { Authorization: `Bearer ${googleToken}` }
-                });
-                if (gres.ok) {
-                    const gdata = await gres.json();
+                if (tareasRes?.ok) {
+                    const gdata = await tareasRes.json();
                     googleTasksTxt = (gdata.items || [])
                         .filter(t => t.status !== 'completed')
-                        .map(t => `- ${t.title}${t.due ? ` (vence ${t.due.split('T')[0]})` : ''}`)
+                        .map(t => `- [id ${t.id}] ${t.title}${t.due ? ` (vence ${t.due.split('T')[0]})` : ''}`)
                         .join('\n');
                 }
-            } catch (_) { /* ignorar errores de Google Tasks */ }
+                if (eventosRes?.ok) {
+                    const edata = await eventosRes.json();
+                    agendaTxt = (edata.items || []).map(ev => {
+                        const ini = ev.start?.dateTime, fin = ev.end?.dateTime;
+                        const fecha = (ini || ev.start?.date || '').slice(0, 10);
+                        const hora = ini ? `${new Date(ini).toTimeString().slice(0, 5)}–${fin ? new Date(fin).toTimeString().slice(0, 5) : ''}` : 'todo el día';
+                        return `- [id ${ev.id}] ${fecha} ${hora} · ${ev.summary || '(sin título)'}`;
+                    }).join('\n');
+                }
+            } catch (_) { /* ignorar errores de Google */ }
         }
+        const googleEstado = googleToken ? 'CONECTADO' : 'NO CONECTADO (debe ir a Todo → Agenda → "Conectar Google")';
+
+        // --- Recordatorios, hábitos con aviso y rutina (asistente personal) ---
+        const NOMBRES_DIA = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+        const diasTxt = (d) => (Array.isArray(d) && d.length && d.length < 7 ? ` (${d.map(x => NOMBRES_DIA[x]).join(', ')})` : '');
+        const recordatoriosTxt = recordatorios.map(r => {
+            const estado = r.activo === false ? ' [PAUSADO]' : '';
+            if (r.sistema === 'resumen') return `- [id ${r.id}] Resumen de la mañana a las ${r.hora || '06:30'}${estado}`;
+            if (r.sistema === 'lectura') return `- [id ${r.id}] Lectura del día a las ${r.hora || '21:00'}${estado}`;
+            const cuando = r.tipo === 'intervalo' ? `cada ${r.cadaMin} min de ${r.desde} a ${r.hasta}` : r.tipo === 'unico' ? `el ${r.fecha} a las ${r.hora}` : `a las ${r.hora}`;
+            return `- [id ${r.id}] ${r.emoji || ''} ${r.titulo}: ${cuando}${diasTxt(r.dias)}${estado}`;
+        }).join('\n');
+        const rutinaHoyTxt = rutina.filter(b => b.dia === new Date().getDay()).sort((a, b) => (a.horaInicio || '').localeCompare(b.horaInicio || ''))
+            .map(b => `- ${b.horaInicio}–${b.horaFin} ${b.titulo}`).join('\n');
 
         // --- Perfil de largo plazo (memoria estable que el usuario define) ---
         const metasActivas = metas.filter(m => !m.completada)
@@ -495,8 +524,19 @@ ${deudasTxt || 'No hay deudas registradas.'}
 INVERSIONES / PORTAFOLIO:
 ${inversionesTxt || 'No hay inversiones registradas.'}
 
+GOOGLE (Calendar y Tasks): ${googleEstado}
+
+AGENDA DE GOOGLE CALENDAR (hoy y próximos 7 días):
+${agendaTxt || (googleToken ? 'No hay eventos.' : '(no disponible: Google no está conectado)')}
+
 TAREAS DE GOOGLE TASKS:
-${googleTasksTxt || (googleToken ? 'No hay tareas pendientes en Google Tasks.' : 'Google Tasks no está conectado.')}
+${googleTasksTxt || (googleToken ? 'No hay tareas pendientes en Google Tasks.' : '(no disponible: Google no está conectado)')}
+
+RECORDATORIOS (notificaciones que le llegan al celular):
+${recordatoriosTxt || 'Ninguno.'}
+
+RUTINA DE HOY:
+${rutinaHoyTxt || 'Sin bloques de rutina hoy.'}
 
 HÁBITOS Y RACHAS:
 ${habitosTxt || 'No hay hábitos registrados.'}
@@ -532,6 +572,26 @@ ${perfilIA?.texto || '(Aún no generado.)'}`;
                 return { icon: '🏦', titulo: 'Registrar deuda', detalle: `${i.nombre} · ${formatCurrency(Number(i.monto_total) || 0)}${i.cuotas ? ` · ${i.cuotas} cuotas` : ''}` };
             case 'crear_meta':
                 return { icon: '🎯', titulo: 'Crear meta', detalle: `${i.nombre}${i.monto_objetivo ? ` · ${formatCurrency(Number(i.monto_objetivo))}` : ''}${i.plazo ? ` · ${i.plazo}` : ''}` };
+            case 'crear_recordatorio': {
+                const cuando = i.tipo === 'intervalo' ? `cada ${i.cada_min || 60} min de ${i.desde || '08:00'} a ${i.hasta || '18:00'}`
+                    : i.tipo === 'unico' ? `${i.fecha} a las ${i.hora}` : `a las ${i.hora}`;
+                return { icon: i.emoji || '🔔', titulo: 'Crear recordatorio', detalle: `${i.titulo} · ${cuando}${i.dias && i.dias !== 'todos' ? ` · ${i.dias.replace('_', ' ')}` : ''}` };
+            }
+            case 'eliminar_recordatorio': {
+                const r = recordatorios.find(x => x.id === i.recordatorio_id);
+                return { icon: '🗑️', titulo: 'Eliminar recordatorio', detalle: r ? r.titulo : i.recordatorio_id };
+            }
+            case 'pausar_recordatorio': {
+                const r = recordatorios.find(x => x.id === i.recordatorio_id);
+                const accion = i.activo === false ? 'Pausar' : i.activo === true ? 'Reactivar' : 'Cambiar';
+                return { icon: '⏸️', titulo: `${accion} recordatorio`, detalle: `${r ? r.titulo : i.recordatorio_id}${i.hora ? ` · nueva hora ${i.hora}` : ''}` };
+            }
+            case 'mover_evento_calendar':
+                return { icon: '📅', titulo: 'Mover evento', detalle: `al ${i.fecha} a las ${i.hora}` };
+            case 'eliminar_evento_calendar':
+                return { icon: '🗑️', titulo: 'Eliminar evento de Calendar', detalle: 'Se borrará de tu Google Calendar' };
+            case 'completar_tarea':
+                return { icon: '✅', titulo: 'Completar tarea', detalle: 'Se marcará como hecha en Google Tasks' };
             default:
                 return { icon: '⚙️', titulo: tu.name, detalle: '' };
         }
@@ -629,6 +689,82 @@ ${perfilIA?.texto || '(Aún no generado.)'}`;
                     }
                     return `OK: tarea "${input.titulo}" creada en Google Tasks.`;
                 }
+                case 'crear_recordatorio': {
+                    const NOMBRES = { domingo: 0, lunes: 1, martes: 2, miercoles: 3, 'miércoles': 3, jueves: 4, viernes: 5, sabado: 6, 'sábado': 6 };
+                    const txt = String(input.dias || 'todos').toLowerCase();
+                    const dias = txt === 'laborales' ? [1, 2, 3, 4, 5] : txt === 'fin_de_semana' ? [0, 6]
+                        : txt === 'todos' ? [] : txt.split(/[,\s]+/).map(d => NOMBRES[d.trim()]).filter(d => d !== undefined);
+                    const tipo = ['hora', 'intervalo', 'unico'].includes(input.tipo) ? input.tipo : 'hora';
+                    const hhmm = (v, def) => (/^\d{1,2}:\d{2}$/.test(v || '') ? v.padStart(5, '0') : def);
+                    if (tipo !== 'intervalo' && !/^\d{1,2}:\d{2}$/.test(input.hora || '')) return 'Error: falta la hora del recordatorio (HH:MM).';
+                    if (tipo === 'unico' && !/^\d{4}-\d{2}-\d{2}$/.test(input.fecha || '')) return 'Error: falta la fecha del recordatorio (YYYY-MM-DD).';
+                    const habito = input.habito_id ? habitos.find(h => h.id === input.habito_id) : null;
+                    await genericAdd('recordatorios', {
+                        titulo: String(input.titulo || 'Recordatorio').slice(0, 80), emoji: input.emoji || '🔔', tipo,
+                        ...(tipo === 'intervalo'
+                            ? { desde: hhmm(input.desde, '08:00'), hasta: hhmm(input.hasta, '18:00'), cadaMin: Math.max(15, Number(input.cada_min) || 60) }
+                            : { hora: hhmm(input.hora, '08:00') }),
+                        ...(tipo === 'unico' ? { fecha: input.fecha } : {}),
+                        dias, mensaje: input.mensaje || '', habitoId: habito ? habito.id : null,
+                        activo: true, origen: 'ia', createdAt: new Date().toISOString(),
+                    });
+                    return `OK: recordatorio "${input.titulo}" creado; le llegará como notificación al celular.`;
+                }
+                case 'eliminar_recordatorio': {
+                    const r = recordatorios.find(x => x.id === input.recordatorio_id);
+                    if (!r) return 'Error: no encontré ese recordatorio.';
+                    if (r.sistema) {
+                        await genericUpdate('recordatorios', r.id, { activo: false });
+                        return `OK: "${r.titulo}" quedó pausado (es parte del asistente; se puede reactivar).`;
+                    }
+                    await genericDelete('recordatorios', r.id);
+                    return `OK: recordatorio "${r.titulo}" eliminado.`;
+                }
+                case 'pausar_recordatorio': {
+                    const r = recordatorios.find(x => x.id === input.recordatorio_id);
+                    if (!r) return 'Error: no encontré ese recordatorio.';
+                    const cambios = {};
+                    if (typeof input.activo === 'boolean') cambios.activo = input.activo;
+                    if (/^\d{1,2}:\d{2}$/.test(input.hora || '')) cambios.hora = input.hora.padStart(5, '0');
+                    if (!Object.keys(cambios).length) return 'Error: no indicaste qué cambiar.';
+                    await genericUpdate('recordatorios', r.id, cambios);
+                    return `OK: recordatorio "${r.titulo}" actualizado.`;
+                }
+                case 'mover_evento_calendar': {
+                    if (!googleToken) return 'Error: Google no está conectado. Pídele que vaya a Todo → Agenda → Conectar Google.';
+                    const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(input.evento_id)}`;
+                    const auth = { Authorization: `Bearer ${googleToken}` };
+                    const actual = await fetch(url, { headers: auth });
+                    if (!actual.ok) return 'Error: no encontré ese evento en Calendar.';
+                    const ev = await actual.json();
+                    const durAnterior = ev.start?.dateTime && ev.end?.dateTime ? (new Date(ev.end.dateTime) - new Date(ev.start.dateTime)) / 60000 : 60;
+                    const start = new Date(`${input.fecha}T${input.hora}:00`);
+                    const end = new Date(start.getTime() + (Number(input.duracion_min) || durAnterior) * 60000);
+                    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                    const res = await fetch(url, {
+                        method: 'PATCH', headers: { ...auth, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ start: { dateTime: start.toISOString(), timeZone: tz }, end: { dateTime: end.toISOString(), timeZone: tz } }),
+                    });
+                    if (!res.ok) return 'Error: no se pudo mover el evento.';
+                    return `OK: evento "${ev.summary || ''}" movido al ${input.fecha} a las ${input.hora}.`;
+                }
+                case 'eliminar_evento_calendar': {
+                    if (!googleToken) return 'Error: Google no está conectado. Pídele que vaya a Todo → Agenda → Conectar Google.';
+                    const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(input.evento_id)}`, {
+                        method: 'DELETE', headers: { Authorization: `Bearer ${googleToken}` },
+                    });
+                    if (!res.ok && res.status !== 410) return 'Error: no se pudo eliminar el evento.';
+                    return 'OK: evento eliminado de Google Calendar.';
+                }
+                case 'completar_tarea': {
+                    if (!googleToken) return 'Error: Google no está conectado. Pídele que vaya a Todo → Agenda → Conectar Google.';
+                    const res = await fetch(`https://tasks.googleapis.com/tasks/v1/lists/@default/tasks/${encodeURIComponent(input.tarea_id)}`, {
+                        method: 'PATCH', headers: { Authorization: `Bearer ${googleToken}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status: 'completed' }),
+                    });
+                    if (!res.ok) return 'Error: no se pudo completar la tarea.';
+                    return 'OK: tarea marcada como hecha en Google Tasks.';
+                }
                 default:
                     return 'Error: herramienta desconocida.';
             }
@@ -658,6 +794,59 @@ ${perfilIA?.texto || '(Aún no generado.)'}`;
     ejecutarRef.current = ejecutarHerramienta;
     const obtenerContextoVoz = useCallback(() => contextoRef.current(), []);
     const ejecutarVoz = useCallback((tu) => ejecutarRef.current(tu), []);
+
+    // --- ASISTENTE PROACTIVO: la IA escribe el resumen de la próxima mañana y las
+    // lecturas de la semana; se guardan en el teléfono y el programador las agenda.
+    const firmaSistema = recordatorios.filter(r => r.sistema).map(r => `${r.id}:${r.hora}:${r.activo}`).join('|');
+    useEffect(() => {
+        if (!firmaSistema) return;
+        const t = setTimeout(async () => {
+            const ahora = new Date();
+            const resumenRec = recordatorios.find(r => r.sistema === 'resumen' && r.activo !== false);
+            const lecturaRec = recordatorios.find(r => r.sistema === 'lectura' && r.activo !== false);
+            let resumen = null;
+            if (resumenRec) {
+                const [h, m] = (resumenRec.hora || '06:30').split(':').map(Number);
+                const d = new Date(ahora); d.setHours(h, m || 0, 0, 0);
+                if (d <= ahora) d.setDate(d.getDate() + 1);
+                const fecha = dateKey(d);
+                const previo = leerResumen(fecha);
+                // Se reescribe si no existe o tiene más de 6 h (así lleva lo último que registraste).
+                if (!previo || Date.now() - (previo.at || 0) > 6 * 3600e3) {
+                    resumen = { fecha, etiqueta: `${fecha === dateKey(ahora) ? 'hoy' : 'mañana'} ${d.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' })}` };
+                }
+            }
+            const lecturas = leerLecturas();
+            const faltan = lecturaRec ? Array.from({ length: 7 }, (_, i) => { const d = new Date(ahora); d.setDate(d.getDate() + i); return dateKey(d); }).filter(f => !lecturas[f]) : [];
+            if (!resumen && faltan.length < 3) return; // las lecturas se piden por lotes
+            try {
+                const ultimo = Number(localStorage.getItem('f360-asistente-intento')) || 0;
+                if (Date.now() - ultimo < 30 * 60e3) return; // no insistir si falló hace poco
+                localStorage.setItem('f360-asistente-intento', String(Date.now()));
+            } catch { /* */ }
+            try {
+                const res = await fetch(`${API_BASE}/api/asistente-diario`, {
+                    method: 'POST', headers: await encabezadosCoach(),
+                    body: JSON.stringify({ context: await contextoRef.current(), resumen, lecturas: faltan.length >= 3 ? faltan : [] }),
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (data.resumen && resumen) localStorage.setItem(CLAVE_RESUMEN(resumen.fecha), JSON.stringify({ ...data.resumen, at: Date.now() }));
+                if (data.lecturas) {
+                    const hoy = dateKey();
+                    const todas = { ...lecturas, ...data.lecturas };
+                    Object.keys(todas).forEach(f => { if (f < hoy) delete todas[f]; });
+                    localStorage.setItem(CLAVE_LECTURAS, JSON.stringify(todas));
+                }
+                localStorage.removeItem('f360-asistente-intento');
+                // Limpia resúmenes de días pasados.
+                Object.keys(localStorage).filter(k => k.startsWith('f360-resumen-') && k.slice(13) < dateKey()).forEach(k => localStorage.removeItem(k));
+                window.dispatchEvent(new Event('f360-reprogramar'));
+            } catch (e) { console.warn('Asistente proactivo:', e); }
+        }, 8000); // después de que la app cargue todo
+        return () => clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [firmaSistema]);
 
     const llamarCoach = async (msgs) => {
         if (typeof navigator !== 'undefined' && navigator.onLine === false) {
