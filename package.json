@@ -1,6 +1,6 @@
 {
   "name": "finanzas-360",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Aplicación de gestión financiera personal",
   "type": "module",
   "main": "electron/main.cjs",
@@ -54,6 +54,7 @@
     "files": [
       "electron/**/*",
       "dist/client/**/*",
+      "build/icon.ico",
       "package.json"
     ],
     "win": {

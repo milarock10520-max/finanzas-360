@@ -1,4 +1,4 @@
-// Programador ÚNICO de notificaciones (iOS).
+// Programador ÚNICO de notificaciones (iOS y escritorio).
 //
 // iOS solo guarda 64 notificaciones pendientes por app. En vez de repartir cupos fijos
 // (agenda, rutina, pagos…), aquí se calculan TODAS las ocurrencias de los próximos días
@@ -112,8 +112,39 @@ export function calcularOcurrencias({ recordatorios = [], habitos = [], rutina =
     return out.sort((a, b) => a.at - b.at);
 }
 
+// Escritorio (Electron): la ventana vive escondida en la bandeja, así que una cadena de
+// setTimeout en el renderer dispara los toasts de Windows. Cada reprogramación reemplaza
+// la cadena anterior (calcularOcurrencias solo trae lo que aún no ha pasado).
+let timerEscritorio = null;
+const TOPE_ESPERA = 15 * 60 * 1000; // corrige el desfase de timers tras suspender el PC
+
+function programarEscritorio(lista) {
+    clearTimeout(timerEscritorio);
+    const disparadas = new Set();
+    const siguiente = () => {
+        const ahora = Date.now();
+        // Suenan las que vencieron hace menos de 1 min; si el PC estuvo suspendido, las viejas se saltan.
+        lista.filter(n => !disparadas.has(n.clave) && n.at.getTime() <= ahora && ahora - n.at.getTime() < 60000).forEach(n => {
+            disparadas.add(n.clave);
+            const aviso = new Notification(n.title, { body: n.body });
+            aviso.onclick = () => { window.focus(); window.desktop?.showWindow?.(); };
+        });
+        const prox = lista.find(n => n.at.getTime() > ahora);
+        if (!prox) return;
+        timerEscritorio = setTimeout(siguiente, Math.min(Math.max(prox.at.getTime() - ahora, 1000), TOPE_ESPERA));
+    };
+    siguiente();
+}
+
 // Programa las notificaciones (reemplaza las anteriores). Devuelve cuántas quedaron.
 export async function programarTodo(datos, googleToken) {
+    if (window.desktop?.isElectron) {
+        if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return 0;
+        const [eventosPorDia, tareasPorDia] = await Promise.all([traerEventos(googleToken), traerTareas(googleToken)]);
+        const lista = calcularOcurrencias({ ...datos, eventosPorDia, tareasPorDia });
+        programarEscritorio(lista);
+        return lista.length;
+    }
     if (!Capacitor.isNativePlatform()) return 0;
     let LocalNotifications;
     try { ({ LocalNotifications } = await import('@capacitor/local-notifications')); } catch { return 0; }
