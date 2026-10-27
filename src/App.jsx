@@ -17,7 +17,9 @@ import { Capacitor } from '@capacitor/core';
 import { ThemeToggle, ScreenHeader, BottomNav, BottomSheet, fmtCOP } from './ui/f360.jsx';
 import { AICoach } from './coach/Coach';
 import { useVaultSession } from './lib/boveda';
-import { hojaActiva, sincronizarHoja, crearHoja, desactivarHoja } from './lib/hoja';
+import { sincronizarHoja, crearHoja } from './lib/hoja';
+import { crearAlmacenHoja } from './lib/hojaAlmacen';
+import { conectarHojaNativa, tokenHojaNativa, desconectarHojaNativa, hojaNativaConectada } from './native/googleAuth';
 import { formatCurrency, dateKey, esGastoConsumo } from './lib/finanzas';
 import { app, appId, auth, db, sinEsperarServidor } from './lib/firebase';
 import { requestGoogleToken } from './lib/google';
@@ -446,7 +448,11 @@ export default function App() {
         const unsubCoachMemoria = onSnapshot(collection(db, `${basePath}/coach_memoria`), (snap) =>
             setCoachMemoria(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
-        return () => { unsubTrans(); unsubDeudas(); unsubMetas(); unsubPresupuesto(); unsubLimites(); unsubPasswords(); unsubVaultConfig(); unsubHabitos(); unsubDiario(); unsubRutina(); unsubProyectos(); unsubProyectoItems(); unsubProyectoCredenciales(); unsubCoach(); unsubCoachPerfil(); unsubCoachMemoria(); unsubCuentas(); unsubPatrimonio(); unsubReglas(); unsubRecordatorios(); };
+        // Hoja para Gemini: solo la configuración (si existe y su enlace), compartida entre dispositivos.
+        const unsubHoja = onSnapshot(doc(db, `${basePath}/hoja`, 'config'), (s) =>
+            setHojaConfig(s.exists() ? { id: s.data().id, url: s.data().url } : null));
+
+        return () => { unsubTrans(); unsubDeudas(); unsubMetas(); unsubPresupuesto(); unsubLimites(); unsubPasswords(); unsubVaultConfig(); unsubHabitos(); unsubDiario(); unsubRutina(); unsubProyectos(); unsubProyectoItems(); unsubProyectoCredenciales(); unsubCoach(); unsubCoachPerfil(); unsubCoachMemoria(); unsubCuentas(); unsubPatrimonio(); unsubReglas(); unsubRecordatorios(); unsubHoja(); };
     }, [user]);
 
     // --- ACTIONS FIREBASE ---
@@ -538,42 +544,80 @@ export default function App() {
         return sinEsperarServidor(lote.commit());
     };
 
-    // --- HOJA DE GOOGLE PARA GEMINI (solo escritorio) ---
-    // La app de escritorio vive en la bandeja: mantiene la hoja al día (≈1 min tras cada
-    // cambio) y aplica las ediciones que haga Gemini con la misma lógica de la app.
-    const [hoja, setHoja] = useState(() => hojaActiva());
+    // --- HOJA DE GOOGLE PARA GEMINI (escritorio e iPhone) ---
+    // Mientras la app está abierta mantiene la hoja al día y aplica las ediciones de Gemini con
+    // la misma lógica de la app. El estado y el turno viven en Firebase (hoja/...), así el
+    // escritorio y el iPhone no se pisan; cada dispositivo tiene su propio permiso de Google.
+    const proveedorHoja = window.desktop?.isElectron
+        ? { conectar: () => window.desktop.conectarHoja(), token: () => window.desktop.tokenHoja(), desconectar: () => window.desktop.desconectarHoja(), clave: 'hoja_permiso_escritorio' }
+        : Capacitor.isNativePlatform()
+            ? { conectar: conectarHojaNativa, token: tokenHojaNativa, desconectar: desconectarHojaNativa, clave: null }
+            : null;
+    const permisoInicial = () => {
+        if (!proveedorHoja) return false;
+        if (!proveedorHoja.clave) return hojaNativaConectada();
+        try { return localStorage.getItem(proveedorHoja.clave) === '1' || !!localStorage.getItem('f360-hoja'); } catch { return false; }
+    };
+    const [hojaConfig, setHojaConfig] = useState(null);
+    const [permisoHoja, setPermisoHoja] = useState(permisoInicial);
     const [hojaInfo, setHojaInfo] = useState({});
+    const almacenHoja = useMemo(() => (user ? crearAlmacenHoja(db, `artifacts/${appId}/users/${user.uid}`) : null), [user]);
     const datosHojaRef = useRef({});
     const opsHojaRef = useRef({});
-    const hojaOn = !!(hoja?.id && user && window.desktop?.isElectron && transListas && recordatoriosListos);
+    const marcarPermiso = (v) => {
+        setPermisoHoja(v);
+        if (proveedorHoja?.clave) { try { v ? localStorage.setItem(proveedorHoja.clave, '1') : localStorage.removeItem(proveedorHoja.clave); } catch { /* */ } }
+    };
+    const hojaOn = !!(hojaConfig?.id && permisoHoja && proveedorHoja && almacenHoja && transListas && recordatoriosListos);
     const correrHoja = useCallback(async () => {
+        if (!almacenHoja || !proveedorHoja) return;
         try {
             setHojaInfo(i => ({ ...i, sincronizando: true }));
-            const token = await window.desktop.tokenHoja();
-            const r = await sincronizarHoja({ token, obtenerDatos: () => datosHojaRef.current, ops: opsHojaRef.current });
-            setHojaInfo({ ultima: r.hora, aplicados: r.aplicados, error: null });
+            const token = await proveedorHoja.token();
+            const r = await sincronizarHoja({ token, obtenerDatos: () => datosHojaRef.current, ops: opsHojaRef.current, almacen: almacenHoja });
+            setHojaInfo(i => (r ? { ultima: r.hora, aplicados: r.aplicados, error: null } : { ...i, sincronizando: false, otro: true }));
         } catch (e) {
             console.warn('Hoja de Google:', e);
-            setHojaInfo(i => ({ ...i, sincronizando: false, error: e.message === 'sin_permiso_hoja' ? 'Falta el permiso de Google: vuelve a activar la hoja.' : e.message }));
+            if (e.message === 'sin_permiso_hoja') marcarPermiso(false);
+            setHojaInfo(i => ({ ...i, sincronizando: false, error: e.message === 'sin_permiso_hoja' ? 'Falta el permiso de Google en este dispositivo.' : e.message }));
         }
-    }, []);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [almacenHoja]);
     const activarHoja = async () => {
         setHojaInfo({ sincronizando: true });
         try {
-            await window.desktop.conectarHoja();
-            const estado = await crearHoja(await window.desktop.tokenHoja());
-            setHoja(estado);
+            await proveedorHoja.conectar();
+            marcarPermiso(true);
+            // Si la hoja aún no existe (primer dispositivo), se crea; si ya existe, solo se suma este dispositivo.
+            const actual = await almacenHoja.config();
+            if (!actual?.id) await almacenHoja.crear(await crearHoja(await proveedorHoja.token()));
+            setHojaInfo({});
         } catch (e) {
             setHojaInfo({ error: e.message });
         }
     };
     const quitarHoja = async () => {
-        if (!window.confirm('¿Dejar de sincronizar la hoja? La hoja queda en tu Drive pero ya no se actualiza.')) return;
-        desactivarHoja();
-        await window.desktop?.desconectarHoja?.();
-        setHoja(null);
+        if (!window.confirm('¿Dejar de sincronizar la hoja en este dispositivo? Los demás dispositivos la siguen actualizando.')) return;
+        await proveedorHoja?.desconectar?.();
+        marcarPermiso(false);
         setHojaInfo({});
     };
+    // Escritorio con la versión anterior (estado en este equipo): se sube una vez a Firebase,
+    // con lo último escrito, para no perder ediciones pendientes de la hoja.
+    useEffect(() => {
+        if (!almacenHoja || !window.desktop?.isElectron) return;
+        let viejo = null;
+        try { viejo = JSON.parse(localStorage.getItem('f360-hoja') || 'null'); } catch { /* */ }
+        if (!viejo?.id) return;
+        (async () => {
+            if (!(await almacenHoja.config())?.id) {
+                await almacenHoja.crear({ id: viejo.id, url: viejo.url });
+                const snap = Object.fromEntries(Object.entries(viejo.snap || {}).map(([t, s]) => [t, { ...s, firma: '' }]));
+                await almacenHoja.guardar({ snap, mensajes: {} }, Object.keys(snap));
+            }
+            try { localStorage.removeItem('f360-hoja'); localStorage.setItem('hoja_permiso_escritorio', '1'); } catch { /* */ }
+        })().catch(e => console.warn('No se pudo migrar la hoja:', e));
+    }, [almacenHoja]);
 
     // Sesión de bóveda compartida entre Contraseñas y las credenciales de
     // Proyectos (la clave maestra solo vive aquí, en memoria).
@@ -701,7 +745,13 @@ export default function App() {
     useEffect(() => {
         if (!hojaOn) return;
         const id = setInterval(correrHoja, 45000);
-        return () => clearInterval(id);
+        // iPhone: al volver a la app, sincroniza de una (recoge lo que Gemini editó mientras tanto).
+        let quitar = null;
+        if (Capacitor.isNativePlatform()) {
+            import('@capacitor/app').then(({ App: CapApp }) => CapApp.addListener('appStateChange', ({ isActive }) => { if (isActive) correrHoja(); }))
+                .then(h => { quitar = h; }).catch(() => {});
+        }
+        return () => { clearInterval(id); quitar?.remove(); };
     }, [hojaOn, correrHoja]);
 
     // Patrimonio neto: foto del mes en curso (colección patrimonio/YYYY-MM), para la historia exacta.
@@ -1016,7 +1066,7 @@ export default function App() {
                         <ModulosView onOpen={setActiveTab} onBack={volver} onLogout={handleLogout} user={user}
                             totalInvertido={totalInvertido} totalDeudaPendiente={totalDeudaPendiente} googleToken={googleToken}
                             rutina={rutina} proyectos={proyectos} habitos={habitos} vault={vault} cuentas={cuentas} recordatorios={recordatorios} transacciones={transacciones} patrimonioNeto={patrimonioHoy.neto}
-                            hoja={hoja} hojaInfo={hojaInfo} onActivarHoja={activarHoja} onSincronizarHoja={correrHoja} onQuitarHoja={quitarHoja} />
+                            hoja={hojaConfig} hojaPermiso={permisoHoja} hojaPuede={!!proveedorHoja} hojaInfo={hojaInfo} onActivarHoja={activarHoja} onSincronizarHoja={correrHoja} onQuitarHoja={quitarHoja} />
                     )}
                     {activeTab === 'analisis' && (
                         <FinancialAnalysis transacciones={transacciones} limites={limites} onAjustarTopes={() => setActiveTab('presupuesto')} />

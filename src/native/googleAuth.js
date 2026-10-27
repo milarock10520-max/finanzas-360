@@ -141,6 +141,46 @@ export async function conectarGoogle() {
     throw new Error('Google no devolvió credenciales válidas.');
 }
 
+// --- Hoja de Google para Gemini (iPhone) ---
+// Mismo canje que Calendar (serverAuthCode -> refresh token en el servidor) pero con su propio
+// linkToken y solo el permiso drive.file (archivos que crea la app), separado de Calendar.
+const HOJA_LINK = 'hoja_link_token';
+export const hojaNativaConectada = () => { try { return !!localStorage.getItem(HOJA_LINK); } catch { return false; } };
+
+export async function conectarHojaNativa() {
+    const result = await FirebaseAuthentication.signInWithGoogle({ scopes: ['https://www.googleapis.com/auth/drive.file'] });
+    const serverAuthCode = result?.credential?.serverAuthCode;
+    if (!serverAuthCode) throw new Error('Google no devolvió el permiso. Intenta de nuevo.');
+    const linkToken = crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+    const res = await fetch(`${API_BASE}/api/google/connect`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ linkToken, serverAuthCode }),
+    });
+    if (!res.ok) throw new Error('No se pudo guardar el permiso de la hoja. Intenta de nuevo.');
+    try { localStorage.setItem(HOJA_LINK, linkToken); } catch { /* */ }
+}
+
+let cacheHoja = null; // { token, expiresAt }
+export async function tokenHojaNativa() {
+    if (cacheHoja && Date.now() < cacheHoja.expiresAt - 2 * 60 * 1000) return cacheHoja.token;
+    let linkToken = null;
+    try { linkToken = localStorage.getItem(HOJA_LINK); } catch { /* */ }
+    if (!linkToken) throw new Error('sin_permiso_hoja');
+    const res = await fetch(`${API_BASE}/api/google/token`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ linkToken }),
+    });
+    if (res.status === 404 || res.status === 401) { try { localStorage.removeItem(HOJA_LINK); } catch { /* */ } throw new Error('sin_permiso_hoja'); }
+    if (!res.ok) throw new Error('No se pudo renovar el permiso de Google.');
+    cacheHoja = await res.json();
+    return cacheHoja.token;
+}
+
+export async function desconectarHojaNativa() {
+    let linkToken = null;
+    try { linkToken = localStorage.getItem(HOJA_LINK); localStorage.removeItem(HOJA_LINK); } catch { /* */ }
+    cacheHoja = null;
+    if (linkToken) await fetch(`${API_BASE}/api/google/disconnect`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ linkToken }) }).catch(() => {});
+}
+
 // Borra la conexión: en el servidor y localmente.
 export async function desconectarGoogle() {
     let linkToken = null;

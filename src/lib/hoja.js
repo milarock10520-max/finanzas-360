@@ -4,7 +4,8 @@
 // personalizados en esta cuenta), así que la app mantiene una hoja espejo de sus datos
 // y aplica las ediciones que se hagan en ella.
 //
-// Motor (corre en la app de escritorio, que vive en la bandeja):
+// Motor (corre en la app de escritorio y en la del iPhone mientras está abierta; el estado
+// compartido y el turno viven en Firebase para que dos dispositivos no se pisen):
 //   1. Lee la hoja y la compara con lo último que la app escribió (instantánea en
 //      localStorage). Celdas editables cambiadas -> actualizar; filas nuevas sin ID ->
 //      crear; columna "Borrar" marcada -> borrar. Todo pasa por genericAdd/Update/Delete,
@@ -15,6 +16,11 @@
 // Ingresos y movimientos automáticos son de solo lectura en la hoja.
 //
 // Acceso: OAuth del usuario con el permiso drive.file (solo archivos creados por la app).
+//
+// Almacén (lo provee la app, ver lib/hojaAlmacen.js):
+//   cargar() -> { id, url, mensajes, snap: { [pestaña]: { filas, n, firma } } } | null
+//   guardar(estado, pestañasCambiadas)
+//   tomarTurno() -> bool   /   soltarTurno()
 
 import { dateKey, calcStreak, esGastoConsumo } from './finanzas';
 import { esPosicionInversion, aportesDe, depositado } from './inversiones';
@@ -22,15 +28,11 @@ import { saldoDeuda } from './deudas';
 
 const API = 'https://sheets.googleapis.com/v4/spreadsheets';
 export const SCOPE_HOJA = 'https://www.googleapis.com/auth/drive.file';
-const CLAVE = 'f360-hoja';
 const TITULO_HOJA = 'Finanzas 360 · datos en vivo';
 const MSG_TTL = 15 * 60 * 1000; // los mensajes de la columna Estado se ven 15 min
 
-// --- Estado local (id de la hoja + instantánea de lo último escrito) ---
-const leerEstado = () => { try { return JSON.parse(localStorage.getItem(CLAVE) || 'null'); } catch { return null; } };
-const guardarEstado = (e) => { try { localStorage.setItem(CLAVE, JSON.stringify(e)); } catch { /* sin espacio */ } };
-export const hojaActiva = () => leerEstado();
-export const desactivarHoja = () => { try { localStorage.removeItem(CLAVE); } catch { /* */ } };
+// Huella corta de una pestaña (FNV-1a): la instantánea guarda esto y no la grilla entera.
+const huella = (s) => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return `${s.length}:${h.toString(36)}`; };
 
 // --- Conversión de valores de celda ---
 const norm = (v) => (v === null || v === undefined ? '' : typeof v === 'boolean' ? (v ? 'TRUE' : 'FALSE') : String(v).trim());
@@ -444,9 +446,7 @@ export async function crearHoja(token) {
         }),
     });
     await darFormato(token, nueva);
-    const estado = { id: nueva.spreadsheetId, url: nueva.spreadsheetUrl, snap: {}, mensajes: {} };
-    guardarEstado(estado);
-    return estado;
+    return { id: nueva.spreadsheetId, url: nueva.spreadsheetUrl, snap: {}, mensajes: {} };
 }
 
 async function darFormato(token, hoja) {
@@ -560,7 +560,7 @@ async function escribir(token, estado, datos) {
             return valores;
         });
         const grilla = [encabezados(p), ...filas];
-        const firma = JSON.stringify(grilla);
+        const firma = huella(JSON.stringify(grilla));
         const prev = estado.snap[p.titulo];
         nuevasSnap[p.titulo] = { filas: Object.fromEntries(filas.map(f => [f[0], f.map(norm)])), n: grilla.length, firma };
         if (prev && prev.firma === firma && !estado.sucias.has(p.titulo)) continue;
@@ -577,7 +577,7 @@ async function escribir(token, estado, datos) {
 
     // Resumen: se reescribe si cambió su contenido (sin contar la hora) o si cambió otra pestaña.
     const resumen = filasResumen(datos, ctx);
-    const firmaRes = JSON.stringify(resumen.filter(f => f[0] !== 'Actualizado'));
+    const firmaRes = huella(JSON.stringify(resumen.filter(f => f[0] !== 'Actualizado')));
     const prevRes = estado.snap.Resumen;
     nuevasSnap.Resumen = { n: resumen.length, firma: firmaRes };
     if (data.length || prevRes?.firma !== firmaRes) {
@@ -585,32 +585,41 @@ async function escribir(token, estado, datos) {
     }
 
     if (data.length) await api(token, `/${estado.id}/values:batchUpdate`, { method: 'POST', body: JSON.stringify({ valueInputOption: 'RAW', data }) });
+    // Pestañas cuya instantánea cambió: solo esas se guardan en el almacén.
+    const cambiadas = Object.keys(nuevasSnap).filter(t => { const a = estado.snap[t], b = nuevasSnap[t]; return !a || a.n !== b.n || a.firma !== b.firma; });
     estado.snap = nuevasSnap;
+    return cambiadas;
 }
 
-// --- Ciclo completo: leer → aplicar → escribir ---
+// --- Ciclo completo: turno → leer → aplicar → escribir → guardar ---
+// Devuelve null si otro dispositivo tiene el turno (lo intentará en el próximo ciclo).
 let enCurso = null;
-export function sincronizarHoja({ token, obtenerDatos, ops }) {
+export function sincronizarHoja({ token, obtenerDatos, ops, almacen }) {
     if (enCurso) return enCurso;
     enCurso = (async () => {
-        const estado = leerEstado();
-        if (!estado?.id) throw new Error('La hoja no está activada');
-        estado.mensajes ||= {}; estado.snap ||= {};
-        estado.leidas = {}; estado.sucias = new Set(); // solo de este ciclo
-        await asegurarPestanas(token, estado);
-        const historial = [];
-        const registrar = (pestana, accion, id, detalle, resultado) => historial.push([new Date().toLocaleString('es-CO'), pestana, accion, id, detalle, resultado]);
+        if (!(await almacen.tomarTurno())) return null;
+        try {
+            const estado = await almacen.cargar();
+            if (!estado?.id) throw new Error('La hoja no está activada');
+            estado.mensajes ||= {}; estado.snap ||= {};
+            estado.leidas = {}; estado.sucias = new Set(); // solo de este ciclo
+            await asegurarPestanas(token, estado);
+            const historial = [];
+            const registrar = (pestana, accion, id, detalle, resultado) => historial.push([new Date().toLocaleString('es-CO'), pestana, accion, id, detalle, resultado]);
 
-        const aplicados = await aplicarEdiciones(token, estado, obtenerDatos(), ops, registrar);
-        if (historial.length) {
-            await api(token, `/${estado.id}/values/${encodeURIComponent(rango('Historial', 'A1'))}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, { method: 'POST', body: JSON.stringify({ values: historial }) });
+            const aplicados = await aplicarEdiciones(token, estado, obtenerDatos(), ops, registrar);
+            if (historial.length) {
+                await api(token, `/${estado.id}/values/${encodeURIComponent(rango('Historial', 'A1'))}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, { method: 'POST', body: JSON.stringify({ values: historial }) });
+            }
+            // Tras aplicar, esperar a que Firestore refleje los cambios (caché local) antes de reescribir.
+            if (aplicados) await new Promise(r => setTimeout(r, 1500));
+            const cambiadas = await escribir(token, estado, obtenerDatos());
+            delete estado.leidas; delete estado.sucias;
+            await almacen.guardar(estado, cambiadas);
+            return { aplicados, revisados: historial.length, hora: new Date() };
+        } finally {
+            await almacen.soltarTurno().catch(() => {});
         }
-        // Tras aplicar, esperar a que Firestore refleje los cambios (caché local) antes de reescribir.
-        if (aplicados) await new Promise(r => setTimeout(r, 1500));
-        await escribir(token, estado, obtenerDatos());
-        delete estado.leidas; delete estado.sucias;
-        guardarEstado(estado);
-        return { aplicados, revisados: historial.length, hora: new Date() };
     })().finally(() => { enCurso = null; });
     return enCurso;
 }
