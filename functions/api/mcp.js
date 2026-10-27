@@ -36,14 +36,18 @@ const suma = (lista) => lista.reduce((a, t) => a + n(t.monto), 0);
 const redondo = (v) => Math.round(n(v));
 
 // --- Herramientas ---
-const SIN_PARAMS = { type: 'object', properties: {}, additionalProperties: false };
+// Esquemas compatibles con Gemini: cada herramienta tiene al menos un parámetro opcional
+// (Gemini descarta herramientas con `properties: {}`) y no se usa additionalProperties ni
+// minimum/maximum, que su subconjunto de esquema no admite. Las descripciones van en
+// inglés y español: las apps conectadas personalizadas de Gemini son solo en inglés.
+const esquema = (properties) => ({ type: 'object', properties });
 const LECTURA = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
 const HERRAMIENTAS = [
     {
         name: 'resumen_financiero',
-        description: 'Panorama financiero de un mes (por defecto el actual) en pesos colombianos (COP): saldo disponible, ingresos, gasto de consumo total y por categoría, gasto de hoy, comparación con el mes anterior, topes de gasto y patrimonio neto.',
-        inputSchema: { type: 'object', properties: { mes: { type: 'string', description: 'Mes en formato YYYY-MM. Por defecto, el mes actual.' } }, additionalProperties: false },
+        description: "Monthly summary of the user's personal finances in the Finanzas 360 app, in Colombian pesos (COP): available balance, income, total spending and spending by category, today's spending, comparison with the previous month, spending limits and net worth. Use it for questions like 'how much did I spend this month'. / Resumen financiero del mes: saldo, ingresos, gasto por categoría, gasto de hoy, topes y patrimonio.",
+        inputSchema: esquema({ mes: { type: 'string', description: 'Month as YYYY-MM (mes). Defaults to the current month.' } }),
         colecciones: ['transacciones', 'limites', 'deudas'],
         run: ({ transacciones, limites, deudas }, args) => {
             const hoy = hoyKey();
@@ -77,19 +81,15 @@ const HERRAMIENTAS = [
     },
     {
         name: 'movimientos',
-        description: 'Lista de movimientos (ingresos, gastos, transferencias, aportes) filtrados por fechas, tipo, categoría o texto. Por defecto, los últimos 30 días. Montos en COP salvo que se indique moneda USD.',
-        inputSchema: {
-            type: 'object',
-            properties: {
-                desde: { type: 'string', description: 'Fecha inicial YYYY-MM-DD (incluida).' },
-                hasta: { type: 'string', description: 'Fecha final YYYY-MM-DD (incluida).' },
-                tipo: { type: 'string', enum: ['ingreso', 'gasto', 'transferencia'] },
-                categoria: { type: 'string', description: 'Categoría exacta, p. ej. "Comida".' },
-                texto: { type: 'string', description: 'Busca en el concepto (sin distinguir mayúsculas).' },
-                limite: { type: 'integer', minimum: 1, maximum: 500, description: 'Máximo de resultados (por defecto 100).' },
-            },
-            additionalProperties: false,
-        },
+        description: "List of the user's transactions in Finanzas 360 (income, expenses, transfers, contributions), filtered by dates, type, category or text. Defaults to the last 30 days. Amounts in COP unless the currency is USD. / Movimientos filtrados por fechas, tipo, categoría o texto.",
+        inputSchema: esquema({
+            desde: { type: 'string', description: 'Start date YYYY-MM-DD, inclusive (desde).' },
+            hasta: { type: 'string', description: 'End date YYYY-MM-DD, inclusive (hasta).' },
+            tipo: { type: 'string', enum: ['ingreso', 'gasto', 'transferencia'], description: 'ingreso = income, gasto = expense, transferencia = transfer.' },
+            categoria: { type: 'string', description: 'Exact category name in Spanish, e.g. "Comida".' },
+            texto: { type: 'string', description: 'Text to search in the description (concepto), case-insensitive.' },
+            limite: { type: 'integer', description: 'Maximum results, 1 to 500 (default 100).' },
+        }),
         colecciones: ['transacciones', 'cuentas'],
         run: ({ transacciones, cuentas }, args) => {
             const hasta = esFecha(args.hasta) ? args.hasta : hoyKey();
@@ -117,11 +117,11 @@ const HERRAMIENTAS = [
     },
     {
         name: 'presupuesto',
-        description: 'Presupuesto mensual: pagos planeados (recurrentes o no) con su día de pago y si ya se pagaron este mes, topes de gasto por categoría, y deudas con cuota y día de pago.',
-        inputSchema: SIN_PARAMS,
+        description: "The user's monthly budget in Finanzas 360: planned payments with their payment day and whether they were already paid that month, spending limits per category with what was spent, and debt installments. / Presupuesto: pagos planeados, topes de gasto y cuotas de deudas.",
+        inputSchema: esquema({ mes: { type: 'string', description: 'Month as YYYY-MM (mes). Defaults to the current month.' } }),
         colecciones: ['presupuesto', 'limites', 'deudas', 'transacciones'],
-        run: ({ presupuesto, limites, deudas, transacciones }) => {
-            const hoy = hoyKey(), mes = hoy.slice(0, 7);
+        run: ({ presupuesto, limites, deudas, transacciones }, args) => {
+            const mes = esMes(args.mes) ? args.mes : hoyKey().slice(0, 7);
             const porCat = transacciones.filter(t => esGastoConsumo(t) && (t.fecha || '').startsWith(mes))
                 .reduce((acc, t) => { acc[t.categoria] = (acc[t.categoria] || 0) + n(t.monto); return acc; }, {});
             const items = presupuesto.map(p => ({
@@ -139,13 +139,14 @@ const HERRAMIENTAS = [
     },
     {
         name: 'metas',
-        description: 'Metas financieras (objetivo, ahorrado, porcentaje, fecha objetivo, aporte sugerido y si van al día) y metas personales (avance de su lista de pasos).',
-        inputSchema: SIN_PARAMS,
+        description: "The user's goals in Finanzas 360: savings goals (target, saved, percentage, target date, suggested contribution, on track or behind) and personal goals (progress of their steps). / Metas financieras y personales.",
+        inputSchema: esquema({ tipo: { type: 'string', enum: ['financieras', 'personales', 'todas'], description: 'financieras = savings goals, personales = personal goals, todas = both (default).' } }),
         colecciones: ['metas', 'transacciones'],
-        run: ({ metas, transacciones }) => {
+        run: ({ metas, transacciones }, args) => {
             const valorInversion = (id) => { const inv = transacciones.find(t => t.id === id && esPosicionInversion(t)); return inv && inv.moneda !== 'USD' ? n(inv.monto) + n(inv.utilidad) : null; };
+            const ver = (t) => !['financieras', 'personales'].includes(args.tipo) || args.tipo === t;
             return {
-                financieras: metas.filter(m => m.tipo !== 'personal').map(m => {
+                financieras: !ver('financieras') ? undefined : metas.filter(m => m.tipo !== 'personal').map(m => {
                     const vinculada = m.inversionId ? valorInversion(m.inversionId) : null;
                     const meta = vinculada !== null ? { ...m, ahorroActual: vinculada } : m;
                     const objetivo = n(meta.montoObjetivo), ahorrado = n(meta.ahorroActual);
@@ -158,7 +159,7 @@ const HERRAMIENTAS = [
                         ...(m.inversionId ? { vinculada_a_inversion: true } : {}),
                     };
                 }),
-                personales: metas.filter(m => m.tipo === 'personal').map(m => {
+                personales: !ver('personales') ? undefined : metas.filter(m => m.tipo === 'personal').map(m => {
                     const pasos = Array.isArray(m.checklist) ? m.checklist : [];
                     return { nombre: m.nombre, plazo: m.plazo || null, completada: !!m.completada, pasos_hechos: pasos.filter(p => p.completado).length, pasos_total: pasos.length };
                 }),
@@ -167,11 +168,11 @@ const HERRAMIENTAS = [
     },
     {
         name: 'inversiones',
-        description: 'Portafolio de inversiones: cada posición con tipo, moneda (COP o USD), monto depositado, utilidad, valor actual, número de aportes y fecha del último aporte; y totales por moneda.',
-        inputSchema: SIN_PARAMS,
+        description: "The user's investment portfolio in Finanzas 360: each position with type, currency (COP or USD), amount deposited, profit, current value, number of contributions and last contribution date, plus totals per currency. / Portafolio de inversiones.",
+        inputSchema: esquema({ moneda: { type: 'string', enum: ['COP', 'USD', 'todas'], description: 'Filter by currency; todas = all (default).' } }),
         colecciones: ['transacciones'],
-        run: ({ transacciones }) => {
-            const posiciones = transacciones.filter(esPosicionInversion).map(inv => {
+        run: ({ transacciones }, args) => {
+            const posiciones = transacciones.filter(esPosicionInversion).filter(inv => !['COP', 'USD'].includes(args.moneda) || (inv.moneda || 'COP') === args.moneda).map(inv => {
                 const aportes = aportesDe(inv);
                 return {
                     nombre: inv.concepto, tipo: inv.subTipo || null, moneda: inv.moneda || 'COP',
@@ -191,12 +192,12 @@ const HERRAMIENTAS = [
     },
     {
         name: 'deudas',
-        description: 'Deudas: monto total, pagado, saldo pendiente, tasa de interés (E.A. %), cuota mensual, número de cuotas y día de pago.',
-        inputSchema: SIN_PARAMS,
+        description: "The user's debts in Finanzas 360: total amount, paid, outstanding balance, interest rate (effective annual %), monthly installment, number of installments and payment day. / Deudas con saldo, tasa, cuota y día de pago.",
+        inputSchema: esquema({ incluir_pagadas: { type: 'boolean', description: 'Include debts already paid off (default true).' } }),
         colecciones: ['deudas'],
-        run: ({ deudas }) => ({
+        run: ({ deudas }, args) => ({
             total_pendiente: redondo(deudas.reduce((a, d) => a + saldoDeuda(d), 0)),
-            deudas: deudas.map(d => ({
+            deudas: deudas.filter(d => args.incluir_pagadas !== false || saldoDeuda(d) > 0).map(d => ({
                 nombre: d.nombre, monto_total: redondo(d.montoTotal), pagado: redondo(d.montoPagado), saldo: redondo(saldoDeuda(d)),
                 tasa_interes_ea: n(d.tasaInteres) || null, cuota_mensual: redondo(d.cuotaMensual) || null, cuotas: d.cuotas || null, dia_pago: d.diaPago || null,
             })),
@@ -204,11 +205,11 @@ const HERRAMIENTAS = [
     },
     {
         name: 'cuentas',
-        description: 'Cuentas de efectivo, débito, ahorros y tarjetas de crédito con su saldo calculado (en crédito: lo que se debe), cupo, y días de corte y pago.',
-        inputSchema: SIN_PARAMS,
+        description: "The user's accounts in Finanzas 360: cash, debit, savings and credit cards with their calculated balance (for credit cards: amount owed), credit limit, and statement and payment days. / Cuentas y tarjetas con su saldo.",
+        inputSchema: esquema({ tipo: { type: 'string', enum: ['efectivo', 'debito', 'ahorros', 'credito', 'todas'], description: 'efectivo = cash, debito = debit, ahorros = savings, credito = credit card, todas = all (default).' } }),
         colecciones: ['cuentas', 'transacciones'],
-        run: ({ cuentas, transacciones }) => ({
-            cuentas: cuentas.map(c => {
+        run: ({ cuentas, transacciones }, args) => ({
+            cuentas: cuentas.filter(c => !['efectivo', 'debito', 'ahorros', 'credito'].includes(args.tipo) || (c.tipo || 'debito') === args.tipo).map(c => {
                 const efecto = transacciones.reduce((a, t) => {
                     if (t.tipo === 'ingreso' && t.cuentaId === c.id) return a + n(t.monto);
                     if (t.tipo === 'gasto' && t.cuentaId === c.id) return a - n(t.monto);
@@ -229,20 +230,21 @@ const HERRAMIENTAS = [
     },
     {
         name: 'habitos_rutina_recordatorios',
-        description: 'Hábitos con su racha y si ya se hicieron hoy, la rutina semanal por día (bloques con hora) y los recordatorios activos del asistente.',
-        inputSchema: SIN_PARAMS,
+        description: "The user's habits in Finanzas 360 with their streak and whether they were done today, the weekly routine by day (time blocks) and the active reminders. / Hábitos, rutina semanal y recordatorios.",
+        inputSchema: esquema({ seccion: { type: 'string', enum: ['habitos', 'rutina', 'recordatorios', 'todo'], description: 'habitos = habits, rutina = weekly routine, recordatorios = reminders, todo = everything (default).' } }),
         colecciones: ['habitos', 'rutina', 'recordatorios'],
-        run: ({ habitos, rutina, recordatorios }) => {
+        run: ({ habitos, rutina, recordatorios }, args) => {
             const hoy = hoyKey();
+            const ver = (s) => !['habitos', 'rutina', 'recordatorios'].includes(args.seccion) || args.seccion === s;
             const rutinaPorDia = {};
             rutina.filter(b => b.horaInicio).sort((a, b) => a.horaInicio.localeCompare(b.horaInicio)).forEach(b => {
                 (rutinaPorDia[DIAS[b.dia] || 'sin día'] ||= []).push({ desde: b.horaInicio, hasta: b.horaFin || null, actividad: `${b.emoji ? `${b.emoji} ` : ''}${b.titulo}` });
             });
             return {
                 hoy, dia_semana: DIAS[new Date(`${hoy}T12:00:00Z`).getUTCDay()],
-                habitos: habitos.map(h => ({ nombre: `${h.emoji ? `${h.emoji} ` : ''}${h.nombre}`, racha_dias: calcStreak(h.historial || []), hecho_hoy: (h.historial || []).includes(hoy) })),
-                rutina_semanal: rutinaPorDia,
-                recordatorios: recordatorios.filter(r => r.activo !== false).map(r => ({
+                habitos: !ver('habitos') ? undefined : habitos.map(h => ({ nombre: `${h.emoji ? `${h.emoji} ` : ''}${h.nombre}`, racha_dias: calcStreak(h.historial || []), hecho_hoy: (h.historial || []).includes(hoy) })),
+                rutina_semanal: !ver('rutina') ? undefined : rutinaPorDia,
+                recordatorios: !ver('recordatorios') ? undefined : recordatorios.filter(r => r.activo !== false).map(r => ({
                     titulo: `${r.emoji ? `${r.emoji} ` : ''}${r.titulo || 'Recordatorio'}`, tipo: r.sistema ? `sistema:${r.sistema}` : (r.tipo || 'hora'),
                     hora: r.hora || null, fecha: r.fecha || null, dias: Array.isArray(r.dias) && r.dias.length ? r.dias.map(d => DIAS[d]) : null,
                     ...(r.tipo === 'intervalo' ? { cada_min: r.cadaMin || null, desde: r.desde || null, hasta: r.hasta || null } : {}),
@@ -279,6 +281,9 @@ export async function mcpPost(context) {
     try { msg = await request.json(); } catch { return rpcError(null, -32700, 'JSON inválido'); }
     if (Array.isArray(msg)) return rpcError(null, -32600, 'No se admiten lotes');
     const { id = null, method, params = {} } = msg || {};
+
+    // Diagnóstico: qué pide el asistente (solo el método, nunca datos).
+    console.log(`mcp: ${method}${method === 'initialize' ? ` (${params.protocolVersion || '?'}, ${params.clientInfo?.name || '?'})` : ''}`);
 
     // Notificaciones (sin id): se aceptan sin respuesta.
     if (id === null || id === undefined) return new Response(null, { status: 202 });
