@@ -125,7 +125,9 @@ export const AICoach = ({ transacciones, deudas, metas, presupuestoItems, limite
         ? (window.SpeechRecognition || window.webkitSpeechRecognition)
         : null;
     // En la app nativa usamos el dictado de iOS (la Web Speech API no funciona en WKWebView).
-    const vozDisponible = Capacitor.isNativePlatform() || !!SpeechRecognition;
+    // Electron expone webkitSpeechRecognition pero sin el servicio de Google detrás (falla con
+    // 'network'): en escritorio se habla por el asistente de voz del menú lateral.
+    const vozDisponible = Capacitor.isNativePlatform() || (!!SpeechRecognition && !window.desktop?.isElectron);
 
     const baseInputRef = useRef('');
 
