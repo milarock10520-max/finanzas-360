@@ -18,7 +18,8 @@
 //   - MCP_CLIENT_ID / MCP_CLIENT_SECRET  (los mismos que se pegan en Gemini)
 //   - MCP_ALLOWED_UIDS   uids de Firebase con acceso, separados por coma
 //   - MCP_REDIRECT_URIS  (opcional) redirect_uri exactas permitidas, separadas por coma.
-//                        Sin ella se aceptan https://*.google.com/*.
+//                        Sin ella se aceptan https://*.google.com/* y el retorno de Gemini
+//                        (https://oauth-redirect.googleusercontent.com/r/*).
 
 import { verificarIdToken } from '../lib/auth.js';
 import { projectIdDe } from '../lib/firestore.js';
@@ -51,12 +52,19 @@ const igualesSeguro = async (a, b) => {
 const lista = (v) => String(v || '').split(',').map(s => s.trim()).filter(Boolean);
 export const uidPermitido = (env, uid) => !!uid && lista(env.MCP_ALLOWED_UIDS).includes(uid);
 
+const GEMINI_REDIRECT_HOST = 'oauth-redirect.googleusercontent.com';
+
 function redirectPermitida(env, uri) {
     let u;
     try { u = new URL(uri); } catch { return false; }
     const exactas = lista(env.MCP_REDIRECT_URIS);
     if (exactas.length) return exactas.includes(uri);
-    return u.protocol === 'https:' && (u.hostname === 'google.com' || u.hostname.endsWith('.google.com'));
+    if (u.protocol !== 'https:' || u.port || u.username || u.password) return false;
+    // Gemini (apps conectadas personalizadas) vuelve por el servicio de retorno OAuth de
+    // Google: https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-…
+    // Solo ese host exacto y la ruta /r/: el resto de googleusercontent.com aloja contenido de usuarios.
+    if (u.hostname === GEMINI_REDIRECT_HOST) return u.pathname.startsWith('/r/');
+    return u.hostname === 'google.com' || u.hostname.endsWith('.google.com');
 }
 
 const configurado = (env) => !!(env.MCP_CLIENT_ID && env.MCP_CLIENT_SECRET && env.MCP_ALLOWED_UIDS);
