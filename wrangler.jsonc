@@ -8,7 +8,11 @@
   },
   "assets": {
     "binding": "ASSETS",
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    // En modo SPA, las navegaciones del navegador reciben index.html sin pasar por el
+    // Worker: estas rutas abren páginas del servidor (OAuth del conector MCP y el
+    // callback de Google), así que deben llegar siempre al Worker.
+    "run_worker_first": ["/api/*", "/oauth/*", "/mcp", "/.well-known/*"]
   },
   "ai": {
     "binding": "AI"
