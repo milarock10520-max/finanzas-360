@@ -3,12 +3,18 @@
 // Flujo (authorization code + cliente confidencial, PKCE opcional):
 //   1. Gemini descubre /.well-known/oauth-protected-resource y
 //      /.well-known/oauth-authorization-server.
-//   2. Abre GET /oauth/authorize: una página que explica qué se comparte y pide
-//      iniciar sesión con Google (Firebase Auth, igual que la app).
-//   3. La página manda el ID token de Firebase a POST /oauth/authorize; si el uid
-//      está en MCP_ALLOWED_UIDS se emite un código de un solo uso (5 min).
-//   4. Gemini canjea el código en POST /oauth/token con su client_id/secret y
+//   2. Abre GET /oauth/authorize: una página que explica qué se comparte.
+//   3. "Iniciar sesión y permitir" va a GET /oauth/login, que guarda la solicitud en
+//      KV y redirige (misma pestaña, sin popup) al login de Google con el cliente web
+//      del proyecto de Firebase.
+//   4. Google vuelve a /api/google/callback con state "mcp.<id>": el servidor canjea
+//      el código, obtiene el uid de Firebase (accounts:signInWithIdp) y, si está en
+//      MCP_ALLOWED_UIDS, emite un código de un solo uso (5 min) hacia Gemini.
+//   5. Gemini canjea el código en POST /oauth/token con su client_id/secret y
 //      recibe un access token (1 h) y un refresh token (30 días, rotativo).
+//
+// Sin popup a propósito: Gemini abre esta página dentro de su propio flujo y el
+// navegador corta la comunicación con una ventana emergente (auth/popup-blocked).
 //
 // Los tokens son aleatorios; en KV solo se guarda su hash SHA-256 (prefijo mcp:).
 // Revocar: quitar el uid de MCP_ALLOWED_UIDS corta el acceso al instante (se
@@ -17,13 +23,15 @@
 // Variables de entorno:
 //   - MCP_CLIENT_ID / MCP_CLIENT_SECRET  (los mismos que se pegan en Gemini)
 //   - MCP_ALLOWED_UIDS   uids de Firebase con acceso, separados por coma
+//   - GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET  (ya existentes: cliente web
+//                        de Google del proyecto; /api/google/callback ya está autorizado)
 //   - MCP_REDIRECT_URIS  (opcional) redirect_uri exactas permitidas, separadas por coma.
 //                        Sin ella se aceptan https://*.google.com/* y el retorno de Gemini
 //                        (https://oauth-redirect.googleusercontent.com/r/*).
 
-import { verificarIdToken } from '../lib/auth.js';
-import { projectIdDe } from '../lib/firestore.js';
-
+// Clave web pública de Firebase (la misma que va en el bundle de la app).
+const FIREBASE_WEB_API_KEY = 'AIzaSyDfTuH2oXtjlYg1-1b0tDESI3hDDxCiGYw';
+const TTL_LOGIN = 600;
 const TTL_CODIGO = 300;
 const TTL_ACCESO = 3600;
 const TTL_REFRESCO = 30 * 24 * 3600;
@@ -111,9 +119,7 @@ export function metadatosServidor(request) {
 // --- Página de autorización ---
 const escaparHTML = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-function paginaAutorizar({ params, error }) {
-    // JSON embebido en <script>: se escapa "<" para que no pueda cerrar la etiqueta.
-    const datos = JSON.stringify(params || {}).replace(/</g, '\\u003c');
+function paginaAutorizar({ error, permitir, cancelar }) {
     return `<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Conectar Finanzas 360</title>
@@ -127,9 +133,8 @@ function paginaAutorizar({ params, error }) {
   ul{margin:0 0 14px;padding-left:20px;color:#EDF0F7;font-size:14px;line-height:1.7}
   .no{color:#FB7185}
   .btns{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}
-  button{height:50px;border-radius:14px;border:0;font-weight:800;font-size:15px;cursor:pointer}
+  .btn{height:50px;border-radius:14px;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;text-decoration:none;text-align:center;padding:0 10px}
   .si{background:#6B84FF;color:#05081A}.cancelar{background:#161B28;color:#EDF0F7}
-  button:disabled{opacity:.5;cursor:default}
   .err{color:#FB7185;font-weight:700;margin-top:12px}
 </style></head><body>
 <div class="card">
@@ -145,35 +150,10 @@ function paginaAutorizar({ params, error }) {
   </ul>
   <p class="no">Nunca se comparten: contraseñas de la bóveda, credenciales de proyectos, tu diario ni el chat del coach.</p>
   <div class="btns">
-    <button class="cancelar" id="cancelar" type="button">Cancelar</button>
-    <button class="si" id="permitir" type="button">Iniciar sesión y permitir</button>
-  </div>
-  <p class="err" id="msg" role="alert"></p>`}
+    <a class="btn cancelar" href="${escaparHTML(cancelar)}">Cancelar</a>
+    <a class="btn si" href="${escaparHTML(permitir)}">Iniciar sesión y permitir</a>
+  </div>`}
 </div>
-${error ? '' : `<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-<script>
-  const params = ${datos};
-  firebase.initializeApp({ apiKey: "AIzaSyDfTuH2oXtjlYg1-1b0tDESI3hDDxCiGYw", authDomain: "appfinanzas-84626.firebaseapp.com", projectId: "appfinanzas-84626" });
-  const msg = document.getElementById('msg');
-  const volver = (q) => { const u = new URL(params.redirect_uri); Object.entries(q).forEach(([k, v]) => v && u.searchParams.set(k, v)); location.href = u.toString(); };
-  document.getElementById('cancelar').onclick = () => volver({ error: 'access_denied', state: params.state });
-  document.getElementById('permitir').onclick = async (e) => {
-    e.target.disabled = true; msg.textContent = '';
-    try {
-      const cred = await firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider());
-      const idToken = await cred.user.getIdToken();
-      const res = await fetch('/oauth/authorize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken, params }) });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error_description || 'No se pudo autorizar.');
-      await firebase.auth().signOut();
-      location.href = data.redirect;
-    } catch (err) {
-      msg.textContent = err.message || 'No se pudo autorizar.';
-      e.target.disabled = false;
-    }
-  };
-</script>`}
 </body></html>`;
 }
 
@@ -183,37 +163,102 @@ const html = (cuerpo, status = 200) => new Response(cuerpo, {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-store',
         'X-Frame-Options': 'DENY',
-        'Content-Security-Policy': "frame-ancestors 'none'",
+        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; form-action 'none'",
         'Referrer-Policy': 'no-referrer',
     },
 });
+const paginaError = (mensaje, status = 400) => html(paginaAutorizar({ error: mensaje }), status);
+const redirigir = (destino) => new Response(null, { status: 302, headers: { Location: destino, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' } });
 
 const PARAMS = ['response_type', 'client_id', 'redirect_uri', 'state', 'scope', 'code_challenge', 'code_challenge_method', 'resource'];
+const paramsDe = (url) => Object.fromEntries(PARAMS.map(k => [k, url.searchParams.get(k) || '']));
+const conQuery = (base, q) => { const u = new URL(base); Object.entries(q).forEach(([k, v]) => v && u.searchParams.set(k, v)); return u.toString(); };
 
-// GET /oauth/authorize
+// GET /oauth/authorize: página de permiso (enlaces simples, sin JavaScript).
 export function autorizarGet(context) {
     const url = new URL(context.request.url);
-    const params = Object.fromEntries(PARAMS.map(k => [k, url.searchParams.get(k) || '']));
+    const params = paramsDe(url);
     const v = validarSolicitud(context.env, params);
-    return html(paginaAutorizar(v.error ? { error: v.error } : { params }), v.error ? 400 : 200);
+    if (v.error) return paginaError(v.error);
+    return html(paginaAutorizar({
+        permitir: `/oauth/login?${url.searchParams.toString()}`,
+        cancelar: conQuery(params.redirect_uri, { error: 'access_denied', state: params.state }),
+    }));
 }
 
-// POST /oauth/authorize  { idToken, params } -> { redirect }
-export async function autorizarPost(context) {
+// GET /oauth/login: guarda la solicitud y manda al login de Google en la misma pestaña.
+export async function loginGet(context) {
     const { request, env } = context;
-    let cuerpo;
-    try { cuerpo = await request.json(); } catch { return errorOAuth('invalid_request', 'Cuerpo inválido.'); }
-    const params = Object.fromEntries(PARAMS.map(k => [k, String(cuerpo?.params?.[k] || '')]));
+    const url = new URL(request.url);
+    const params = paramsDe(url);
     const v = validarSolicitud(env, params);
-    if (v.error) return errorOAuth('invalid_request', v.error);
+    if (v.error) return paginaError(v.error);
+    if (!env.GOOGLE_OAUTH_CLIENT_ID || !env.GOOGLE_OAUTH_CLIENT_SECRET) return paginaError('Falta el cliente de Google en el servidor.', 500);
 
-    let uid;
-    try { uid = await verificarIdToken(cuerpo.idToken, projectIdDe(env)); } catch { return errorOAuth('access_denied', 'No se pudo verificar tu sesión.', 401); }
-    if (!uidPermitido(env, uid)) {
-        console.warn('mcp-oauth: uid sin permiso intentó conectar');
-        return errorOAuth('access_denied', 'Esta cuenta no tiene permiso para conectar Finanzas 360.', 403);
+    const id = aleatorio();
+    await env.GOOGLE_TOKENS.put(`mcp:login:${await sha256(id)}`, JSON.stringify(params), { expirationTtl: TTL_LOGIN });
+    return redirigir(conQuery('https://accounts.google.com/o/oauth2/v2/auth', {
+        client_id: env.GOOGLE_OAUTH_CLIENT_ID,
+        redirect_uri: `${url.origin}/api/google/callback`,
+        response_type: 'code',
+        scope: 'openid email',
+        prompt: 'select_account',
+        state: `mcp.${id}`,
+    }));
+}
+
+// ¿Este callback de Google es de un login del conector? (state "mcp.<id>")
+export const esCallbackMcp = (url) => (url.searchParams.get('state') || '').startsWith('mcp.');
+
+// GET /api/google/callback?state=mcp.<id>: Google -> uid de Firebase -> código hacia el asistente.
+export async function callbackGoogle(context) {
+    const { request, env } = context;
+    const url = new URL(request.url);
+    const clave = `mcp:login:${await sha256(url.searchParams.get('state').slice(4))}`;
+    const raw = await env.GOOGLE_TOKENS.get(clave);
+    if (!raw) return paginaError('La solicitud venció o ya se usó. Vuelve a conectar desde el asistente.');
+    await env.GOOGLE_TOKENS.delete(clave); // un solo uso
+    const params = JSON.parse(raw);
+    const v = validarSolicitud(env, params);
+    if (v.error) return paginaError(v.error);
+    if (url.searchParams.get('error') || !url.searchParams.get('code')) {
+        return redirigir(conQuery(params.redirect_uri, { error: 'access_denied', state: params.state }));
     }
 
+    // 1. Código de Google -> id_token (canje directo con Google por TLS: no hace falta verificar la firma).
+    const tg = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+            code: url.searchParams.get('code'),
+            client_id: env.GOOGLE_OAUTH_CLIENT_ID,
+            client_secret: env.GOOGLE_OAUTH_CLIENT_SECRET,
+            redirect_uri: `${url.origin}/api/google/callback`,
+            grant_type: 'authorization_code',
+        }),
+    }).then(r => r.json()).catch(() => ({}));
+    if (!tg.id_token) {
+        console.error('mcp-oauth: Google no devolvió id_token', tg.error || '');
+        return paginaError('No se pudo verificar tu cuenta de Google. Intenta de nuevo.', 502);
+    }
+
+    // 2. id_token de Google -> uid de Firebase (lo mismo que hace la app al iniciar sesión).
+    const fb = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${env.FIREBASE_WEB_API_KEY || FIREBASE_WEB_API_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postBody: `id_token=${tg.id_token}&providerId=google.com`, requestUri: url.origin, returnSecureToken: true }),
+    }).then(r => r.json()).catch(() => ({}));
+    const uid = fb.localId;
+    if (!uid) {
+        console.error('mcp-oauth: Firebase no devolvió uid', fb.error?.message || '');
+        return paginaError('No se pudo verificar tu cuenta en Finanzas 360. Intenta de nuevo.', 502);
+    }
+    if (!uidPermitido(env, uid)) {
+        console.warn('mcp-oauth: uid sin permiso intentó conectar');
+        return paginaError('Esta cuenta de Google no tiene permiso para conectar Finanzas 360. Usa la misma cuenta con la que entras a la app.', 403);
+    }
+
+    // 3. Código propio de un solo uso hacia el asistente.
     const codigo = aleatorio();
     await env.GOOGLE_TOKENS.put(`mcp:code:${await sha256(codigo)}`, JSON.stringify({
         uid,
@@ -221,12 +266,8 @@ export async function autorizarPost(context) {
         redirect_uri: params.redirect_uri,
         code_challenge: params.code_challenge || null,
     }), { expirationTtl: TTL_CODIGO });
-
-    const destino = new URL(params.redirect_uri);
-    destino.searchParams.set('code', codigo);
-    if (params.state) destino.searchParams.set('state', params.state);
     console.log('mcp-oauth: código emitido');
-    return json({ redirect: destino.toString() });
+    return redirigir(conQuery(params.redirect_uri, { code: codigo, state: params.state }));
 }
 
 // --- Emisión de tokens ---

@@ -9,7 +9,7 @@ import { onRequestPost as asistenteDiarioPost, onRequestOptions as asistenteDiar
 import { onRequestPost as vozTokenPost, onRequestOptions as vozTokenOptions } from '../functions/api/voz-token.js';
 import { contextPost as coachContextPost, pushPost as coachPushPost, memoriaPost as coachMemoriaPost, onRequestOptions as coachProactivoOptions } from '../functions/api/coach-proactivo.js';
 import { mcpPost, mcpGet } from '../functions/api/mcp.js';
-import { metadatosRecurso, metadatosServidor, autorizarGet, autorizarPost, tokenPost as mcpTokenPost } from '../functions/api/mcp-oauth.js';
+import { metadatosRecurso, metadatosServidor, autorizarGet, loginGet as mcpLoginGet, esCallbackMcp, callbackGoogle as mcpCallbackGoogle, tokenPost as mcpTokenPost } from '../functions/api/mcp-oauth.js';
 
 export default {
     async fetch(request, env, ctx) {
@@ -71,6 +71,8 @@ export default {
 
         // OAuth de Google (conexión permanente con Calendar/Tasks)
         if (url.pathname === '/api/google/callback') {
+            // El login del conector MCP reutiliza este redirect (ya autorizado en Google).
+            if (request.method === 'GET' && esCallbackMcp(url)) return mcpCallbackGoogle(context);
             if (request.method === 'GET') return googleCallback(context);
             return new Response('Method Not Allowed', { status: 405 });
         }
@@ -104,7 +106,10 @@ export default {
         }
         if (url.pathname === '/oauth/authorize') {
             if (request.method === 'GET') return autorizarGet(context);
-            if (request.method === 'POST') return autorizarPost(context);
+            return new Response('Method Not Allowed', { status: 405 });
+        }
+        if (url.pathname === '/oauth/login') {
+            if (request.method === 'GET') return mcpLoginGet(context);
             return new Response('Method Not Allowed', { status: 405 });
         }
         if (url.pathname === '/oauth/token') {
