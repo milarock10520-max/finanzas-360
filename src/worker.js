@@ -8,6 +8,8 @@ import { callbackGet as googleCallback, connectPost as googleConnect, tokenPost 
 import { onRequestPost as asistenteDiarioPost, onRequestOptions as asistenteDiarioOptions } from '../functions/api/asistente-diario.js';
 import { onRequestPost as vozTokenPost, onRequestOptions as vozTokenOptions } from '../functions/api/voz-token.js';
 import { contextPost as coachContextPost, pushPost as coachPushPost, memoriaPost as coachMemoriaPost, onRequestOptions as coachProactivoOptions } from '../functions/api/coach-proactivo.js';
+import { mcpPost, mcpGet } from '../functions/api/mcp.js';
+import { metadatosRecurso, metadatosServidor, autorizarGet, autorizarPost, tokenPost as mcpTokenPost } from '../functions/api/mcp-oauth.js';
 
 export default {
     async fetch(request, env, ctx) {
@@ -85,6 +87,28 @@ export default {
         if (url.pathname === '/api/google/disconnect') {
             if (request.method === 'OPTIONS') return googleOptions(context);
             if (request.method === 'POST') return googleDisconnect(context);
+            return new Response('Method Not Allowed', { status: 405 });
+        }
+
+        // Conector MCP de solo lectura (Gemini u otro asistente) + su OAuth.
+        if (url.pathname === '/mcp') {
+            if (request.method === 'POST') return mcpPost(context);
+            if (request.method === 'GET') return mcpGet(context);
+            return new Response('Method Not Allowed', { status: 405 });
+        }
+        if (url.pathname === '/.well-known/oauth-protected-resource' || url.pathname === '/.well-known/oauth-protected-resource/mcp') {
+            return metadatosRecurso(request);
+        }
+        if (url.pathname === '/.well-known/oauth-authorization-server' || url.pathname === '/.well-known/openid-configuration') {
+            return metadatosServidor(request);
+        }
+        if (url.pathname === '/oauth/authorize') {
+            if (request.method === 'GET') return autorizarGet(context);
+            if (request.method === 'POST') return autorizarPost(context);
+            return new Response('Method Not Allowed', { status: 405 });
+        }
+        if (url.pathname === '/oauth/token') {
+            if (request.method === 'POST') return mcpTokenPost(context);
             return new Response('Method Not Allowed', { status: 405 });
         }
 
