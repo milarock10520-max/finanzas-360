@@ -70,8 +70,9 @@ function redirectPermitida(env, uri) {
     if (u.protocol !== 'https:' || u.port || u.username || u.password) return false;
     // Gemini (apps conectadas personalizadas) vuelve por el servicio de retorno OAuth de
     // Google: https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-…
-    // Solo ese host exacto y la ruta /r/: el resto de googleusercontent.com aloja contenido de usuarios.
-    if (u.hostname === GEMINI_REDIRECT_HOST) return u.pathname.startsWith('/r/');
+    // Solo ese host exacto (el resto de googleusercontent.com aloja contenido de usuarios) y solo
+    // la ruta de los conectores de Gemini: /r/<id> reenvía a cualquier proyecto de Google Cloud.
+    if (u.hostname === GEMINI_REDIRECT_HOST) return u.pathname.startsWith('/r/user_bound_custom-mcp-');
     return u.hostname === 'google.com' || u.hostname.endsWith('.google.com');
 }
 
@@ -163,12 +164,25 @@ const html = (cuerpo, status = 200) => new Response(cuerpo, {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-store',
         'X-Frame-Options': 'DENY',
-        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; form-action 'none'",
+        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
         'Referrer-Policy': 'no-referrer',
     },
 });
 const paginaError = (mensaje, status = 400) => html(paginaAutorizar({ error: mensaje }), status);
 const redirigir = (destino) => new Response(null, { status: 302, headers: { Location: destino, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' } });
+
+// Vuelta al asistente con una página 200 que navega sola (meta refresh), no con un 302.
+// La vuelta viene de una cadena de redirecciones que empezó en un formulario de Google
+// (accounts.google.com → callback → relay de Gemini → gemini.google.com); el navegador
+// puede cancelar esa cadena y Gemini nunca canjea el código. Una página intermedia corta
+// la cadena: la meta refresh es una navegación nueva. Ver
+// https://discuss.ai.google.dev/t/gemini-spark-custom-mcp-oauth-stops-after-302-callback-and-never-calls-token/177327
+const volverAlAsistente = (destino) => html(`<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="0;url=${escaparHTML(destino)}">
+<title>Volviendo al asistente…</title>
+<style>body{font-family:Manrope,-apple-system,system-ui,sans-serif;background:#06080E;color:#EDF0F7;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px;text-align:center}a{color:#6B84FF;font-weight:800}</style>
+</head><body><p>Volviendo al asistente…<br><br><a href="${escaparHTML(destino)}">Continuar</a></p></body></html>`);
 
 const PARAMS = ['response_type', 'client_id', 'redirect_uri', 'state', 'scope', 'code_challenge', 'code_challenge_method', 'resource'];
 const paramsDe = (url) => Object.fromEntries(PARAMS.map(k => [k, url.searchParams.get(k) || '']));
@@ -222,7 +236,7 @@ export async function callbackGoogle(context) {
     const v = validarSolicitud(env, params);
     if (v.error) return paginaError(v.error);
     if (url.searchParams.get('error') || !url.searchParams.get('code')) {
-        return redirigir(conQuery(params.redirect_uri, { error: 'access_denied', state: params.state }));
+        return volverAlAsistente(conQuery(params.redirect_uri, { error: 'access_denied', state: params.state }));
     }
 
     // 1. Código de Google -> id_token (canje directo con Google por TLS: no hace falta verificar la firma).
@@ -267,7 +281,7 @@ export async function callbackGoogle(context) {
         code_challenge: params.code_challenge || null,
     }), { expirationTtl: TTL_CODIGO });
     console.log('mcp-oauth: código emitido');
-    return redirigir(conQuery(params.redirect_uri, { code: codigo, state: params.state }));
+    return volverAlAsistente(conQuery(params.redirect_uri, { code: codigo, state: params.state }));
 }
 
 // --- Emisión de tokens ---
