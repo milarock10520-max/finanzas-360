@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
 import { LayoutDashboard, CreditCard, Target, Loader2, ClipboardList, PieChart, ArrowRightCircle, BarChart3, Lock, ListTodo, Flame, Sun, CalendarClock, FolderKanban, LayoutGrid, Wallet, TrendingUp, CloudOff, Bell, Mic } from 'lucide-react';
 import { onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithCredential, signOut } from 'firebase/auth';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
@@ -17,6 +17,7 @@ import { Capacitor } from '@capacitor/core';
 import { ThemeToggle, ScreenHeader, BottomNav, BottomSheet, fmtCOP } from './ui/f360.jsx';
 import { AICoach } from './coach/Coach';
 import { useVaultSession } from './lib/boveda';
+import { hojaActiva, sincronizarHoja, crearHoja, desactivarHoja } from './lib/hoja';
 import { formatCurrency, dateKey, esGastoConsumo } from './lib/finanzas';
 import { app, appId, auth, db, sinEsperarServidor } from './lib/firebase';
 import { requestGoogleToken } from './lib/google';
@@ -101,6 +102,7 @@ export default function App() {
     const [reglasAhorro, setReglasAhorro] = useState([]);
     const [recordatorios, setRecordatorios] = useState([]);
     const [recordatoriosListos, setRecordatoriosListos] = useState(false);
+    const [transListas, setTransListas] = useState(false);
     // Conexión: sin red la app sigue con los datos en caché y encola los cambios.
     const [enLinea, setEnLinea] = useState(() => typeof navigator === 'undefined' || navigator.onLine !== false);
     useEffect(() => {
@@ -381,6 +383,7 @@ export default function App() {
         const unsubTrans = onSnapshot(collection(db, `${basePath}/transacciones`), (snap) => {
             const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
             setTransacciones(data.sort((a, b) => new Date(b.fecha) - new Date(a.fecha)));
+            setTransListas(true);
         });
 
         const unsubDeudas = onSnapshot(collection(db, `${basePath}/deudas`), (snap) =>
@@ -535,6 +538,43 @@ export default function App() {
         return sinEsperarServidor(lote.commit());
     };
 
+    // --- HOJA DE GOOGLE PARA GEMINI (solo escritorio) ---
+    // La app de escritorio vive en la bandeja: mantiene la hoja al día (≈1 min tras cada
+    // cambio) y aplica las ediciones que haga Gemini con la misma lógica de la app.
+    const [hoja, setHoja] = useState(() => hojaActiva());
+    const [hojaInfo, setHojaInfo] = useState({});
+    const datosHojaRef = useRef({});
+    const opsHojaRef = useRef({});
+    const hojaOn = !!(hoja?.id && user && window.desktop?.isElectron && transListas && recordatoriosListos);
+    const correrHoja = useCallback(async () => {
+        try {
+            setHojaInfo(i => ({ ...i, sincronizando: true }));
+            const token = await window.desktop.tokenHoja();
+            const r = await sincronizarHoja({ token, obtenerDatos: () => datosHojaRef.current, ops: opsHojaRef.current });
+            setHojaInfo({ ultima: r.hora, aplicados: r.aplicados, error: null });
+        } catch (e) {
+            console.warn('Hoja de Google:', e);
+            setHojaInfo(i => ({ ...i, sincronizando: false, error: e.message === 'sin_permiso_hoja' ? 'Falta el permiso de Google: vuelve a activar la hoja.' : e.message }));
+        }
+    }, []);
+    const activarHoja = async () => {
+        setHojaInfo({ sincronizando: true });
+        try {
+            await window.desktop.conectarHoja();
+            const estado = await crearHoja(await window.desktop.tokenHoja());
+            setHoja(estado);
+        } catch (e) {
+            setHojaInfo({ error: e.message });
+        }
+    };
+    const quitarHoja = async () => {
+        if (!window.confirm('¿Dejar de sincronizar la hoja? La hoja queda en tu Drive pero ya no se actualiza.')) return;
+        desactivarHoja();
+        await window.desktop?.desconectarHoja?.();
+        setHoja(null);
+        setHojaInfo({});
+    };
+
     // Sesión de bóveda compartida entre Contraseñas y las credenciales de
     // Proyectos (la clave maestra solo vive aquí, en memoria).
     const vault = useVaultSession(vaultConfig, activeTab, genericAdd, genericUpdate);
@@ -648,6 +688,21 @@ export default function App() {
         if (quitado.txId) lote.delete(doc(db, `${base}/transacciones`, quitado.txId));
         await sinEsperarServidor(lote.commit());
     };
+
+    // Hoja: datos y operaciones siempre al día para el motor. Sincroniza ≈4 s después de
+    // cada cambio y cada 45 s (para recoger las ediciones hechas en la hoja).
+    datosHojaRef.current = { transacciones, presupuestoItems, limites, metas: metasVista, deudas, cuentas, habitos, diario, rutina, recordatorios, proyectos, proyectoItems, coachMemoria };
+    opsHojaRef.current = { genericAdd, genericUpdate, genericDelete };
+    useEffect(() => {
+        if (!hojaOn) return;
+        const t = setTimeout(correrHoja, 4000);
+        return () => clearTimeout(t);
+    }, [hojaOn, correrHoja, transacciones, presupuestoItems, limites, metasVista, deudas, cuentas, habitos, diario, rutina, recordatorios, proyectos, proyectoItems]);
+    useEffect(() => {
+        if (!hojaOn) return;
+        const id = setInterval(correrHoja, 45000);
+        return () => clearInterval(id);
+    }, [hojaOn, correrHoja]);
 
     // Patrimonio neto: foto del mes en curso (colección patrimonio/YYYY-MM), para la historia exacta.
     const patrimonioHoy = useMemo(() => patrimonioActual({ transacciones, deudas, tasaUSD: tasaUSD?.tasa || null }), [transacciones, deudas, tasaUSD]);
@@ -960,7 +1015,8 @@ export default function App() {
                     {activeTab === 'todo' && (
                         <ModulosView onOpen={setActiveTab} onBack={volver} onLogout={handleLogout} user={user}
                             totalInvertido={totalInvertido} totalDeudaPendiente={totalDeudaPendiente} googleToken={googleToken}
-                            rutina={rutina} proyectos={proyectos} habitos={habitos} vault={vault} cuentas={cuentas} recordatorios={recordatorios} transacciones={transacciones} patrimonioNeto={patrimonioHoy.neto} />
+                            rutina={rutina} proyectos={proyectos} habitos={habitos} vault={vault} cuentas={cuentas} recordatorios={recordatorios} transacciones={transacciones} patrimonioNeto={patrimonioHoy.neto}
+                            hoja={hoja} hojaInfo={hojaInfo} onActivarHoja={activarHoja} onSincronizarHoja={correrHoja} onQuitarHoja={quitarHoja} />
                     )}
                     {activeTab === 'analisis' && (
                         <FinancialAnalysis transacciones={transacciones} limites={limites} onAjustarTopes={() => setActiveTab('presupuesto')} />

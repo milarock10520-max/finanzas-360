@@ -1,7 +1,7 @@
 const { app, BrowserWindow, Tray, Menu, ipcMain, shell, powerMonitor } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { signInWithGoogleDesktop, connectGoogleCalendarDesktop } = require('./googleAuth.cjs');
+const { signInWithGoogleDesktop, connectGoogleCalendarDesktop, connectHojaDesktop, tokenHojaDesktop, desconectarHojaDesktop } = require('./googleAuth.cjs');
 
 let win = null;
 // El tray debe ser module-level: si lo recoge el GC, el icono desaparece.
@@ -108,6 +108,10 @@ if (!gotLock) {
     app.whenReady().then(() => {
         ipcMain.handle('auth:google-signin', () => signInWithGoogleDesktop());
         ipcMain.handle('auth:google-connect-calendar', () => connectGoogleCalendarDesktop());
+        // Hoja de Google para Gemini: el refresh token se queda en este proceso (cifrado).
+        ipcMain.handle('hoja:conectar', () => connectHojaDesktop());
+        ipcMain.handle('hoja:token', () => tokenHojaDesktop());
+        ipcMain.handle('hoja:desconectar', () => desconectarHojaDesktop());
 
         // Handshake: el renderer reporta su ajuste persistido al arrancar y en
         // cada toggle de la campana; aquí solo se refleja en el menú del tray

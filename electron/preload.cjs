@@ -17,4 +17,8 @@ contextBridge.exposeInMainWorld('desktop', {
         return () => ipcRenderer.removeListener('recordatorios:resync', h);
     },
     showWindow: () => ipcRenderer.send('app:show-window'),
+    // Hoja de Google para Gemini (permiso drive.file guardado cifrado en el proceso principal).
+    conectarHoja: () => ipcRenderer.invoke('hoja:conectar'),
+    tokenHoja: () => ipcRenderer.invoke('hoja:token'),
+    desconectarHoja: () => ipcRenderer.invoke('hoja:desconectar'),
 });
