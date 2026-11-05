@@ -6,6 +6,7 @@ import { TIPOS_INVERSION, dateKey, formatCurrency, formatMoney } from '../lib/fi
 import { API_BASE } from '../lib/firebase';
 import { useTasaUSD, aCOP } from '../lib/moneda';
 import { esPosicionInversion, aportesDe, utilidadRentaFija, utilidadMercado } from '../lib/inversiones';
+import { ActivosView } from './Activos';
 
 // --- Iconos y colores por tipo de inversión ---
 export const INVERSION_CONFIG = {
@@ -551,7 +552,9 @@ export const InvestmentCard = ({ inv, metaVinculada, tasa, onAgregarAporte, onQu
 };
 
 
-export const InvestmentPortfolio = ({ transacciones, metas = [], onAgregarAporte, onQuitarAporte, totalInvertido, genericAdd, genericUpdate, genericDelete, prefillData, setPrefillData, activeTab, pendingBudgetId, setPendingBudgetId, setActiveTab, onBack }) => {
+export const InvestmentPortfolio = ({ transacciones, metas = [], activos = [], onAgregarAporte, onQuitarAporte, totalInvertido, genericAdd, genericUpdate, genericDelete, prefillData, setPrefillData, activeTab, pendingBudgetId, setPendingBudgetId, setActiveTab, onBack }) => {
+    // Inversiones (dan utilidad) o Activos (bienes que solo son patrimonio: carro, computador…).
+    const [vista, setVista] = useState('inversiones');
     const [concepto, setConcepto] = useState('');
     const [monto, setMonto] = useState('');
     const [tipoInv, setTipoInv] = useState(TIPOS_INVERSION[0]);
@@ -659,9 +662,28 @@ export const InvestmentPortfolio = ({ transacciones, metas = [], onAgregarAporte
     const conTasa = tipoInv === 'Fondo de Emergencia' || tipoInv === 'CDT / Renta Fija';
     const soloPatrimonio = esBolsaOCripto && moneda === 'USD';
 
+    const selector = (
+        <div className="seg rise d1" style={{ marginTop: 16 }} role="tablist" aria-label="Inversiones o activos">
+            <span className="thumb" style={{ transform: vista === 'activos' ? 'translateX(100%)' : 'none' }} />
+            <button type="button" role="tab" aria-selected={vista === 'inversiones'} className={vista === 'inversiones' ? 'on' : ''} onClick={() => setVista('inversiones')}>Inversiones</button>
+            <button type="button" role="tab" aria-selected={vista === 'activos'} className={vista === 'activos' ? 'on' : ''} onClick={() => setVista('activos')}>Activos{activos.length ? ` · ${activos.length}` : ''}</button>
+        </div>
+    );
+
+    if (vista === 'activos') {
+        return (
+            <div>
+                <ScreenHeader title="Inversiones" onBack={onBack} />
+                {selector}
+                <ActivosView activos={activos} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} />
+            </div>
+        );
+    }
+
     return (
         <div>
             <ScreenHeader title="Inversiones" onBack={onBack} />
+            {selector}
 
             <section className="hero rise d2" style={{ marginTop: 18, padding: 22, display: 'flex', flexDirection: 'column', gap: 18 }}>
                 <div className="orb" style={{ width: 240, height: 240, right: -90, top: -100, background: '#7C3AED', opacity: .7 }} />

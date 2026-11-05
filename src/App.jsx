@@ -100,6 +100,7 @@ export default function App() {
     const [coachPerfil, setCoachPerfil] = useState([]);
     const [coachMemoria, setCoachMemoria] = useState([]);
     const [cuentas, setCuentas] = useState([]);
+    const [activos, setActivos] = useState([]);
     const [fotosPatrimonio, setFotosPatrimonio] = useState([]);
     const [reglasAhorro, setReglasAhorro] = useState([]);
     const [recordatorios, setRecordatorios] = useState([]);
@@ -442,6 +443,10 @@ export default function App() {
         const unsubPatrimonio = onSnapshot(collection(db, `${basePath}/patrimonio`), (snap) =>
             setFotosPatrimonio(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
+        // Activos (carro, computador…): patrimonio que no toca el saldo.
+        const unsubActivos = onSnapshot(collection(db, `${basePath}/activos`), (snap) =>
+            setActivos(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''))));
+
         const unsubCuentas = onSnapshot(collection(db, `${basePath}/cuentas`), (snap) =>
             setCuentas(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''))));
 
@@ -452,7 +457,7 @@ export default function App() {
         const unsubHoja = onSnapshot(doc(db, `${basePath}/hoja`, 'config'), (s) =>
             setHojaConfig(s.exists() ? { id: s.data().id, url: s.data().url } : null));
 
-        return () => { unsubTrans(); unsubDeudas(); unsubMetas(); unsubPresupuesto(); unsubLimites(); unsubPasswords(); unsubVaultConfig(); unsubHabitos(); unsubDiario(); unsubRutina(); unsubProyectos(); unsubProyectoItems(); unsubProyectoCredenciales(); unsubCoach(); unsubCoachPerfil(); unsubCoachMemoria(); unsubCuentas(); unsubPatrimonio(); unsubReglas(); unsubRecordatorios(); unsubHoja(); };
+        return () => { unsubTrans(); unsubDeudas(); unsubMetas(); unsubPresupuesto(); unsubLimites(); unsubPasswords(); unsubVaultConfig(); unsubHabitos(); unsubDiario(); unsubRutina(); unsubProyectos(); unsubProyectoItems(); unsubProyectoCredenciales(); unsubCoach(); unsubCoachPerfil(); unsubCoachMemoria(); unsubCuentas(); unsubActivos(); unsubPatrimonio(); unsubReglas(); unsubRecordatorios(); unsubHoja(); };
     }, [user]);
 
     // --- ACTIONS FIREBASE ---
@@ -735,13 +740,13 @@ export default function App() {
 
     // Hoja: datos y operaciones siempre al día para el motor. Sincroniza ≈4 s después de
     // cada cambio y cada 45 s (para recoger las ediciones hechas en la hoja).
-    datosHojaRef.current = { transacciones, presupuestoItems, limites, metas: metasVista, deudas, cuentas, habitos, diario, rutina, recordatorios, proyectos, proyectoItems, coachMemoria };
+    datosHojaRef.current = { transacciones, presupuestoItems, limites, metas: metasVista, deudas, cuentas, activos, habitos, diario, rutina, recordatorios, proyectos, proyectoItems, coachMemoria };
     opsHojaRef.current = { genericAdd, genericUpdate, genericDelete };
     useEffect(() => {
         if (!hojaOn) return;
         const t = setTimeout(correrHoja, 4000);
         return () => clearTimeout(t);
-    }, [hojaOn, correrHoja, transacciones, presupuestoItems, limites, metasVista, deudas, cuentas, habitos, diario, rutina, recordatorios, proyectos, proyectoItems]);
+    }, [hojaOn, correrHoja, transacciones, presupuestoItems, limites, metasVista, deudas, cuentas, activos, habitos, diario, rutina, recordatorios, proyectos, proyectoItems]);
     useEffect(() => {
         if (!hojaOn) return;
         const id = setInterval(correrHoja, 45000);
@@ -755,7 +760,7 @@ export default function App() {
     }, [hojaOn, correrHoja]);
 
     // Patrimonio neto: foto del mes en curso (colección patrimonio/YYYY-MM), para la historia exacta.
-    const patrimonioHoy = useMemo(() => patrimonioActual({ transacciones, deudas, tasaUSD: tasaUSD?.tasa || null }), [transacciones, deudas, tasaUSD]);
+    const patrimonioHoy = useMemo(() => patrimonioActual({ transacciones, deudas, activos, tasaUSD: tasaUSD?.tasa || null }), [transacciones, deudas, activos, tasaUSD]);
     const ultimaFotoRef = useRef('');
     useEffect(() => {
         if (!user || !transacciones.length) return;
@@ -899,7 +904,7 @@ export default function App() {
 
         try {
             setLoading(true);
-            const collections = ['transacciones', 'deudas', 'metas', 'presupuesto', 'limites', 'passwords', 'vault_config', 'habitos', 'diario', 'rutina', 'proyectos', 'proyecto_items', 'proyecto_credenciales', 'coach_mensajes', 'coach_perfil', 'coach_memoria', 'cuentas', 'patrimonio', 'reglas_ahorro', 'recordatorios'];
+            const collections = ['transacciones', 'deudas', 'metas', 'presupuesto', 'limites', 'passwords', 'vault_config', 'habitos', 'diario', 'rutina', 'proyectos', 'proyecto_items', 'proyecto_credenciales', 'coach_mensajes', 'coach_perfil', 'coach_memoria', 'cuentas', 'activos', 'patrimonio', 'reglas_ahorro', 'recordatorios'];
             const { getDocs, setDoc, doc } = await import('firebase/firestore');
 
             let totalMigrated = 0;
@@ -1083,10 +1088,10 @@ export default function App() {
                                 {activeTab === 'proyectos' && <ProyectosSection proyectos={proyectos} proyectoItems={proyectoItems} proyectoCredenciales={proyectoCredenciales} vault={vault} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} onBack={volverTodo} />}
                                 {activeTab === 'dashboard' && <DashboardView saldoActual={saldoActual} totalIngresos={totalIngresos} totalGastos={totalGastos} totalDeudaPendiente={totalDeudaPendiente} transacciones={transacciones} />}
                                 {activeTab === 'presupuesto' && <BudgetPlanner presupuestoItems={presupuestoItems} limites={limites} transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} onEjecutarPago={handleEjecutarPago} notifPermiso={notifPermiso} onActivarNotif={activarNotificaciones} onBack={volverTodo} />}
-                                {activeTab === 'inversiones' && <InvestmentPortfolio transacciones={transacciones} metas={metas} onAgregarAporte={agregarAporteInversion} onQuitarAporte={quitarAporteInversion} totalInvertido={totalInvertido} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} prefillData={prefillData} setPrefillData={setPrefillData} activeTab={activeTab} pendingBudgetId={pendingBudgetId} setPendingBudgetId={setPendingBudgetId} setActiveTab={setActiveTab} onBack={volverTodo} />}
+                                {activeTab === 'inversiones' && <InvestmentPortfolio transacciones={transacciones} metas={metas} activos={activos} onAgregarAporte={agregarAporteInversion} onQuitarAporte={quitarAporteInversion} totalInvertido={totalInvertido} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} prefillData={prefillData} setPrefillData={setPrefillData} activeTab={activeTab} pendingBudgetId={pendingBudgetId} setPendingBudgetId={setPendingBudgetId} setActiveTab={setActiveTab} onBack={volverTodo} />}
                                 {activeTab === 'recordatorios' && <RecordatoriosView recordatorios={recordatorios} habitos={habitos} notifPermiso={notifPermiso} onActivarNotif={activarNotificaciones}
                                     genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} onBack={volverTodo} onHablar={() => { prepararAudio(); setVozAbierta(true); }} />}
-                                {activeTab === 'patrimonio' && <PatrimonioView transacciones={transacciones} deudas={deudas} fotos={fotosPatrimonio} onBack={volverTodo} />}
+                                {activeTab === 'patrimonio' && <PatrimonioView transacciones={transacciones} deudas={deudas} activos={activos} fotos={fotosPatrimonio} onBack={volverTodo} />}
                                 {activeTab === 'cuentas' && <CuentasView cuentas={cuentas} transacciones={transacciones} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} onBack={volverTodo} />}
                                 {activeTab === 'deudas' && <DebtManager deudas={deudas} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} onBack={volverTodo} />}
                                 {activeTab === 'passwords' && <PasswordVault passwords={passwords} vault={vault} genericAdd={genericAdd} genericUpdate={genericUpdate} genericDelete={genericDelete} user={user} db={db} onBack={volverTodo} />}
