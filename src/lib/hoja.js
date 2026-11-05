@@ -84,6 +84,7 @@ const ahora = () => new Date().toISOString();
 const col = (h, v, e) => ({ h, v, e });
 
 const PROTEGIDO_INGRESO = 'Los ingresos solo se editan en la app';
+const TIPOS_ACTIVO = ['Vehículo', 'Tecnología', 'Inmueble', 'Hogar y muebles', 'Joyas y arte', 'Otro'];
 const origenMov = (t) => t.reglaId ? 'Regla de ahorro' : t.esAhorro ? 'Aporte a meta' : t.inversionId ? 'Aporte a inversión (USD)' : t.categoria === 'Pago de Deudas' ? 'Abono a deuda' : '';
 
 const PESTANAS = [
@@ -185,6 +186,29 @@ const PESTANAS = [
             col('Aportes', i => aportesDe(i).length),
             col('Último aporte', i => aportesDe(i).map(a => a.fecha).filter(Boolean).sort().pop() || i.fecha || ''),
         ],
+    },
+    {
+        // Bienes que no dan utilidad (carro, computador…): patrimonio, no tocan el saldo.
+        titulo: 'Activos', coleccion: 'activos', borrar: true,
+        filas: (d) => d.activos || [],
+        columnas: [
+            col('Nombre', a => a.nombre || '', v => ({ nombre: aTexto(v, 'Nombre') })),
+            col('Tipo', a => a.tipo || 'Otro', v => ({ tipo: enumDe(TIPOS_ACTIVO, 'Tipo')(v) })),
+            col('Valor de compra', a => Number(a.valorCompra) || '', v => ({ valorCompra: vacio(v) ? null : aMonto(v, 'Valor de compra') })),
+            col('Fecha de compra', a => a.fechaCompra || '', v => ({ fechaCompra: vacio(v) ? null : aFecha(v) })),
+            col('Valor actual', a => Number(a.valorActual ?? a.valorCompra) || 0, v => ({ valorActual: aMonto(v, 'Valor actual'), valorActualizado: dateKey() })),
+            col('Notas', a => a.notas || '', v => ({ notas: norm(v) })),
+        ],
+        crear: (f) => {
+            const compra = vacio(f['Valor de compra']) ? null : aMonto(f['Valor de compra'], 'Valor de compra');
+            const actual = vacio(f['Valor actual']) ? compra : aMonto(f['Valor actual'], 'Valor actual');
+            if (!(actual > 0)) throw new Error('Escribe el valor de compra o el valor actual');
+            return { coleccion: 'activos', datos: {
+                nombre: aTexto(f.Nombre, 'Nombre'), tipo: vacio(f.Tipo) ? 'Otro' : enumDe(TIPOS_ACTIVO, 'Tipo')(f.Tipo),
+                valorCompra: compra, valorActual: actual, valorActualizado: dateKey(),
+                fechaCompra: vacio(f['Fecha de compra']) ? null : aFecha(f['Fecha de compra']), notas: norm(f.Notas), createdAt: ahora(),
+            } };
+        },
     },
     {
         titulo: 'Deudas', coleccion: 'deudas', borrar: true,
@@ -372,6 +396,7 @@ function filasResumen(d, c) {
     const ahorros = suma(d.transacciones.filter(t => t.tipo === 'gasto' && t.esAhorro));
     const invCOP = d.transacciones.filter(t => esPosicionInversion(t) && t.moneda !== 'USD').reduce((a, t) => a + (Number(t.monto) || 0) + (Number(t.utilidad) || 0), 0);
     const deuda = d.deudas.reduce((a, x) => a + saldoDeuda(x), 0);
+    const bienes = (d.activos || []).reduce((a, x) => a + (Number(x.valorActual ?? x.valorCompra) || 0), 0);
     const perfil = (d.coachMemoria.find(m => m.texto) || {}).texto || '';
     return [
         ['Concepto', 'Valor'],
@@ -383,8 +408,9 @@ function filasResumen(d, c) {
         ['Gastado hoy', Math.round(suma(delMes.filter(t => esGastoConsumo(t) && t.fecha === c.hoy)))],
         ['Ahorro apartado del mes', Math.round(suma(delMes.filter(t => t.tipo === 'gasto' && t.esAhorro)))],
         ['Inversiones (COP, valor actual)', Math.round(invCOP)],
+        ['Activos (carro, equipos…; valor actual)', Math.round(bienes)],
         ['Deudas pendientes', Math.round(deuda)],
-        ['Patrimonio neto (sin USD)', Math.round(ingresos - gastos + ahorros + invCOP - deuda)],
+        ['Patrimonio neto (sin USD)', Math.round(ingresos - gastos + ahorros + invCOP + bienes - deuda)],
         ['', ''],
         ['Gasto del mes por categoría', ''],
         ...Object.entries(c.gastoMesPorCat).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, Math.round(v)]),
@@ -402,6 +428,7 @@ const LEEME = [
     ['• Crear: agrega una fila nueva al final de la pestaña dejando la columna ID vacía.'],
     ['• Borrar: escribe TRUE en la columna Borrar de la fila.'],
     ['• Abonar a una deuda: escribe el monto en "Abonar ahora". Marcar un hábito: TRUE en "Hecho hoy".'],
+    ['• Activos (carro, computador, casa propia…): son patrimonio, no tocan el saldo. Actualiza su "Valor actual" cuando cambie.'],
     ['• La columna Estado y la pestaña Historial dicen si cada cambio se aplicó o por qué no.'],
     [''],
     ['SOLO LECTURA / READ-ONLY'],
@@ -413,7 +440,8 @@ const LEEME = [
     ['Nunca se exportan: contraseñas de la bóveda, credenciales de proyectos ni el chat del coach.'],
 ];
 
-const HISTORIAL_ENC = ['Fecha y hora', 'Pestaña', 'Acción', 'Registro', 'Detalle', 'Resultado'];
+const LEEME_V = 2; // subir al cambiar LEEME: la pestaña se reescribe en la próxima sincronización
+const HISTORIAL_ENC =['Fecha y hora', 'Pestaña', 'Acción', 'Registro', 'Detalle', 'Resultado'];
 const FIJAS = ['Léeme', 'Resumen'];
 const todasLasPestanas = () => [...FIJAS, ...PESTANAS.map(p => p.titulo), 'Historial'];
 
@@ -570,8 +598,11 @@ async function escribir(token, estado, datos) {
         data.push({ range: rango(p.titulo, 'A1'), values: [...grilla, ...relleno] });
     }
 
-    if (!estado.snap['Léeme']) data.push({ range: rango('Léeme', 'A1'), values: LEEME });
-    nuevasSnap['Léeme'] = { n: LEEME.length };
+    if (estado.snap['Léeme']?.v !== LEEME_V) {
+        const prevN = estado.snap['Léeme']?.n || 0;
+        data.push({ range: rango('Léeme', 'A1'), values: [...LEEME, ...Array.from({ length: Math.max(0, prevN - LEEME.length) }, () => [''])] });
+    }
+    nuevasSnap['Léeme'] = { n: LEEME.length, v: LEEME_V };
     if (!estado.snap.Historial) data.push({ range: rango('Historial', 'A1'), values: [HISTORIAL_ENC] });
     nuevasSnap.Historial = { n: 1 };
 
@@ -586,7 +617,7 @@ async function escribir(token, estado, datos) {
 
     if (data.length) await api(token, `/${estado.id}/values:batchUpdate`, { method: 'POST', body: JSON.stringify({ valueInputOption: 'RAW', data }) });
     // Pestañas cuya instantánea cambió: solo esas se guardan en el almacén.
-    const cambiadas = Object.keys(nuevasSnap).filter(t => { const a = estado.snap[t], b = nuevasSnap[t]; return !a || a.n !== b.n || a.firma !== b.firma; });
+    const cambiadas = Object.keys(nuevasSnap).filter(t => { const a = estado.snap[t], b = nuevasSnap[t]; return !a || a.n !== b.n || a.firma !== b.firma || a.v !== b.v; });
     estado.snap = nuevasSnap;
     return cambiadas;
 }

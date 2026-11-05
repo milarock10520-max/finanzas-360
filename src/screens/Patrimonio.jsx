@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { ArrowUp, ArrowDown, Wallet, PiggyBank, PieChart, CreditCard } from 'lucide-react';
+import { ArrowUp, ArrowDown, Wallet, PiggyBank, PieChart, CreditCard, Car } from 'lucide-react';
 import { ScreenHeader, CountUp, fmtCOP } from '../ui/f360.jsx';
 import { useTasaUSD } from '../lib/moneda';
 import { seriePatrimonio } from '../lib/patrimonio';
@@ -13,11 +13,11 @@ const nombreMes = (ym) => {
 // =============================================
 // === PATRIMONIO NETO EN EL TIEMPO ===
 // =============================================
-export const PatrimonioView = ({ transacciones, deudas, fotos, onBack }) => {
+export const PatrimonioView = ({ transacciones, deudas, activos = [], fotos, onBack }) => {
     const tasaUSD = useTasaUSD();
     const serie = useMemo(
-        () => seriePatrimonio({ transacciones, deudas, fotos, tasaUSD: tasaUSD?.tasa || null }),
-        [transacciones, deudas, fotos, tasaUSD]
+        () => seriePatrimonio({ transacciones, deudas, activos, fotos, tasaUSD: tasaUSD?.tasa || null }),
+        [transacciones, deudas, activos, fotos, tasaUSD]
     );
     const actual = serie[serie.length - 1];
     const anterior = serie[serie.length - 2];
@@ -35,6 +35,7 @@ export const PatrimonioView = ({ transacciones, deudas, fotos, onBack }) => {
         { label: 'Disponible', valor: actual.disponible, Icon: Wallet, color: 'var(--primary)', soft: 'var(--primary-soft)' },
         { label: 'Ahorros en metas', valor: actual.ahorros, Icon: PiggyBank, color: 'var(--income)', soft: 'var(--income-soft)' },
         { label: 'Inversiones', valor: actual.inversiones, Icon: PieChart, color: 'var(--violet)', soft: 'var(--violet-soft)' },
+        { label: 'Activos (carro, equipos…)', valor: actual.activos || 0, Icon: Car, color: 'var(--cyan)', soft: 'var(--income-soft)' },
         { label: 'Deudas', valor: -actual.deudas, Icon: CreditCard, color: 'var(--expense)', soft: 'var(--expense-soft)' },
     ];
 

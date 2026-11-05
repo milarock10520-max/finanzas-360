@@ -48,8 +48,8 @@ const HERRAMIENTAS = [
         name: 'resumen_financiero',
         description: "Monthly summary of the user's personal finances in the Finanzas 360 app, in Colombian pesos (COP): available balance, income, total spending and spending by category, today's spending, comparison with the previous month, spending limits and net worth. Use it for questions like 'how much did I spend this month'. / Resumen financiero del mes: saldo, ingresos, gasto por categoría, gasto de hoy, topes y patrimonio.",
         inputSchema: esquema({ mes: { type: 'string', description: 'Month as YYYY-MM (mes). Defaults to the current month.' } }),
-        colecciones: ['transacciones', 'limites', 'deudas'],
-        run: ({ transacciones, limites, deudas }, args) => {
+        colecciones: ['transacciones', 'limites', 'deudas', 'activos'],
+        run: ({ transacciones, limites, deudas, activos }, args) => {
             const hoy = hoyKey();
             const mes = esMes(args.mes) ? args.mes : hoy.slice(0, 7);
             const delMes = (ym) => transacciones.filter(t => (t.fecha || '').startsWith(ym));
@@ -62,6 +62,7 @@ const HERRAMIENTAS = [
             const invCOP = transacciones.filter(t => esPosicionInversion(t) && t.moneda !== 'USD').reduce((a, t) => a + n(t.monto) + n(t.utilidad), 0);
             const invUSD = transacciones.filter(t => esPosicionInversion(t) && t.moneda === 'USD').reduce((a, t) => a + n(t.monto) + n(t.utilidad), 0);
             const deudaTot = deudas.reduce((a, d) => a + saldoDeuda(d), 0);
+            const bienes = activos.reduce((a, x) => a + n(x.valorActual ?? x.valorCompra), 0);
             return {
                 mes, hoy, moneda: 'COP',
                 saldo_disponible: redondo(ingresosTot - gastosTot),
@@ -75,7 +76,7 @@ const HERRAMIENTAS = [
                     const gastado = porCat[l.categoria] || 0, tope = n(l.limite);
                     return { categoria: l.categoria, tope: redondo(tope), gastado: redondo(gastado), porcentaje: tope > 0 ? Math.round(gastado / tope * 100) : null, excedido: tope > 0 && gastado > tope };
                 }),
-                patrimonio: { disponible: redondo(ingresosTot - gastosTot), ahorros_apartados: redondo(ahorros), inversiones_cop: redondo(invCOP), inversiones_usd: Math.round(invUSD * 100) / 100, deudas: redondo(deudaTot), neto_sin_usd: redondo(ingresosTot - gastosTot + ahorros + invCOP - deudaTot) },
+                patrimonio: { disponible: redondo(ingresosTot - gastosTot), ahorros_apartados: redondo(ahorros), inversiones_cop: redondo(invCOP), inversiones_usd: Math.round(invUSD * 100) / 100, activos: redondo(bienes), deudas: redondo(deudaTot), neto_sin_usd: redondo(ingresosTot - gastosTot + ahorros + invCOP + bienes - deudaTot) },
             };
         },
     },
@@ -168,10 +169,10 @@ const HERRAMIENTAS = [
     },
     {
         name: 'inversiones',
-        description: "The user's investment portfolio in Finanzas 360: each position with type, currency (COP or USD), amount deposited, profit, current value, number of contributions and last contribution date, plus totals per currency. / Portafolio de inversiones.",
+        description: "The user's investment portfolio in Finanzas 360: each position with type, currency (COP or USD), amount deposited, profit, current value, number of contributions and last contribution date, plus totals per currency. Also lists the user's assets that are net worth but give no return (car, computer, own home…) with purchase and current value. / Portafolio de inversiones y activos.",
         inputSchema: esquema({ moneda: { type: 'string', enum: ['COP', 'USD', 'todas'], description: 'Filter by currency; todas = all (default).' } }),
-        colecciones: ['transacciones'],
-        run: ({ transacciones }, args) => {
+        colecciones: ['transacciones', 'activos'],
+        run: ({ transacciones, activos }, args) => {
             const posiciones = transacciones.filter(esPosicionInversion).filter(inv => !['COP', 'USD'].includes(args.moneda) || (inv.moneda || 'COP') === args.moneda).map(inv => {
                 const aportes = aportesDe(inv);
                 return {
@@ -187,7 +188,9 @@ const HERRAMIENTAS = [
                 const t = totales[p.moneda] || (totales[p.moneda] = { depositado: 0, utilidad: 0, valor_actual: 0 });
                 t.depositado += p.depositado; t.utilidad += p.utilidad; t.valor_actual += p.valor_actual;
             });
-            return { posiciones, totales_por_moneda: totales };
+            // Activos: bienes que no dan utilidad (carro, computador…); patrimonio en COP, no tocan el saldo.
+            const bienes = activos.map(a => ({ nombre: a.nombre, tipo: a.tipo || 'Otro', valor_compra: redondo(a.valorCompra) || null, fecha_compra: a.fechaCompra || null, valor_actual: redondo(a.valorActual ?? a.valorCompra) }));
+            return { posiciones, totales_por_moneda: totales, activos: bienes, total_activos_cop: bienes.reduce((a, b) => a + b.valor_actual, 0) };
         },
     },
     {
@@ -255,7 +258,7 @@ const HERRAMIENTAS = [
 ];
 
 // Colecciones que alguna herramienta puede leer: lista cerrada (defensa en profundidad).
-const PERMITIDAS = new Set(['transacciones', 'limites', 'deudas', 'cuentas', 'presupuesto', 'metas', 'habitos', 'rutina', 'recordatorios']);
+const PERMITIDAS = new Set(['transacciones', 'limites', 'deudas', 'cuentas', 'activos', 'presupuesto', 'metas', 'habitos', 'rutina', 'recordatorios']);
 
 async function ejecutar(env, uid, herramienta, args) {
     const nombres = herramienta.colecciones.filter(c => PERMITIDAS.has(c));
