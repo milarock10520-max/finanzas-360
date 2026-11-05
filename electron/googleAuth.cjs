@@ -15,7 +15,12 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { shell, safeStorage, app } = require('electron');
+const { shell, safeStorage, app, net } = require('electron');
+
+// Llamadas a Google con la red de Chromium (net.fetch: proxy del sistema y el mismo manejo de
+// IPv4/IPv6 que la ventana). El fetch de Node a veces se quedaba sin conectar (ConnectTimeout)
+// mientras la ventana sí llegaba a Google.
+const pedir = (url, opts) => net.fetch(url, opts);
 
 const AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
@@ -73,7 +78,7 @@ function runLoopbackAuth({ scope, accessType, prompt }) {
             }
 
             try {
-                const tokenRes = await fetch(TOKEN_ENDPOINT, {
+                const tokenRes = await pedir(TOKEN_ENDPOINT, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                     body: new URLSearchParams({
@@ -82,7 +87,7 @@ function runLoopbackAuth({ scope, accessType, prompt }) {
                         client_secret: clientSecret,
                         redirect_uri: redirectUri,
                         grant_type: 'authorization_code',
-                    }),
+                    }).toString(),
                 });
                 const data = await tokenRes.json();
                 if (!tokenRes.ok) {
@@ -160,10 +165,10 @@ async function tokenHojaDesktop() {
     const refreshToken = leerRefreshHoja();
     if (!refreshToken) throw new Error('sin_permiso_hoja');
     const { clientId, clientSecret } = loadOAuthConfig();
-    const res = await fetch(TOKEN_ENDPOINT, {
+    const res = await pedir(TOKEN_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token' }),
+        body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token' }).toString(),
     });
     const data = await res.json();
     if (!res.ok || !data.access_token) {
